@@ -46,7 +46,8 @@ block looks like 45 minutes and the gaps read as gaps.
 Dialogs are reserved for genuine asides: settings, and editing the timeline
 from its own header. They are sized to the viewport rather than to their
 content — the title stays put and the body scrolls, using the app's own
-scrollbar rather than the browser's.
+scrollbar rather than the browser's — and they close three ways: the ×, escape,
+or a click on the backdrop.
 
 The **guide** is the exception that proves the rule: it is read rather than
 answered, so it is a page at `#/guide` rather than a dialog. `App` swaps the

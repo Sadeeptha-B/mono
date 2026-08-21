@@ -18,8 +18,10 @@ const TWO_PM = new Date(2026, 7, 20, 14, 0, 0)
 async function openMono(page: Page, time: Date = TWO_PM) {
   // `install` alone leaves the clock ticking, which makes block arithmetic
   // drift by a few hundred milliseconds — enough to turn a 180-minute runway
-  // into 179.9 and cost a deep block. Pause it so the plan is exact.
-  await page.clock.install({ time })
+  // into 179.9 and cost a deep block. Install slightly early, then pause at
+  // the exact target so we avoid rewinding while still landing on the right
+  // millisecond.
+  await page.clock.install({ time: new Date(time.getTime() - 1000) })
   await page.clock.pauseAt(time)
   await page.goto('/')
   await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
@@ -30,9 +32,15 @@ const stage = (page: Page) => page.getByRole('main')
 /** The calendar column. */
 const calendar = (page: Page) => page.getByRole('complementary')
 
-/** Blocks on the calendar carry a descriptive title, e.g. "Deep · 2:00 PM · 45m". */
+/**
+ * Blocks on the calendar carry a descriptive title, e.g. "Deep · 2:00 PM · 45m".
+ *
+ * Anchored on purpose. `getByTitle` is substring *and* case-insensitive by
+ * default, so a plain "Deep" would also match a commitment the user happened to
+ * call "deep dive" — the exact trap this file's header warns about.
+ */
 const blocksOf = (page: Page, label: string) =>
-  calendar(page).getByTitle(new RegExp(`^${label} ·`))
+  calendar(page).locator(`[title^="${label} ·"]`)
 
 /**
  * The first commitment is asked for inline on the stage, which is where the
@@ -201,6 +209,46 @@ test('reopening the app long after a block ended still asks what happened', asyn
 
   await page.getByRole('button', { name: 'Finished it' }).click()
   await expect(blocksOf(page, 'Away')).toHaveCount(1)
+})
+
+test('settings close every way they offer, and refuse a nonsense duration', async ({
+  page,
+}) => {
+  await openMono(page)
+  await addStandup(page)
+
+  const deep = page.getByLabel('Deep block', { exact: true })
+
+  // Clearing the field used to write a zero-minute block straight into
+  // settings — `Number('')` is 0 — and min/max were decoration.
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await deep.fill('')
+  await deep.blur()
+  await expect(deep).toHaveValue('45')
+
+  await deep.fill('999')
+  await deep.blur()
+  await expect(deep).toHaveValue('180')
+
+  await deep.fill('30')
+  await deep.blur()
+  await expect(deep).toHaveValue('30')
+
+  // A dialog that offers a close button and escape also closes on a click
+  // away: all the ways out, or none of them.
+  await page.mouse.click(8, 8)
+  await expect(deep).toBeHidden()
+
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await page.getByRole('button', { name: 'Close' }).click()
+  await expect(deep).toBeHidden()
+
+  // The clamped setting survived, and the plan is derived from it.
+  await page.getByRole('button', { name: 'Settings' }).click()
+  await expect(deep).toHaveValue('30')
+  await page.keyboard.press('Escape')
+  await expect(deep).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Start deep block' })).toBeVisible()
 })
 
 test('the commitment form accepts typing while the clock is running', async ({ page }) => {

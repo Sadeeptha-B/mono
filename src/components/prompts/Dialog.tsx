@@ -6,10 +6,10 @@
  * locking and the aria wiring all matter and are all easy to get subtly wrong.
  *
  * Most of Mono's prompts are *not* dismissible. "Did you finish this block?"
- * has no correct default answer, so there is no close button and escape does
- * nothing — the user has to say what happened. The close control appears only
- * when `onDismiss` is given, which is what keeps that promise: a dialog either
- * offers every way out or none of them.
+ * has no correct default answer, so there is no close button, escape does
+ * nothing, and clicking away does nothing — the user has to say what happened.
+ * All three ways out appear together with `onDismiss`, which is what keeps
+ * that promise: a dialog either offers every way out or none of them.
  *
  * The card is bounded by the viewport rather than by its content: the title
  * stays put and the body scrolls. Settings is long enough to overflow a laptop
@@ -35,10 +35,24 @@ export function Dialog({ open, title, description, children, onDismiss }: Props)
   return (
     <RadixDialog.Root open={open}>
       <RadixDialog.Portal>
-        <RadixDialog.Overlay className="fixed inset-0 z-40 bg-ink/80 backdrop-blur-sm" />
+        {/*
+          The backdrop is the third way out, and it is wired here rather than
+          through Radix's own outside-pointer dismissal — which, in this
+          version, never fires for a modal dialog. A click handler on the
+          backdrop is also more precise about what it means: a drag that starts
+          inside the card and releases out here produces no click on the
+          overlay, so selecting text can never close the dialog by accident.
+        */}
+        <RadixDialog.Overlay
+          onClick={dismissible ? () => onDismiss?.() : undefined}
+          className="fixed inset-0 z-40 bg-ink/80 backdrop-blur-sm"
+        />
         <RadixDialog.Content
           onEscapeKeyDown={(e) => (dismissible ? onDismiss?.() : e.preventDefault())}
+          // Everything else outside is left alone: focus being stolen by the
+          // browser's own UI or a stray script is not a decision to close.
           onPointerDownOutside={(e) => e.preventDefault()}
+          onFocusOutside={(e) => e.preventDefault()}
           onInteractOutside={(e) => e.preventDefault()}
           className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[min(30rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-line bg-surface shadow-2xl"
         >

@@ -285,8 +285,14 @@ export function breakCost(
   input: DerivePlanInput,
   breakStartsAt: Ms,
   durationMin: number,
+  /**
+   * The plan as it already stands. The caller usually has it — it is what is
+   * on screen behind the prompt — and passing it saves deriving the same day
+   * twice for every duration the user hovers over.
+   */
+  baseline: Timeline = derivePlan(input),
 ): { blocksLost: number; focusMinutesLost: number } {
-  const withoutBreak = countPlannedFocus(derivePlan(input))
+  const withoutBreak = countPlannedFocus(baseline)
   const withBreak = countPlannedFocus(
     derivePlan({
       ...input,

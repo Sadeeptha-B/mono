@@ -14,24 +14,333 @@
  * worse than no guide.
  */
 
-import type { ReactNode } from 'react'
+import { useMemo, type ReactNode } from 'react'
 
 import { OneLine } from '../Companion/OneLine'
 import { formatTimer } from '@/domain/time'
 import { DAY_HASH } from '@/hooks/useRoute'
 import { useSession } from '@/store/session'
-import type { ActiveSegment, Ms } from '@/domain/types'
+import type { Phase } from '@/domain/machine'
+import type { ActiveSegment, Ms, Settings } from '@/domain/types'
 
 type Section = { id: string; title: string; body: ReactNode }
 
 export function GuidePage({ now, active }: { now: Ms; active: ActiveSegment | null }) {
   const settings = useSession((s) => s.session.settings)
+  const phase = useSession((s) => s.phase)
 
   const deep = settings.deepMinutes
   const short = settings.shortMinutes
   const reflect = settings.reflectMinutes
+  const policy = settings.plannerPolicy
 
-  const sections: Section[] = [
+  // The page re-renders every second so the header strip can count down, and
+  // this is several hundred elements of prose. Built once per settings change,
+  // it is the same element tree on every tick, and React skips the subtree.
+  const sections = useMemo(
+    () => sectionsFor(deep, short, reflect, policy),
+    [deep, short, reflect, policy],
+  )
+
+  const goTo = (id: string) => {
+    const target = document.getElementById(id)
+    if (!target) return
+    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    target.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' })
+  }
+
+  return (
+    <div className="flex h-dvh flex-col bg-ink">
+      <header className="shrink-0 border-b border-line px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <OneLine phase={{ name: 'idle' }} progress={null} className="h-7 w-11" decorative />
+            <span className="text-sm font-medium tracking-widest text-body uppercase">
+              Mono
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {/* A page invites you to stay, so whatever the timer would be
+                saying stays in sight — including when it is waiting on you. */}
+            <HeaderStatus active={active} now={now} phase={phase} />
+            <a
+              href={DAY_HASH}
+              className="rounded-lg border border-line px-3 py-1.5 text-xs text-body transition hover:bg-surface-raised hover:text-bright"
+            >
+              Back to today
+            </a>
+          </div>
+        </div>
+      </header>
+
+      <div className="mono-scroll min-h-0 flex-1 overflow-y-auto">
+        <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
+          <h1 className="text-3xl font-light text-bright sm:text-4xl">How Mono works</h1>
+          <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
+            A walk through the whole day — from declaring your hours to what happens when
+            you sleep through a block.
+          </p>
+
+          <div className="mt-8 flex flex-col gap-8 lg:grid lg:grid-cols-[1fr_13rem] lg:gap-12">
+            <article className="max-w-2xl">
+              {sections.map((section) => (
+                <section
+                  key={section.id}
+                  id={section.id}
+                  className="scroll-mt-6 border-t border-line pt-6 first:border-t-0 first:pt-0 [&:not(:first-child)]:mt-8"
+                >
+                  <h2 className="mb-3 text-xs font-medium tracking-widest text-muted uppercase">
+                    {section.title}
+                  </h2>
+                  {section.body}
+                </section>
+              ))}
+
+              <p className="mt-10 border-t border-line pt-5 text-xs leading-relaxed text-muted">
+                Mono runs entirely in this browser. There is no account, no server and no
+                sync — your history is yours, and Export in settings is how it travels.
+              </p>
+            </article>
+
+            {/* Beside the text on a wide screen, above it on a narrow one — where
+                it doubles as the shape of the document before you start reading. */}
+            <nav className="order-first lg:order-none">
+              <div className="lg:sticky lg:top-0">
+                <div className="text-xs font-medium tracking-widest text-muted uppercase">
+                  Contents
+                </div>
+                <ol className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-1">
+                  {sections.map((section, index) => (
+                    <li key={section.id}>
+                      <button
+                        type="button"
+                        onClick={() => goTo(section.id)}
+                        className="flex gap-2 text-left text-sm text-muted transition hover:text-bright"
+                      >
+                        <span className="tnum shrink-0 pt-0.5 text-xs text-muted/60">
+                          {String(index + 1).padStart(2, '0')}
+                        </span>
+                        <span>{section.title}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            </nav>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * What the timer would be saying, in the header.
+ *
+ * A running block is the usual case, but Mono also *asks* things, and a
+ * question the user cannot see is a question they will not answer — the guide
+ * would quietly cost them the decision it was explaining. So a phase that is
+ * waiting on an answer says so here, and outranks the countdown: when a block
+ * has just ended, "Block done" is the truth and a timer counting past zero is
+ * merely a number.
+ */
+const WAITING: Partial<Record<Phase['name'], string>> = {
+  definingPurpose: 'Name the block',
+  blockComplete: 'Block done',
+  choosingBreak: 'How long a break?',
+  reconciling: 'You were away',
+}
+
+function HeaderStatus({
+  active,
+  now,
+  phase,
+}: {
+  active: ActiveSegment | null
+  now: Ms
+  phase: Phase
+}) {
+  const waiting = WAITING[phase.name]
+
+  if (waiting !== undefined) {
+    return (
+      <Strip tone="text-bright" title="Back to the timer">
+        <span className="tracking-widest uppercase">{waiting}</span>
+        <span className="text-muted">answer on the timer</span>
+      </Strip>
+    )
+  }
+
+  if (!active) return null
+
+  const remaining = active.endsAt - now
+  const kind = active.kind === 'break' ? 'break' : active.blockKind
+
+  return (
+    <Strip tone={TONE[kind]} title="Back to the timer">
+      <span className="tracking-widest uppercase">{RUNNING_LABEL[kind]}</span>
+      <span className="tnum text-bright">
+        {remaining < 0 ? `+${formatTimer(-remaining)}` : formatTimer(remaining)}
+      </span>
+    </Strip>
+  )
+}
+
+const TONE = {
+  deep: 'text-deep',
+  short: 'text-short',
+  reflect: 'text-reflect',
+  break: 'text-rest',
+} as const
+
+const RUNNING_LABEL = {
+  deep: 'Focusing',
+  short: 'Focusing',
+  reflect: 'Priorities',
+  break: 'Break',
+} as const
+
+const Strip = ({
+  tone,
+  title,
+  children,
+}: {
+  tone: string
+  title: string
+  children: ReactNode
+}) => (
+  <a
+    href={DAY_HASH}
+    title={title}
+    className={`flex items-center gap-2 rounded-lg border border-line px-3 py-1.5 text-xs transition hover:bg-surface-raised ${tone}`}
+  >
+    {children}
+  </a>
+)
+
+/** The state machine, as the six things Mono can be asking. */
+function Flow() {
+  return (
+    <div className="mt-4 rounded-xl border border-line bg-surface/60 px-4 py-4">
+      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 text-xs">
+        <Chip tone="text-body">Ready</Chip>
+        <Arrow />
+        <Chip tone="text-bright">One thing</Chip>
+        <Arrow />
+        <Chip tone="text-deep">Focusing</Chip>
+        <Arrow />
+        <Chip tone="text-body">Block done</Chip>
+        <Arrow />
+        <Chip tone="text-rest">Break</Chip>
+        <span className="text-muted">or back to</span>
+        <Chip tone="text-bright">One thing</Chip>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-2 border-t border-line pt-3 text-xs">
+        <span className="text-muted">Stuck for a purpose?</span>
+        <Arrow />
+        <Chip tone="text-reflect">Priorities</Chip>
+        <Arrow />
+        <span className="text-muted">then back to</span>
+        <Chip tone="text-bright">One thing</Chip>
+      </div>
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-2 border-t border-line pt-3 text-xs">
+        <span className="text-muted">Away when a block ended?</span>
+        <Arrow />
+        <Chip tone="text-muted">You were away</Chip>
+        <Arrow />
+        <span className="text-muted">you say what happened</span>
+      </div>
+    </div>
+  )
+}
+
+const Chip = ({ tone, children }: { tone: string; children: ReactNode }) => (
+  <span className={`rounded-md border border-line px-2 py-1 ${tone}`}>{children}</span>
+)
+
+const Arrow = () => (
+  <span aria-hidden className="text-muted">
+    →
+  </span>
+)
+
+const P = ({ children }: { children: ReactNode }) => (
+  <p className="mt-3 text-sm leading-relaxed text-body first:mt-0">{children}</p>
+)
+
+const Em = ({ children }: { children: ReactNode }) => (
+  <span className="text-bright">{children}</span>
+)
+
+// Set apart by the box, not by being dimmer — the two-minute version is the
+// most important paragraph on the page for someone arriving cold.
+const Note = ({ children }: { children: ReactNode }) => (
+  <p className="mt-4 rounded-lg border border-line bg-surface/60 px-4 py-3 text-xs leading-relaxed text-body">
+    {children}
+  </p>
+)
+
+function Card({ title, tone, children }: { title: string; tone: string; children: ReactNode }) {
+  return (
+    <div className="rounded-lg border border-line px-4 py-3">
+      <div className={`text-sm ${tone}`}>{title}</div>
+      <p className="mt-1 text-xs leading-relaxed text-body">{children}</p>
+    </div>
+  )
+}
+
+/** One state: what it asks, and what each answer actually does. */
+function Step({
+  name,
+  asks,
+  choices,
+}: {
+  name: string
+  asks: string
+  choices: [string, string][]
+}) {
+  return (
+    <div className="rounded-lg border border-line px-4 py-3">
+      <div className="text-sm text-bright">{name}</div>
+      <p className="mt-1 text-xs leading-relaxed text-body">{asks}</p>
+      <dl className="mt-2.5 space-y-1.5">
+        {choices.map(([label, effect]) => (
+          <div key={label} className="text-xs leading-relaxed">
+            <dt className="inline text-bright">{label}</dt>
+            <dd className="inline text-body"> — {effect}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  )
+}
+
+function Setting({ name, children }: { name: string; children: ReactNode }) {
+  return (
+    <div>
+      <div className="text-sm text-bright">{name}</div>
+      <p className="mt-0.5 text-xs leading-relaxed text-body">{children}</p>
+    </div>
+  )
+}
+
+/**
+ * Every section of the guide, in order.
+ *
+ * The durations are threaded through rather than read from the store here: a
+ * guide that quotes 45 minutes while settings say 30 is worse than no guide,
+ * and passing them in makes that impossible to forget.
+ */
+function sectionsFor(
+  deep: number,
+  short: number,
+  reflect: number,
+  policy: Settings['plannerPolicy'],
+): Section[] {
+  return [
     {
       id: 'idea',
       title: 'The idea',
@@ -293,9 +602,7 @@ export function GuidePage({ now, active }: { now: Ms; active: ActiveSegment | nu
           </Setting>
           <Setting name="How to fill free time">
             The ranking policy described above. Currently{' '}
-            {settings.plannerPolicy === 'prefer-deep'
-              ? 'prefer deep blocks'
-              : 'fill the most time'}
+            {policy === 'prefer-deep' ? 'prefer deep blocks' : 'fill the most time'}
             .
           </Setting>
           <Setting name="Chime when a block ends">
@@ -335,223 +642,4 @@ export function GuidePage({ now, active }: { now: Ms; active: ActiveSegment | nu
       ),
     },
   ]
-
-  const goTo = (id: string) => {
-    const target = document.getElementById(id)
-    if (!target) return
-    const smooth = !window.matchMedia('(prefers-reduced-motion: reduce)').matches
-    target.scrollIntoView({ behavior: smooth ? 'smooth' : 'auto', block: 'start' })
-  }
-
-  return (
-    <div className="flex h-dvh flex-col bg-ink">
-      <header className="shrink-0 border-b border-line px-4 py-3 sm:px-6">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            <OneLine phase={{ name: 'idle' }} progress={null} className="h-7 w-11" />
-            <span className="text-sm font-medium tracking-widest text-body uppercase">
-              Mono
-            </span>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* A page invites you to stay, so a block in flight stays in sight. */}
-            {active && <RunningStrip active={active} now={now} />}
-            <a
-              href={DAY_HASH}
-              className="rounded-lg border border-line px-3 py-1.5 text-xs text-body transition hover:bg-surface-raised hover:text-bright"
-            >
-              Back to today
-            </a>
-          </div>
-        </div>
-      </header>
-
-      <div className="mono-scroll min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
-          <h1 className="text-3xl font-light text-bright sm:text-4xl">How Mono works</h1>
-          <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
-            A walk through the whole day — from declaring your hours to what happens when
-            you sleep through a block.
-          </p>
-
-          <div className="mt-8 flex flex-col gap-8 lg:grid lg:grid-cols-[1fr_13rem] lg:gap-12">
-            <article className="max-w-2xl">
-              {sections.map((section) => (
-                <section
-                  key={section.id}
-                  id={section.id}
-                  className="scroll-mt-6 border-t border-line pt-6 first:border-t-0 first:pt-0 [&:not(:first-child)]:mt-8"
-                >
-                  <h2 className="mb-3 text-xs font-medium tracking-widest text-muted uppercase">
-                    {section.title}
-                  </h2>
-                  {section.body}
-                </section>
-              ))}
-
-              <p className="mt-10 border-t border-line pt-5 text-xs leading-relaxed text-muted">
-                Mono runs entirely in this browser. There is no account, no server and no
-                sync — your history is yours, and Export in settings is how it travels.
-              </p>
-            </article>
-
-            {/* Beside the text on a wide screen, above it on a narrow one — where
-                it doubles as the shape of the document before you start reading. */}
-            <nav className="order-first lg:order-none">
-              <div className="lg:sticky lg:top-0">
-                <div className="text-xs font-medium tracking-widest text-muted uppercase">
-                  Contents
-                </div>
-                <ol className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1.5 sm:grid-cols-3 lg:grid-cols-1">
-                  {sections.map((section, index) => (
-                    <li key={section.id}>
-                      <button
-                        type="button"
-                        onClick={() => goTo(section.id)}
-                        className="flex gap-2 text-left text-sm text-muted transition hover:text-bright"
-                      >
-                        <span className="tnum shrink-0 pt-0.5 text-xs text-muted/60">
-                          {String(index + 1).padStart(2, '0')}
-                        </span>
-                        <span>{section.title}</span>
-                      </button>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            </nav>
-          </div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-/** The running block, so reading the guide never costs you sight of it. */
-function RunningStrip({ active, now }: { active: ActiveSegment; now: Ms }) {
-  const remaining = active.endsAt - now
-  const label = active.kind === 'break' ? 'Break' : 'Focusing'
-  const tone = active.kind === 'break' ? 'text-rest' : 'text-deep'
-
-  return (
-    <a
-      href={DAY_HASH}
-      className="flex items-center gap-2 rounded-lg border border-line px-3 py-1.5 text-xs transition hover:bg-surface-raised"
-      title="Back to the timer"
-    >
-      <span className={`tracking-widest uppercase ${tone}`}>{label}</span>
-      <span className="tnum text-bright">
-        {remaining < 0 ? `+${formatTimer(-remaining)}` : formatTimer(remaining)}
-      </span>
-    </a>
-  )
-}
-
-/** The state machine, as the six things Mono can be asking. */
-function Flow() {
-  return (
-    <div className="mt-4 rounded-xl border border-line bg-surface/60 px-4 py-4">
-      <div className="flex flex-wrap items-center gap-x-1.5 gap-y-2 text-xs">
-        <Chip tone="text-body">Ready</Chip>
-        <Arrow />
-        <Chip tone="text-bright">One thing</Chip>
-        <Arrow />
-        <Chip tone="text-deep">Focusing</Chip>
-        <Arrow />
-        <Chip tone="text-body">Block done</Chip>
-        <Arrow />
-        <Chip tone="text-rest">Break</Chip>
-        <span className="text-muted">or back to</span>
-        <Chip tone="text-bright">One thing</Chip>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-2 border-t border-line pt-3 text-xs">
-        <span className="text-muted">Stuck for a purpose?</span>
-        <Arrow />
-        <Chip tone="text-reflect">Priorities</Chip>
-        <Arrow />
-        <span className="text-muted">then back to</span>
-        <Chip tone="text-bright">One thing</Chip>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-2 border-t border-line pt-3 text-xs">
-        <span className="text-muted">Away when a block ended?</span>
-        <Arrow />
-        <Chip tone="text-muted">You were away</Chip>
-        <Arrow />
-        <span className="text-muted">you say what happened</span>
-      </div>
-    </div>
-  )
-}
-
-const Chip = ({ tone, children }: { tone: string; children: ReactNode }) => (
-  <span className={`rounded-md border border-line px-2 py-1 ${tone}`}>{children}</span>
-)
-
-const Arrow = () => (
-  <span aria-hidden className="text-muted">
-    →
-  </span>
-)
-
-const P = ({ children }: { children: ReactNode }) => (
-  <p className="mt-3 text-sm leading-relaxed text-body first:mt-0">{children}</p>
-)
-
-const Em = ({ children }: { children: ReactNode }) => (
-  <span className="text-bright">{children}</span>
-)
-
-// Set apart by the box, not by being dimmer — the two-minute version is the
-// most important paragraph on the page for someone arriving cold.
-const Note = ({ children }: { children: ReactNode }) => (
-  <p className="mt-4 rounded-lg border border-line bg-surface/60 px-4 py-3 text-xs leading-relaxed text-body">
-    {children}
-  </p>
-)
-
-function Card({ title, tone, children }: { title: string; tone: string; children: ReactNode }) {
-  return (
-    <div className="rounded-lg border border-line px-4 py-3">
-      <div className={`text-sm ${tone}`}>{title}</div>
-      <p className="mt-1 text-xs leading-relaxed text-body">{children}</p>
-    </div>
-  )
-}
-
-/** One state: what it asks, and what each answer actually does. */
-function Step({
-  name,
-  asks,
-  choices,
-}: {
-  name: string
-  asks: string
-  choices: [string, string][]
-}) {
-  return (
-    <div className="rounded-lg border border-line px-4 py-3">
-      <div className="text-sm text-bright">{name}</div>
-      <p className="mt-1 text-xs leading-relaxed text-body">{asks}</p>
-      <dl className="mt-2.5 space-y-1.5">
-        {choices.map(([label, effect]) => (
-          <div key={label} className="text-xs leading-relaxed">
-            <dt className="inline text-bright">{label}</dt>
-            <dd className="inline text-body"> — {effect}</dd>
-          </div>
-        ))}
-      </dl>
-    </div>
-  )
-}
-
-function Setting({ name, children }: { name: string; children: ReactNode }) {
-  return (
-    <div>
-      <div className="text-sm text-bright">{name}</div>
-      <p className="mt-0.5 text-xs leading-relaxed text-body">{children}</p>
-    </div>
-  )
 }

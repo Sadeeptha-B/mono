@@ -8,6 +8,8 @@
 
 import type { ButtonHTMLAttributes } from 'react'
 
+import { coerceBoundedMinutes } from './minutes'
+
 export const fieldClass =
   'w-full rounded-lg border border-line bg-ink px-3.5 py-2.5 text-bright placeholder:text-muted/60 focus:border-deep focus:outline-none'
 
@@ -61,6 +63,64 @@ export function StagePrompt({
       </div>
       <h2 className="mt-1.5 text-2xl leading-tight font-light text-bright">{title}</h2>
       {detail && <p className="mt-1.5 text-sm leading-relaxed text-muted">{detail}</p>}
+    </div>
+  )
+}
+
+/**
+ * A duration field with a floor and a ceiling it actually keeps.
+ *
+ * The parent owns the text, because what counts as valid differs by caller:
+ * settings write every good keystroke straight through, while a form only
+ * cares at submit. What is shared is the part worth having in one place — the
+ * markup, and putting an out-of-range value back inside the range when the
+ * field is left, whether by tab, click or Enter.
+ */
+export function MinutesInput({
+  id,
+  label,
+  text,
+  onText,
+  min,
+  max,
+  fallback,
+  step = 5,
+  autoFocus = false,
+}: {
+  id: string
+  label: string
+  text: string
+  onText: (text: string) => void
+  min: number
+  max: number
+  /** Where an empty or unreadable field lands. */
+  fallback: number
+  step?: number
+  autoFocus?: boolean
+}) {
+  const coerce = (raw: string) => onText(coerceBoundedMinutes(raw, fallback, min, max))
+
+  return (
+    <div>
+      <label className={labelClass} htmlFor={id}>
+        {label}
+      </label>
+      <input
+        id={id}
+        type="number"
+        inputMode="numeric"
+        min={min}
+        max={max}
+        step={step}
+        autoFocus={autoFocus}
+        value={text}
+        onChange={(e) => onText(e.target.value)}
+        onBlur={(e) => coerce(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') coerce(e.currentTarget.value)
+        }}
+        className={`${fieldClass} tnum`}
+      />
     </div>
   )
 }

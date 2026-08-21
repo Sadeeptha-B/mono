@@ -86,7 +86,7 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
         // A new commitment reshapes the runway, so every break the user pinned
         // is cleared and re-derived from scratch. Deliberately blunt: the UI
         // says so, and re-adding a break is one click.
-        overrides: clearFutureBreaks(state.overrides, event.at),
+        overrides: onlyBreakInProgress(state.overrides, event.at),
       }
 
     case 'commitment/updated':
@@ -95,7 +95,7 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
         commitments: state.commitments.map((c) =>
           c.id === event.id ? { ...c, ...event.patch } : c,
         ),
-        overrides: clearFutureBreaks(state.overrides, event.at),
+        overrides: onlyBreakInProgress(state.overrides, event.at),
       }
 
     case 'commitment/removed':
@@ -181,7 +181,7 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
         ],
         // A break that ends drops any pinned break it was fulfilling, so the
         // plan does not schedule the same rest twice.
-        overrides: clearFutureBreaks(state.overrides, event.at),
+        overrides: onlyBreakInProgress(state.overrides, event.at),
         active: null,
       }
     }
@@ -228,9 +228,15 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
 export const replay = (events: readonly MonoEvent[]): SessionState =>
   events.reduce(reduce, initialState)
 
-/** Breaks that have not started yet. Anything under way is history's business. */
-const clearFutureBreaks = (breaks: PlannedBreak[], at: Ms): PlannedBreak[] =>
-  breaks.filter((b) => b.startsAt <= at)
+/**
+ * Only the pinned break that is actually under way survives.
+ *
+ * Two things go: the ones that have not started, which is the point of calling
+ * this, and the ones that finished long ago, which nothing reads but which
+ * otherwise pile up in state until midnight clears them.
+ */
+const onlyBreakInProgress = (breaks: PlannedBreak[], at: Ms): PlannedBreak[] =>
+  breaks.filter((b) => b.startsAt <= at && b.startsAt + minutesToMs(b.durationMin) > at)
 
 function completeBlock(
   active: Extract<ActiveSegment, { kind: 'block' }>,

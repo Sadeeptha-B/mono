@@ -5,8 +5,8 @@ some agent) picking this up cold. It covers what exists, why it is shaped this
 way, and — most importantly — the decisions that were made deliberately and
 should not be quietly undone.
 
-Verified state at time of writing: `tsc -b` clean under strict mode, **103 unit
-tests** (3 files) and **10 Playwright e2e tests** passing, production build emits
+Verified state at time of writing: `tsc -b` clean under strict mode, **110 unit
+tests** (3 files) and **11 Playwright e2e tests** passing, production build emits
 a service worker with 12 precached entries.
 
 ---
@@ -25,8 +25,8 @@ Single user, single device, no backend, no accounts. Local-first PWA.
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # 103 unit tests (vitest)
-npm run test:e2e   # 10 e2e tests (playwright; builds + previews first)
+npm test           # 110 unit tests (vitest)
+npm run test:e2e   # 11 e2e tests (playwright; builds + previews first)
 npm run build      # tsc -b && vite build
 npm run typecheck
 node scripts/gen-icons.mjs   # regenerate PWA icons from inline SVG
@@ -81,6 +81,7 @@ src/domain/     Pure. No clock, no storage, no React. All the interesting logic.
 
 src/store/
   session.ts      The ONLY place that reads the clock, makes ids, or persists.
+  schema.ts       Reading data Mono did not write: old blobs, imported files.
 
 src/hooks/
   useNow.ts             One shared 1s ticker (useSyncExternalStore).
@@ -335,6 +336,17 @@ when `active === null && phase === 'idle'`.
 end is not after its start. A late stretch ends at 23:59. Supporting overnight
 regions would complicate the whole day-scoped model.
 
+**Zustand's `persist` rehydrates synchronously, during module evaluation.**
+With a sync storage the "thenable" it wraps `getItem` in runs immediately, so
+`migrate` and `onRehydrateStorage` execute at the `create(...)` call — before
+any `const` declared *below* it in the same file exists. `migrate` used to call
+a `const` helper from the bottom of `session.ts`, hit its temporal dead zone,
+and zustand's hydrate path swallowed the ReferenceError: the store silently kept
+its initial state, so a v1 log was wiped rather than migrated, and the only
+symptom was an empty app. Anything reachable from those two hooks now lives in
+`schema.ts`, where it is a module import and cannot be in a dead zone. If you
+add a helper for them, do not declare it after the store.
+
 **Perf note:** `App` re-renders every second and `derivePlan` runs on each tick.
 Cheap at this scale, and measurably fine, but it is the first place to look if
 the calendar ever feels sluggish.
@@ -380,19 +392,40 @@ and survives a reload.
 **Dialogs** ([prompts/Dialog.tsx](src/components/prompts/Dialog.tsx)) are
 bounded by the viewport, not by their content: the title is pinned, the body
 scrolls, and a hairline appears at whichever edge has more content past it. The
-close (×) is rendered only when `onDismiss` is given, which keeps the promise
-above: a dialog offers every way out or none of them.
+three ways out — the ×, escape, and a click on the backdrop — all appear
+together with `onDismiss`, which keeps the promise above: a dialog offers every
+way out or none of them.
+
+The backdrop click is an `onClick` on the overlay rather than Radix's
+`onPointerDownOutside`, which in this version never fires for a modal dialog
+(verified in the browser, not assumed). It is also the more precise mechanism:
+a drag that begins inside the card and releases on the backdrop produces no
+click on the overlay, so selecting text cannot close a dialog by accident.
 Scrolling regions across the app use the `mono-scroll` utility from
 [index.css](src/index.css) rather than the browser's default bar, which is a
 bright slab against near-black.
 
 **The companion** ([Companion/](src/components/Companion/)) is one continuous
-SVG stroke. Every mood uses an identical path command structure so Motion can
-interpolate `d` directly with no morph library. The stroke doubles as the
-progress indicator via `pathLength={1}` + `strokeDashoffset`, so the character
-draws itself across the block. Hard constraint: it reacts, never interrupts —
-motion drops to a ~6s breathe while focusing and stops entirely under
-`prefers-reduced-motion`.
+SVG stroke: a body with a head on the end of it. Every mood uses an identical
+path command structure — `M` plus four cubics, three of body and one of head —
+so Motion can interpolate `d` directly with no morph library. The stroke
+doubles as the progress indicator via `pathLength={1}` + `strokeDashoffset`, so
+the character draws itself across the block. Hard constraint: it reacts, never
+interrupts — motion drops to a ~9s breathe while focusing and stops entirely
+under `prefers-reduced-motion`.
+
+**The face is computed, not placed.** A mood declares two things — where the
+neck ends and how far the head is tilted — and `pathFor`, `eyeFor` and
+`browFor` derive the head's cubic, the eye and the brow from them. One head
+shape serves all seven moods, moved and turned rather than redrawn, which is
+what keeps it the same animal from state to state. Do not go back to authoring
+face coordinates per mood: that is what the code used to do, and the eye in
+`focusing` sat fourteen units clear of the head it belonged to.
+
+The division of labour is deliberate. The body carries posture; the face
+carries feeling (eye aperture, brow angle and lift, blink rate). Expression
+belongs in the face because that is where two degrees of brow outweigh twenty
+of spine — and because the body is already spoken for by the progress dash.
 
 ## 10. Persistence
 
@@ -404,13 +437,35 @@ log and rebuilds phase via `phaseForActive`.
 **v1 → v2 migration is real, not a wipe.** A v1 `settings/changed` carrying
 `dayEndsAt: '20:00'` is rewritten to
 `defaultRegions: [{ start: '09:00', end: '20:00' }]`. Anything older or
-unreadable is discarded rather than crashing on boot. Export/import JSON is in
-the settings panel.
+unreadable is discarded rather than crashing on boot.
+
+**Import runs the same migration, and then some.** [schema.ts](src/store/schema.ts)
+owns everything about reading data Mono did not just write:
+
+- The version stamp is honoured — an older file is migrated, a newer one is
+  refused with a message rather than replayed into nonsense.
+- Every event is sanitised field by field before `replay` sees it. `replay`
+  walks a discriminated union, so a commitment with no `startsAt` is not a bad
+  value, it is a crash in `derivePlan` later. An event that cannot be repaired
+  is dropped rather than fatal — the user is recovering their history, and most
+  of it beats an error message. That includes event *types* this build does not
+  know: the `never` at the end of `sanitiseImportedEvent` makes forgetting to
+  handle a new type a compile error, while the `return null` under it keeps a
+  file from another build merely lossy instead of fatal.
+- The day is normalised. A file exported yesterday carries yesterday's
+  commitments, pinned breaks and one-off hours, and `checkDayRollover` reads a
+  null day marker as a first run — so importing one used to make yesterday's
+  shape today's. Import now runs the same `day/reset` midnight runs, under the
+  same rule: never across a running segment. The same reasoning is why a
+  migrated v1 blob infers its day from the log rather than handing back `null`.
 
 ## 11. Testing
 
-- **Unit (vitest, jsdom):** 103 tests across `planner`, `machine`, `time`. All
-  pure; no component mounts. Property tests use fast-check.
+- **Unit (vitest, jsdom):** 110 tests across `planner`, `machine`, `time`,
+  `store/session` and `components/minutes`. The domain ones are pure and use
+  fast-check for the property tests; the store ones boot the module against a
+  seeded `localStorage` mock, which is the only way to reach the rehydration
+  path. No component mounts.
 - **E2E (Playwright, chromium):** 8 tests in
   [e2e/focus-session.spec.ts](e2e/focus-session.spec.ts). `webServer` builds and
   previews on :4173.
@@ -432,13 +487,16 @@ prompt appears with the correct span.
 
 ## 12. Loose ends
 
-- `@testing-library/react` is installed but there are **no component tests** —
-  all testing is either pure-domain or full e2e. (`jsdom` is in use: it is the
-  vitest environment.)
-- `App` subscribes to the whole store with a bare `useSession()`, and
-  `breakCost` runs `derivePlan` twice per render of the break picker. Both are
-  measurably fine at this scale; they are the first places to look if it ever
-  feels sluggish.
+- There are **no component tests** — all testing is either pure-domain or full
+  e2e. (`jsdom` is in use: it is the vitest environment. `@testing-library/react`
+  was installed and unused, and has been removed; `@testing-library/jest-dom` is
+  still wired into `src/test/setup.ts`.)
+- `App` subscribes to the whole store with a bare `useSession()`, so every store
+  change re-renders the shell. It re-renders every second anyway for the clock,
+  so this costs nothing today; it is the first thing to slice if that ever stops
+  being true.
+- `derivePlan` still runs once per tick. `breakCost` no longer doubles it — the
+  duration picker is priced against the timeline already on screen.
 
 Not built, and never scoped:
 
@@ -447,4 +505,3 @@ Not built, and never scoped:
 - No cross-device sync. JSON export/import is the escape hatch.
 - No weekday-aware default shape.
 - No editing of a block's purpose after it starts.
-- Not a git repository yet.

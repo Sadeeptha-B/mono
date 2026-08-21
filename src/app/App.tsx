@@ -61,9 +61,13 @@ export function App() {
       )
     : null
 
-  const startBlock = async (kind: BlockKind) => {
+  const startBlock = (kind: BlockKind): void => {
     // The one gesture that unlocks audio and asks for notification permission.
-    await unlock()
+    // Deliberately not awaited: the permission prompt is a browser-modal the
+    // user might sit on for a while, and the app should not appear frozen
+    // behind it. The unlock still runs inside the gesture, which is all the
+    // browser requires of it.
+    void unlock()
     store.dispatch({ type: 'startBlock', at: Date.now(), blockKind: kind })
   }
 
@@ -77,7 +81,7 @@ export function App() {
       <div className="mx-auto flex h-dvh max-w-6xl flex-col p-4 sm:p-6">
         <header className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <OneLine phase={phase} progress={null} className="h-7 w-11" />
+            <OneLine phase={phase} progress={null} className="h-7 w-11" decorative />
             <span className="text-sm font-medium tracking-widest text-body uppercase">
               Mono
             </span>
@@ -121,10 +125,13 @@ export function App() {
                 hasRegions={timeline.regions.length > 0}
                 nextRegionStart={upNext}
                 nextBlockKind={nextBlockKind}
-                costOf={(minutes) => breakCost(planInput, Date.now(), minutes)}
+                // `now`, not `Date.now()`: the cost quoted in the prompt should
+                // be the cost against the timeline drawn beside it, and the
+                // baseline is that very timeline rather than a second derive.
+                costOf={(minutes) => breakCost(planInput, now, minutes, timeline)}
                 onAddCommitment={store.addCommitment}
                 onEditHours={() => setEditingHours(true)}
-                onStartBlock={(kind) => void startBlock(kind)}
+                onStartBlock={startBlock}
                 onSetPurpose={(purpose) =>
                   store.dispatch({ type: 'setPurpose', at: Date.now(), purpose })
                 }

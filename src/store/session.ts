@@ -17,10 +17,16 @@ import type { DerivePlanInput } from '@/domain/planner'
 import { initialState, reduce, replay, type MonoEvent, type SessionState } from '@/domain/events'
 import { initialPhase, transition, type Action, type Phase } from '@/domain/machine'
 import { dayKey, regionsForDay } from '@/domain/time'
+import {
+  migratePersisted,
+  readImport,
+  SCHEMA_VERSION,
+  type ExportedShape,
+  type PersistedShape,
+} from './schema'
 import type { Commitment, Ms, PlannedBreak, Settings, WorkRegion } from '@/domain/types'
 
 const STORAGE_KEY = 'mono.session'
-const SCHEMA_VERSION = 2
 
 /**
  * How long a gap between ticks means we were genuinely gone rather than merely
@@ -28,8 +34,6 @@ const SCHEMA_VERSION = 2
  * this sits just above that.
  */
 export const AWAY_THRESHOLD_MS = 90_000
-
-type PersistedShape = { events: MonoEvent[]; dayKey: string | null }
 
 type SessionStore = {
   events: MonoEvent[]
@@ -139,26 +143,21 @@ export const useSession = create<SessionStore>()(
 
       exportJSON: () =>
         JSON.stringify(
-          { version: SCHEMA_VERSION, events: get().events } satisfies {
-            version: number
-            events: MonoEvent[]
-          },
+          {
+            version: SCHEMA_VERSION,
+            dayKey: get().dayKey,
+            events: get().events,
+          } satisfies ExportedShape,
           null,
           2,
         ),
 
       importJSON: (json) => {
-        const parsed: unknown = JSON.parse(json)
-        if (
-          typeof parsed !== 'object' ||
-          parsed === null ||
-          !Array.isArray((parsed as { events?: unknown }).events)
-        ) {
-          throw new Error('Not a Mono export: expected an "events" array.')
-        }
-        const events = (parsed as { events: MonoEvent[] }).events
-        const session = replay(events)
-        set({ events, session, phase: phaseForActive(session), dayKey: null })
+        const { events, session, dayKey: day } = readImport(json, Date.now())
+        // Same rule as a reload: only a *running* segment resurrects a phase.
+        // After an out-of-date import there is none — the day reset inside
+        // `readImport` only runs when nothing is active — so this lands idle.
+        set({ events, session, dayKey: day, phase: phaseForActive(session) })
       },
     }),
     {
@@ -170,19 +169,12 @@ export const useSession = create<SessionStore>()(
         events: state.events,
         dayKey: state.dayKey,
       }),
-      migrate: (persisted, from): PersistedShape => {
-        if (from === SCHEMA_VERSION) return persisted as PersistedShape
-
-        // v1 -> v2: a single `dayEndsAt` became a list of work regions. The
-        // faithful translation is one region running from the default start to
-        // whatever end time the user had chosen.
-        if (from === 1 && isPersisted(persisted)) {
-          return { events: persisted.events.map(migrateDayEndsAt), dayKey: null }
-        }
-
-        // Anything older or unreadable is discarded rather than crashing on boot.
-        return { events: [], dayKey: null }
-      },
+      // Hoisted out of this file entirely. It used to call a `const` declared
+      // below the store, and persist rehydrates *synchronously* while the
+      // module is still evaluating — so the helper sat in its temporal dead
+      // zone, zustand swallowed the ReferenceError, and a v1 log was silently
+      // wiped rather than migrated.
+      migrate: (persisted, from): PersistedShape => migratePersisted(persisted, from),
       onRehydrateStorage: () => (state) => {
         if (!state) return
         state.session = replay(state.events)
@@ -220,21 +212,5 @@ export function toPlanInput(state: SessionStore, now: Ms): DerivePlanInput {
     history: session.history,
     active: session.active,
     overrides: session.overrides,
-  }
-}
-
-const isPersisted = (v: unknown): v is PersistedShape =>
-  typeof v === 'object' && v !== null && Array.isArray((v as PersistedShape).events)
-
-/** Rewrite a v1 `dayEndsAt` settings patch into a v2 `defaultRegions` one. */
-function migrateDayEndsAt(event: MonoEvent): MonoEvent {
-  if (event.type !== 'settings/changed') return event
-
-  const { dayEndsAt, ...rest } = event.patch as Partial<Settings> & { dayEndsAt?: string }
-  if (typeof dayEndsAt !== 'string') return event
-
-  return {
-    ...event,
-    patch: { ...rest, defaultRegions: [{ start: '09:00', end: dayEndsAt }] },
   }
 }

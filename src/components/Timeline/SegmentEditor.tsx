@@ -11,7 +11,8 @@ import { format } from 'date-fns'
 
 import { Dialog } from '../prompts/Dialog'
 import { RegionShapeEditor } from '../RegionShapeEditor'
-import { fieldClass, GhostButton, labelClass, PrimaryButton } from '../ui'
+import { fieldClass, GhostButton, labelClass, MinutesInput, PrimaryButton } from '../ui'
+import { BREAK_MINUTES, COMMITMENT_MINUTES, parseBoundedMinutes } from '../minutes'
 import { nextHalfHour, wallClockOn } from '@/domain/time'
 import type { DefaultRegion, WorkRegion } from '@/domain/types'
 
@@ -48,17 +49,22 @@ export function AddCommitmentDialog({
 }) {
   const [title, setTitle] = useState('')
   const [time, setTime] = useState('')
-  const [duration, setDuration] = useState(30)
+  const [durationText, setDurationText] = useState(String(COMMITMENT_MINUTES.fallback))
 
   useSeedOnOpen(open, now, (at) => {
     setTitle('')
     // Default to the next round half hour — the most likely answer.
     setTime(format(nextHalfHour(at), 'HH:mm'))
-    setDuration(30)
+    setDurationText(String(COMMITMENT_MINUTES.fallback))
   })
 
   const startsAt = wallClockOn(now, time)
-  const valid = title.trim().length > 0 && startsAt !== null && duration > 0
+  const duration = parseBoundedMinutes(
+    durationText,
+    COMMITMENT_MINUTES.min,
+    COMMITMENT_MINUTES.max,
+  )
+  const valid = title.trim().length > 0 && startsAt !== null && duration !== null
 
   return (
     <Dialog
@@ -70,7 +76,7 @@ export function AddCommitmentDialog({
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (!valid || startsAt === null) return
+          if (!valid || startsAt === null || duration === null) return
           onAdd({ title: title.trim(), startsAt, durationMin: duration })
         }}
       >
@@ -100,21 +106,13 @@ export function AddCommitmentDialog({
               className={`${fieldClass} tnum`}
             />
           </div>
-          <div>
-            <label className={labelClass} htmlFor="commitment-duration">
-              For (minutes)
-            </label>
-            <input
-              id="commitment-duration"
-              type="number"
-              min={5}
-              max={480}
-              step={5}
-              value={duration}
-              onChange={(e) => setDuration(Number(e.target.value))}
-              className={`${fieldClass} tnum`}
-            />
-          </div>
+          <MinutesInput
+            id="commitment-duration"
+            label="For (minutes)"
+            text={durationText}
+            onText={setDurationText}
+            {...COMMITMENT_MINUTES}
+          />
         </div>
 
         <p className="mt-4 text-xs leading-relaxed text-muted">
@@ -147,15 +145,16 @@ export function AddBreakDialog({
   onCancel: () => void
 }) {
   const [time, setTime] = useState('')
-  const [duration, setDuration] = useState(15)
+  const [durationText, setDurationText] = useState(String(BREAK_MINUTES.fallback))
 
   useSeedOnOpen(open, now, (at) => {
     setTime(format(nextHalfHour(at), 'HH:mm'))
-    setDuration(15)
+    setDurationText(String(BREAK_MINUTES.fallback))
   })
 
   const startsAt = wallClockOn(now, time)
-  const valid = startsAt !== null && duration > 0
+  const duration = parseBoundedMinutes(durationText, BREAK_MINUTES.min, BREAK_MINUTES.max)
+  const valid = startsAt !== null && duration !== null
 
   return (
     <Dialog
@@ -167,7 +166,7 @@ export function AddBreakDialog({
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (!valid || startsAt === null) return
+          if (!valid || startsAt === null || duration === null) return
           onAdd({ startsAt, durationMin: duration })
         }}
       >
@@ -185,21 +184,13 @@ export function AddBreakDialog({
               className={`${fieldClass} tnum`}
             />
           </div>
-          <div>
-            <label className={labelClass} htmlFor="break-duration">
-              For (minutes)
-            </label>
-            <input
-              id="break-duration"
-              type="number"
-              min={5}
-              max={240}
-              step={5}
-              value={duration}
-              onChange={(e) => setDuration(Number(e.target.value))}
-              className={`${fieldClass} tnum`}
-            />
-          </div>
+          <MinutesInput
+            id="break-duration"
+            label="For (minutes)"
+            text={durationText}
+            onText={setDurationText}
+            {...BREAK_MINUTES}
+          />
         </div>
 
         <div className="mt-5 flex justify-end gap-2">

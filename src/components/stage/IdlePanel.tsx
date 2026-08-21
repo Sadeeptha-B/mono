@@ -11,7 +11,15 @@
 import { useEffect, useRef, useState } from 'react'
 import { format } from 'date-fns'
 
-import { fieldClass, GhostButton, labelClass, PrimaryButton, StagePrompt } from '../ui'
+import {
+  fieldClass,
+  GhostButton,
+  labelClass,
+  MinutesInput,
+  PrimaryButton,
+  StagePrompt,
+} from '../ui'
+import { COMMITMENT_MINUTES, parseBoundedMinutes } from '../minutes'
 import { formatClock, formatDuration, nextHalfHour, wallClockOn } from '@/domain/time'
 import type { BlockKind, Ms } from '@/domain/types'
 
@@ -24,7 +32,7 @@ export function FirstCommitmentPanel({
 }) {
   const [title, setTitle] = useState('')
   const [time, setTime] = useState(() => format(nextHalfHour(now), 'HH:mm'))
-  const [duration, setDuration] = useState(30)
+  const [durationText, setDurationText] = useState(String(COMMITMENT_MINUTES.fallback))
   const input = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -35,14 +43,19 @@ export function FirstCommitmentPanel({
   // render for this, but never written back into state — which is what would
   // reset the form on each tick while typing.
   const startsAt = wallClockOn(now, time)
-  const valid = title.trim().length > 0 && startsAt !== null && duration > 0
+  const duration = parseBoundedMinutes(
+    durationText,
+    COMMITMENT_MINUTES.min,
+    COMMITMENT_MINUTES.max,
+  )
+  const valid = title.trim().length > 0 && startsAt !== null && duration !== null
 
   return (
     <form
       className="max-w-md"
       onSubmit={(e) => {
         e.preventDefault()
-        if (!valid || startsAt === null) return
+        if (!valid || startsAt === null || duration === null) return
         onAdd({ title: title.trim(), startsAt, durationMin: duration })
       }}
     >
@@ -75,21 +88,13 @@ export function FirstCommitmentPanel({
             className={`${fieldClass} tnum`}
           />
         </div>
-        <div>
-          <label className={labelClass} htmlFor="first-commitment-duration">
-            For (minutes)
-          </label>
-          <input
-            id="first-commitment-duration"
-            type="number"
-            min={5}
-            max={480}
-            step={5}
-            value={duration}
-            onChange={(e) => setDuration(Number(e.target.value))}
-            className={`${fieldClass} tnum`}
-          />
-        </div>
+        <MinutesInput
+          id="first-commitment-duration"
+          label="For (minutes)"
+          text={durationText}
+          onText={setDurationText}
+          {...COMMITMENT_MINUTES}
+        />
       </div>
 
       <div className="mt-4">

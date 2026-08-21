@@ -8,6 +8,8 @@
  * precisely, and says the interesting parts too.
  */
 
+import { useRef } from 'react'
+
 import { fieldClass, GhostButton, labelClass } from './ui'
 import type { DefaultRegion } from '@/domain/types'
 
@@ -17,12 +19,18 @@ type Props = {
 }
 
 export function RegionShapeEditor({ regions, onChange }: Props) {
+  const keys = useRowKeys(regions.length)
+
   const update = (index: number, patch: Partial<DefaultRegion>) =>
     onChange(regions.map((r, i) => (i === index ? { ...r, ...patch } : r)))
 
-  const remove = (index: number) => onChange(regions.filter((_, i) => i !== index))
+  const remove = (index: number) => {
+    keys.removeAt(index)
+    onChange(regions.filter((_, i) => i !== index))
+  }
 
   const add = () => {
+    keys.append()
     // Start the new region after the last one ends, which is almost always
     // what "another stretch later today" means.
     const last = regions.at(-1)
@@ -42,7 +50,7 @@ export function RegionShapeEditor({ regions, onChange }: Props) {
         )}
 
         {regions.map((region, index) => (
-          <div key={index} className="flex items-center gap-2">
+          <div key={keys.at(index)} className="flex items-center gap-2">
             <input
               type="time"
               aria-label={`Working hours ${index + 1} start`}
@@ -84,6 +92,34 @@ export function RegionShapeEditor({ regions, onChange }: Props) {
       </div>
     </fieldset>
   )
+}
+
+/**
+ * A stable key per row, so React does not reuse the third row's input for what
+ * is now the third row after a deletion.
+ *
+ * The rows have no id of their own — a `DefaultRegion` is a pair of strings,
+ * and giving one an identity would put it in settings and in storage for the
+ * sake of a list. So identity is tracked here instead: the removals and
+ * additions both go through this component, and any other change to the list
+ * (a different day opened in the dialog) is re-keyed by length.
+ */
+function useRowKeys(count: number) {
+  const rows = useRef<number[]>([])
+  const next = useRef(0)
+
+  // A cache, corrected during render rather than in an effect: keys have to be
+  // right for *this* paint, and an effect would arrive a frame too late.
+  while (rows.current.length < count) rows.current.push(next.current++)
+  if (rows.current.length > count) rows.current = rows.current.slice(0, count)
+
+  return {
+    at: (index: number): string => `row-${rows.current[index] ?? index}`,
+    append: () => rows.current.push(next.current++),
+    removeAt: (index: number) => {
+      rows.current = rows.current.filter((_, i) => i !== index)
+    },
+  }
 }
 
 /** A two-hour stretch beginning where the previous one ended. */
