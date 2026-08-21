@@ -16,7 +16,7 @@
 
 import { useMemo, type ReactNode } from 'react'
 
-import { OneLine } from '../Companion/OneLine'
+import { PixelCat } from '../Companion/PixelCat'
 import { formatTimer } from '@/domain/time'
 import { DAY_HASH } from '@/hooks/useRoute'
 import { useSession } from '@/store/session'
@@ -54,7 +54,17 @@ export function GuidePage({ now, active }: { now: Ms; active: ActiveSegment | nu
       <header className="shrink-0 border-b border-line px-4 py-3 sm:px-6">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
-            <OneLine phase={{ name: 'idle' }} progress={null} className="h-7 w-11" decorative />
+            {/* The live phase, not a fixed idle one. The header already keeps
+                the timer in sight while you read; a cat sitting up politely
+                beside a strip that says "Focusing 12:34" is the same creature
+                telling you something different. */}
+            <PixelCat
+              phase={phase}
+              progress={null}
+              variant="mark"
+              className="h-7 w-11"
+              decorative
+            />
             <span className="text-sm font-medium tracking-widest text-body uppercase">
               Mono
             </span>
@@ -624,19 +634,29 @@ function sectionsFor(
     },
     {
       id: 'companion',
-      title: 'The line in the corner',
+      title: 'The cat in the corner',
       body: (
         <>
           <P>
-            The companion is one continuous stroke that changes with what Mono is doing —
-            leaning in when it is asking, level and almost still while you focus, slumped
-            when it has lost track of you. During a block the line draws itself from tail
-            to head as the time passes, so it is the progress indicator as well as the
-            character.
+            The companion is a cat, and it reacts to what Mono is doing without ever
+            interrupting you. During a block it walks its strip of ground from left to
+            right as the time passes, so where it is standing is roughly how far into the
+            block you are — it is the progress indicator as well as the character. It
+            also keeps hold of the note you wrote when you named the block.
           </P>
           <P>
-            It reacts, it never interrupts, and it stops moving entirely if your system
-            asks for reduced motion.
+            When nothing is running it says what the day has banked so far. That is the
+            one number the rest of the screen does not show you: the footer under the
+            timer counts the focus still <Em>ahead</Em> of you, and the cat counts what is
+            behind. Nothing it says is stored anywhere — it is read back off the same
+            history the timeline is drawn from, so it resets at midnight with everything
+            else.
+          </P>
+          <P>
+            It is liveliest at the edges of a block and almost perfectly still in the
+            middle of one, on purpose, and it stops moving altogether if your system asks
+            for reduced motion. It also does not look quite the same at the end of a good
+            day as it did at the start of one — that part you can find out for yourself.
           </P>
         </>
       ),

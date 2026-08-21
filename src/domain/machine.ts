@@ -8,7 +8,33 @@
  *
  * Phase is deliberately *not* in the event log. It is where the user is in the
  * conversation — which dialog is open — and it should not survive a reload in
- * a way that could resurrect a stale prompt. What survives is the log.
+ * a way that could resurrect a stale prompt. What survives is the log. A
+ * *running segment* does have to survive, though, so `phaseForActive()` in the
+ * store rebuilds `focusing` / `reflecting` / `onBreak` from the replayed log.
+ * Without it, reloading mid-block offered to start a block that was already
+ * running; there is an e2e test holding that shut.
+ *
+ * The whole of it:
+ *
+ * ```
+ * idle ──startBlock──▶ definingPurpose ──setPurpose──▶ focusing
+ *                           │                              │
+ *                     cannotDecide                   timerElapsed
+ *                           ▼                              ▼
+ *                    reflecting (5m) ──────▶        blockComplete
+ *                                                   │           │
+ *                                              skipBreak    takeBreak
+ *                                                   │           ▼
+ *                                                   │      choosingBreak
+ *                                                   ▼           ▼
+ *                                           definingPurpose   onBreak ──▶ idle
+ * ```
+ *
+ * `awayDetected` outranks every phase and jumps straight to `reconciling`.
+ * `focusing` also accepts `abandonBlock` — there is no pause, deliberately;
+ * see `docs/decisions.md`. And `reflecting` is a real `reflect` block: it
+ * consumes plan time and lands in history like anything else, rather than
+ * being a special case living outside the model.
  */
 
 import type { MonoEvent, SessionState } from './events'

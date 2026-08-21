@@ -35,3 +35,7 @@ playwright/.cache
 *.njsproj
 *.sln
 *.sw?
+
+# contact sheet from scripts/preview-companion.ts
+companion-preview.png
+companion-preview.svg

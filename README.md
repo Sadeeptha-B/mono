@@ -1,15 +1,28 @@
 # Mono
 
-A companion to help you focus and get stuff done during the day. See
-[requirements.md](requirements.md) for what it is meant to do.
+A companion to help you focus and get stuff done during the day. It learns the
+shape of your day, fills the free time with focus blocks, and asks you to name
+one thing each block is for.
+
+Local-first: everything lives in your browser. No account, no server, no sync.
 
 ```bash
 npm install
 npm run dev        # http://localhost:5173
-npm test           # domain unit + property tests
+npm test           # unit + property tests
 npm run test:e2e   # Playwright, builds and previews first
 npm run build      # production bundle + service worker
 ```
+
+Two more documents, for anyone picking this up:
+
+- **[docs/decisions.md](docs/decisions.md)** — the calls that were made
+  deliberately and the traps that have already cost an afternoon. Read it
+  before changing something that looks odd; several things are odd on purpose.
+- **[CLAUDE.md](CLAUDE.md)** — the short orientation, auto-loaded by agents.
+
+Everything descriptive lives in the source. Every file worth reading opens with
+a docblock explaining what it is for.
 
 ## How it fits together
 
@@ -17,10 +30,10 @@ Two decisions explain most of the code.
 
 **The plan is a pure function, not stored state.** `derivePlan()` in
 [src/domain/planner.ts](src/domain/planner.ts) recomputes the entire future from
-`(now, regions, commitments, settings, history, overrides)`. Nothing mutates a schedule;
-every deviation — a break taken, a commitment added, a block abandoned — just
-re-derives. The timer and the timeline render the same derived structure, so
-they cannot disagree.
+`(now, regions, commitments, settings, history, overrides)`. Nothing mutates a
+schedule; every deviation — a break taken, a commitment added, a block abandoned
+— just re-derives. The timer and the timeline render the same derived structure,
+so they cannot disagree.
 
 **Timers are absolute timestamps, never accumulated ticks.** Every segment
 carries an absolute `endsAt`, and the UI renders `endsAt - Date.now()`. The
@@ -29,12 +42,10 @@ trigger a re-render, so a throttled or skipped tick makes the display briefly
 stale but never wrong.
 
 ```
-src/domain/            pure: types, event log, planner, state machine, time
-src/store/             the only place that reads the clock, makes ids, persists
-src/hooks/             the ticker, reconciliation, notifications
-src/components/stage/  the in-place prompts (purpose, break, reconcile)
-src/components/Timeline/  the day on a time axis
-src/components/Guide/  the user guide, at #/guide
+src/domain/      pure: types, event log, planner, state machine, time, vitals
+src/store/       the only place that reads the clock, makes ids, persists
+src/hooks/       the ticker, reconciliation, notifications
+src/components/  the two panels, the stage prompts, the guide, the companion
 ```
 
 The UI is two panels. The **stage** on the left is the one thing that changes
@@ -45,20 +56,21 @@ block looks like 45 minutes and the gaps read as gaps.
 
 Dialogs are reserved for genuine asides: settings, and editing the timeline
 from its own header. They are sized to the viewport rather than to their
-content — the title stays put and the body scrolls, using the app's own
-scrollbar rather than the browser's — and they close three ways: the ×, escape,
-or a click on the backdrop.
+content — the title stays put and the body scrolls — and they close three ways:
+the ×, escape, or a click on the backdrop.
 
 The **guide** is the exception that proves the rule: it is read rather than
 answered, so it is a page at `#/guide` rather than a dialog. `App` swaps the
 view without unmounting anything, so a block keeps running while you read it,
-and the guide's header shows the timer while it does. A decision like "do you need a break?" is only answerable
-while you can see the rest of the day, so it never gets covered up.
+and the guide's header shows the timer while it does. A decision like "do you
+need a break?" is only answerable while you can see the rest of the day, so it
+never gets covered up.
 
 Session state is a fold over an append-only event log
 ([src/domain/events.ts](src/domain/events.ts)). Only the log is persisted; the
 rest is rebuilt from it on load. It is also the raw material for history —
-completed blocks and the purpose each one was given.
+completed blocks, the purpose each one was given, and what the companion knows
+about how the day has gone.
 
 ## Behaviour worth knowing
 
@@ -101,12 +113,29 @@ default. Every day starts seeded from it. Editing a day's hours from the
 calendar (`Hours`) overrides that day only; the midnight reset drops the
 override so tomorrow starts from the default again.
 
-This replaced a single `dayEndsAt` setting, which could only say when the day
-stopped. It could not describe an unstructured evening with work after it, and
-once the clock passed it, it silently fell back to midnight.
-
 Regions do not wrap past midnight — the plan is scoped to a calendar day, so a
 late stretch ends at 23:59 rather than running into tomorrow.
+
+## The companion
+
+A pixel cat on a strip of ground, in the corner of the stage. It changes with
+what Mono is doing, and during a block it walks its ground from left to right as
+the time passes — so it is the progress indicator as well as the character.
+
+Its art is authored as text, one character per pixel, in
+[src/components/Companion/frames.ts](src/components/Companion/frames.ts). What
+it knows about the day is a fold over the same history the timeline is drawn
+from, so there is no companion state to store or migrate. The app icons are
+generated from the same frames, which is why the tab icon is the same animal.
+
+The rule it keeps: lively at the seams of a block, dull in the middle of one. It
+reacts, it never interrupts, and it stops moving entirely under
+`prefers-reduced-motion`.
+
+```bash
+npm run companion   # a contact sheet of every frame, as a PNG
+npm run icons       # regenerate the favicon and PWA icons from those frames
+```
 
 ## Limitations
 

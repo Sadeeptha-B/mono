@@ -10,7 +10,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "typecheck": "tsc -b --noEmit"
+    "typecheck": "tsc -b --noEmit",
+    "icons": "node scripts/gen-icons.ts",
+    "companion": "node scripts/preview-companion.ts"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",

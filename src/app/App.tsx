@@ -11,7 +11,8 @@ import { useMemo, useState } from 'react'
 import { Clock } from '@/components/Clock'
 import { SettingsPanel } from '@/components/SettingsPanel'
 import { GuidePage } from '@/components/Guide/GuidePage'
-import { OneLine } from '@/components/Companion/OneLine'
+import { Companion } from '@/components/Companion/Companion'
+import { PixelCat } from '@/components/Companion/PixelCat'
 import { Stage } from '@/components/stage/Stage'
 import { DayCalendar } from '@/components/Timeline/DayCalendar'
 import {
@@ -54,13 +55,6 @@ export function App() {
   const planned = countPlannedFocus(timeline)
   const withinHours = isWithinRegions(now, timeline.regions)
   const upNext = nextRegionStart(now, timeline.regions)
-  const progress = session.active
-    ? clamp01(
-        (now - session.active.startedAt) /
-          Math.max(1, session.active.endsAt - session.active.startedAt),
-      )
-    : null
-
   const startBlock = (kind: BlockKind): void => {
     // The one gesture that unlocks audio and asks for notification permission.
     // Deliberately not awaited: the permission prompt is a browser-modal the
@@ -81,7 +75,13 @@ export function App() {
       <div className="mx-auto flex h-dvh max-w-6xl flex-col p-4 sm:p-6">
         <header className="mb-5 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
-            <OneLine phase={phase} progress={null} className="h-7 w-11" decorative />
+            <PixelCat
+              phase={phase}
+              progress={null}
+              variant="mark"
+              className="h-7 w-11"
+              decorative
+            />
             <span className="text-sm font-medium tracking-widest text-body uppercase">
               Mono
             </span>
@@ -106,10 +106,11 @@ export function App() {
           <main className="mono-scroll flex min-h-0 flex-col overflow-y-auto rounded-2xl border border-line bg-surface p-6 sm:p-8">
             <div className="flex items-start justify-between gap-6">
               <Clock now={now} />
-              <OneLine
+              <Companion
+                now={now}
                 phase={phase}
-                progress={progress}
-                className="h-20 w-32 shrink-0 sm:h-24 sm:w-40"
+                active={session.active}
+                history={session.history}
               />
             </div>
 
@@ -211,8 +212,6 @@ export function App() {
     </div>
   )
 }
-
-const clamp01 = (n: number): number => Math.min(1, Math.max(0, n))
 
 const headerControlClass =
   'rounded-lg border border-line px-3 py-1.5 text-xs text-body transition hover:bg-surface-raised hover:text-bright'

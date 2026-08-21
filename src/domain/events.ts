@@ -238,7 +238,16 @@ export const replay = (events: readonly MonoEvent[]): SessionState =>
 const onlyBreakInProgress = (breaks: PlannedBreak[], at: Ms): PlannedBreak[] =>
   breaks.filter((b) => b.startsAt <= at && b.startsAt + minutesToMs(b.durationMin) > at)
 
-function completeBlock(
+/**
+ * The history entry a running block turns into.
+ *
+ * Exported because the log is not the only thing that needs to know the shape:
+ * between the timer reaching zero and the user answering "break or keep
+ * going?", a block has finished but has deliberately not been recorded yet
+ * (see `machine.ts`), and anything reading the day back has to be able to
+ * account for it without inventing its own idea of what a completed block is.
+ */
+export function completeBlock(
   active: Extract<ActiveSegment, { kind: 'block' }>,
   endedAt: Ms,
   outcome: 'completed' | 'abandoned',

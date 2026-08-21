@@ -184,6 +184,26 @@ function fillSegment(segment: Interval, settings: Settings): TimelineEntry[] {
 
 type Fill = { deepCount: number; shortCount: number; focusMs: Ms }
 
+/**
+ * How one free stretch gets filled. Not greedy: it enumerates every
+ * `(deepCount, shortCount)` pair that fits and ranks them by policy.
+ *
+ * | stretch | `prefer-deep` (default) | `maximise-focus`  |
+ * |---------|-------------------------|-------------------|
+ * | 50 min  | 1 deep, 5 dead          | 1 deep, 5 dead    |
+ * | 60 min  | 1 deep, **15 dead**     | 3 short, 0 dead   |
+ * | 120 min | 2 deep + 1 short, 10    | **6 short**, 0    |
+ *
+ * `prefer-deep` is the default and should stay that way. `maximise-focus`
+ * reliably wins on raw minutes, but it does so by almost never scheduling a
+ * deep block at all — 20 divides more finely than 45, so a two-hour afternoon
+ * becomes six short blocks. That is the opposite of what this app is for, and
+ * it contradicts the original brief ("large if time is sufficient"). It was
+ * built the other way round first and changed deliberately.
+ *
+ * The search space is `available / deepMinutes`, which is single digits, and
+ * the zero-duration guards below mean nonsensical settings cannot hang it.
+ */
 export function bestFill(
   available: Ms,
   deepMs: Ms,
