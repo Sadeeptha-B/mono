@@ -56,7 +56,7 @@ export function playChime(): void {
 export function notify(title: string, body: string): void {
   if (!('Notification' in window) || Notification.permission !== 'granted') return
   if (document.visibilityState === 'visible') return
-  new Notification(title, { body, tag: 'mono-block', icon: '/icons/icon-192.png' })
+  new Notification(title, { body, tag: 'mono-block', icon: `${import.meta.env.BASE_URL}icons/icon-192.png` })
 }
 
 /**

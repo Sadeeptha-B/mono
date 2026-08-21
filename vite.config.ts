@@ -5,6 +5,8 @@ import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
+  // GitHub Pages serves this as a project site at /mono/, not the domain root.
+  base: process.env.GITHUB_ACTIONS ? '/mono/' : '/',
   plugins: [
     react(),
     tailwindcss(),
@@ -17,15 +19,15 @@ export default defineConfig({
         name: 'Mono',
         short_name: 'Mono',
         description: 'A companion to help you focus and get stuff done.',
-        start_url: '/',
+        start_url: '.',
         display: 'standalone',
         background_color: '#0b0b0f',
         theme_color: '#0b0b0f',
         icons: [
-          { src: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-          { src: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+          { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+          { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
           {
-            src: '/icons/icon-maskable-512.png',
+            src: 'icons/icon-maskable-512.png',
             sizes: '512x512',
             type: 'image/png',
             purpose: 'maskable',
