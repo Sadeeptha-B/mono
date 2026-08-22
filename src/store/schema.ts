@@ -198,6 +198,7 @@ function sanitiseImportedEvent(event: MonoEvent): MonoEvent | null {
     case 'block/abandoned':
     case 'break/ended':
     case 'day/reset':
+    case 'day/shaped':
       return { type: event.type, at: event.at }
 
     case 'break/started': {
@@ -232,6 +233,20 @@ const sanitiseNumber = (value: unknown): number | null =>
 
 const sanitisePositiveMinutes = (value: unknown): number | null => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null
+  return Math.round(value)
+}
+
+/**
+ * A duration either side of a commitment: optional, and legitimately zero.
+ *
+ * Three outcomes rather than two, so a caller can tell "not there" from "there
+ * and wrong". `undefined` means absent, which is the normal state of every
+ * commitment written before this field existed; `null` means present and
+ * unusable.
+ */
+const sanitiseMarginMinutes = (value: unknown): number | null | undefined => {
+  if (value === undefined) return undefined
+  if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) return null
   return Math.round(value)
 }
 
@@ -293,9 +308,25 @@ function sanitiseCommitment(value: unknown): Commitment | null {
   const title = sanitiseString(value.title)
   const startsAt = sanitiseNumber(value.startsAt)
   const durationMin = sanitisePositiveMinutes(value.durationMin)
-  return id === null || title === null || startsAt === null || durationMin === null
-    ? null
-    : { id, title, startsAt, durationMin }
+  if (id === null || title === null || startsAt === null || durationMin === null) {
+    return null
+  }
+
+  // Absent is the ordinary case: every commitment written before these existed
+  // has neither. Present but unreadable drops the commitment, like any other
+  // malformed field — it would otherwise silently plan over the school run.
+  const prepMin = sanitiseMarginMinutes(value.prepMin)
+  const recoverMin = sanitiseMarginMinutes(value.recoverMin)
+  if (prepMin === null || recoverMin === null) return null
+
+  return {
+    id,
+    title,
+    startsAt,
+    durationMin,
+    ...(prepMin === undefined ? {} : { prepMin }),
+    ...(recoverMin === undefined ? {} : { recoverMin }),
+  }
 }
 
 function sanitiseCommitmentPatch(value: unknown): Partial<Commitment> | null {
@@ -316,6 +347,16 @@ function sanitiseCommitmentPatch(value: unknown): Partial<Commitment> | null {
     const durationMin = sanitisePositiveMinutes(value.durationMin)
     if (durationMin === null) return null
     patch.durationMin = durationMin
+  }
+  if ('prepMin' in value) {
+    const prepMin = sanitiseMarginMinutes(value.prepMin)
+    if (prepMin === null || prepMin === undefined) return null
+    patch.prepMin = prepMin
+  }
+  if ('recoverMin' in value) {
+    const recoverMin = sanitiseMarginMinutes(value.recoverMin)
+    if (recoverMin === null || recoverMin === undefined) return null
+    patch.recoverMin = recoverMin
   }
 
   return patch

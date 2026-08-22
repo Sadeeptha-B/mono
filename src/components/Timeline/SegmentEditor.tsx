@@ -1,173 +1,144 @@
 /**
- * Adding commitments and breaks to the timeline.
+ * The three things you can add to the timeline, edited on the timeline.
  *
- * Both take a wall-clock time, because that is how the user thinks ("standup
- * at 5"). It is resolved against today's calendar right here, at the edge —
- * the domain only ever sees epoch milliseconds.
+ * These were dialogs. The argument for that was the same one that keeps
+ * settings in a dialog — an aside you dismiss — but it does not survive contact
+ * with what they actually are. Adding a commitment is an edit *to* the day
+ * drawn beside them, and `Dialog` centres a card over a blurred backdrop, so
+ * the one thing you need in order to answer "when?" was the one thing covered
+ * up. They expand in place under the calendar header instead, and the hour axis
+ * simply gets shorter.
+ *
+ * Each one mounts when it opens and unmounts when it closes, which is what lets
+ * the forms seed from a lazy initialiser. The old dialogs stayed mounted behind
+ * an `open` prop, so seeding needed a hook that read the clock through a ref:
+ * `now` advances every second, and a seed that depends on it clears the field
+ * on every keystroke. Mounting on open removes that problem rather than working
+ * around it.
+ *
+ * Times are wall clock here, resolved against today's calendar at the edge. The
+ * domain only ever sees epoch milliseconds.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { format } from 'date-fns'
 
-import { Dialog } from '../prompts/Dialog'
-import { RegionShapeEditor } from '../RegionShapeEditor'
+import {
+  CommitmentFields,
+  emptyDraft,
+  readCommitment,
+  type CommitmentDraft,
+} from '../CommitmentFields'
+import { hoursToSave, TodayHoursFields, useHoursDraft } from '../TodayHours'
 import { fieldClass, GhostButton, labelClass, MinutesInput, PrimaryButton } from '../ui'
-import { BREAK_MINUTES, COMMITMENT_MINUTES, parseBoundedMinutes } from '../minutes'
+import { BREAK_MINUTES, parseBoundedMinutes } from '../minutes'
 import { nextHalfHour, wallClockOn } from '@/domain/time'
-import type { DefaultRegion, WorkRegion } from '@/domain/types'
+import type { Ms, WorkRegion } from '@/domain/types'
+
+/** Which composer is open, if any. */
+export type ComposerKind = 'hours' | 'break' | 'commitment'
 
 /**
- * Seed the form when the dialog opens, and *only* then.
+ * The frame every composer shares.
  *
- * `now` advances every second, so including it in the dependency list resets
- * the form once a second — which reads, while you are typing, as the field
- * clearing itself on every keystroke. The current time is still wanted for the
- * default value, so it is read through a ref instead of being depended upon.
+ * A hairline and a heading rather than a floating card: this is part of the
+ * calendar, not something laid on top of it, and it should read that way.
  */
-function useSeedOnOpen(open: boolean, now: number, seed: (now: number) => void) {
-  const nowRef = useRef(now)
-  nowRef.current = now
-
-  const seedRef = useRef(seed)
-  seedRef.current = seed
-
-  useEffect(() => {
-    if (open) seedRef.current(nowRef.current)
-  }, [open])
+function ComposerShell({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="shrink-0 border-b border-line bg-surface-raised/40 px-4 py-3">
+      <div className="mb-2.5 text-xs font-medium tracking-widest text-muted uppercase">
+        {title}
+      </div>
+      {children}
+    </div>
+  )
 }
 
-export function AddCommitmentDialog({
-  open,
+/** The row of actions at the foot of a composer. */
+const Actions = ({ children }: { children: ReactNode }) => (
+  <div className="mt-4 flex flex-wrap justify-end gap-2">{children}</div>
+)
+
+// The calendar column is 22rem wide, so the composers run at the small end of
+// the button scale. Everywhere else in Mono these are full size.
+const composerButton = 'px-3 py-1.5 text-xs'
+
+export function CommitmentComposer({
   now,
   onAdd,
   onCancel,
 }: {
-  open: boolean
-  now: number
-  onAdd: (input: { title: string; startsAt: number; durationMin: number }) => void
+  now: Ms
+  onAdd: (input: { title: string; startsAt: Ms; durationMin: number }) => void
   onCancel: () => void
 }) {
-  const [title, setTitle] = useState('')
-  const [time, setTime] = useState('')
-  const [durationText, setDurationText] = useState(String(COMMITMENT_MINUTES.fallback))
-
-  useSeedOnOpen(open, now, (at) => {
-    setTitle('')
-    // Default to the next round half hour — the most likely answer.
-    setTime(format(nextHalfHour(at), 'HH:mm'))
-    setDurationText(String(COMMITMENT_MINUTES.fallback))
-  })
-
-  const startsAt = wallClockOn(now, time)
-  const duration = parseBoundedMinutes(
-    durationText,
-    COMMITMENT_MINUTES.min,
-    COMMITMENT_MINUTES.max,
+  // Default to the next round half hour — the most likely answer.
+  const [draft, setDraft] = useState<CommitmentDraft>(() =>
+    emptyDraft(format(nextHalfHour(now), 'HH:mm')),
   )
-  const valid = title.trim().length > 0 && startsAt !== null && duration !== null
+  const ready = readCommitment(now, draft)
 
   return (
-    <Dialog
-      open={open}
-      title="Next commitment"
-      description="Something already fixed in your day. Mono plans around it."
-      onDismiss={onCancel}
-    >
+    <ComposerShell title="Next commitment">
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (!valid || startsAt === null || duration === null) return
-          onAdd({ title: title.trim(), startsAt, durationMin: duration })
+          if (ready) onAdd(ready)
         }}
       >
-        <label className={labelClass} htmlFor="commitment-title">
-          What
-        </label>
-        <input
-          id="commitment-title"
-          autoFocus
-          value={title}
-          onChange={(e) => setTitle(e.target.value)}
-          placeholder="Daily standup"
-          maxLength={80}
-          className={fieldClass}
+        <CommitmentFields
+          idPrefix="commitment"
+          titleLabel="What"
+          draft={draft}
+          onDraft={setDraft}
         />
 
-        <div className="mt-4 grid grid-cols-2 gap-3">
-          <div>
-            <label className={labelClass} htmlFor="commitment-time">
-              At
-            </label>
-            <input
-              id="commitment-time"
-              type="time"
-              value={time}
-              onChange={(e) => setTime(e.target.value)}
-              className={`${fieldClass} tnum`}
-            />
-          </div>
-          <MinutesInput
-            id="commitment-duration"
-            label="For (minutes)"
-            text={durationText}
-            onText={setDurationText}
-            {...COMMITMENT_MINUTES}
-          />
-        </div>
-
-        <p className="mt-4 text-xs leading-relaxed text-muted">
+        <p className="mt-3 text-xs leading-relaxed text-muted">
           Adding this re-derives the plan, which clears any breaks you had pinned. Add
           them back wherever they still make sense.
         </p>
 
-        <div className="mt-4 flex justify-end gap-2">
-          <GhostButton type="button" onClick={onCancel}>
+        <Actions>
+          <GhostButton type="button" onClick={onCancel} className={composerButton}>
             Cancel
           </GhostButton>
-          <PrimaryButton type="submit" disabled={!valid}>
+          <PrimaryButton type="submit" disabled={!ready} className={composerButton}>
             Add
           </PrimaryButton>
-        </div>
+        </Actions>
       </form>
-    </Dialog>
+    </ComposerShell>
   )
 }
 
-export function AddBreakDialog({
-  open,
+export function BreakComposer({
   now,
   onAdd,
   onCancel,
 }: {
-  open: boolean
-  now: number
-  onAdd: (input: { startsAt: number; durationMin: number }) => void
+  now: Ms
+  onAdd: (input: { startsAt: Ms; durationMin: number }) => void
   onCancel: () => void
 }) {
-  const [time, setTime] = useState('')
+  const [time, setTime] = useState(() => format(nextHalfHour(now), 'HH:mm'))
   const [durationText, setDurationText] = useState(String(BREAK_MINUTES.fallback))
 
-  useSeedOnOpen(open, now, (at) => {
-    setTime(format(nextHalfHour(at), 'HH:mm'))
-    setDurationText(String(BREAK_MINUTES.fallback))
-  })
-
   const startsAt = wallClockOn(now, time)
-  const duration = parseBoundedMinutes(durationText, BREAK_MINUTES.min, BREAK_MINUTES.max)
-  const valid = startsAt !== null && duration !== null
+  const durationMin = parseBoundedMinutes(
+    durationText,
+    BREAK_MINUTES.min,
+    BREAK_MINUTES.max,
+  )
+  const valid = startsAt !== null && durationMin !== null
 
   return (
-    <Dialog
-      open={open}
-      title="Plan a break"
-      description="Pin rest where you know you'll need it. The plan works around it."
-      onDismiss={onCancel}
-    >
+    <ComposerShell title="Plan a break">
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (!valid || startsAt === null || duration === null) return
-          onAdd({ startsAt, durationMin: duration })
+          if (startsAt === null || durationMin === null) return
+          onAdd({ startsAt, durationMin })
         }}
       >
         <div className="grid grid-cols-2 gap-3">
@@ -193,88 +164,67 @@ export function AddBreakDialog({
           />
         </div>
 
-        <div className="mt-5 flex justify-end gap-2">
-          <GhostButton type="button" onClick={onCancel}>
+        <Actions>
+          <GhostButton type="button" onClick={onCancel} className={composerButton}>
             Cancel
           </GhostButton>
-          <PrimaryButton type="submit" disabled={!valid}>
+          <PrimaryButton type="submit" disabled={!valid} className={composerButton}>
             Add break
           </PrimaryButton>
-        </div>
+        </Actions>
       </form>
-    </Dialog>
+    </ComposerShell>
   )
 }
 
 /**
  * Today's working hours.
  *
- * Editing here overrides the recurring default for this day only — the shape
- * in settings is untouched, and tomorrow starts from it again. Times are
- * authored as wall clock and resolved against today at save, so this stays on
- * the right side of the epoch-milliseconds boundary.
+ * Editing here overrides the recurring default for this day only — the shape in
+ * settings is untouched, and tomorrow starts from it again. *Editing* is the
+ * operative word: saving a draft nobody touched hands back `null` rather than
+ * an identical list, because writing it would detach today from the recurring
+ * shape without changing a single minute of it.
  */
-export function TodayHoursDialog({
-  open,
+export function HoursComposer({
   now,
   regions,
   usingDefaults,
   onSave,
   onCancel,
 }: {
-  open: boolean
-  now: number
+  now: Ms
   regions: readonly WorkRegion[]
   /** True while the day still follows the shape from settings. */
   usingDefaults: boolean
-  onSave: (regions: { startsAt: number; endsAt: number }[]) => void
+  /** Called with `null` when the draft matches the day's current shape. */
+  onSave: (regions: WorkRegion[] | null) => void
   onCancel: () => void
 }) {
-  const [draft, setDraft] = useState<DefaultRegion[]>([])
-
-  useSeedOnOpen(open, now, () => setDraft(regions.map(toWallClock)))
-
-  const resolved = draft
-    .map((r) => ({ startsAt: wallClockOn(now, r.start), endsAt: wallClockOn(now, r.end) }))
-    .filter(
-      (r): r is { startsAt: number; endsAt: number } =>
-        r.startsAt !== null && r.endsAt !== null && r.endsAt > r.startsAt,
-    )
-  const dropped = draft.length - resolved.length
+  const { draft, onDraft } = useHoursDraft(regions)
 
   return (
-    <Dialog
-      open={open}
-      title="Today's hours"
-      description={
-        usingDefaults
-          ? "This day follows your usual shape. Editing it changes today only."
-          : "You've already changed today's hours."
-      }
-      onDismiss={onCancel}
-    >
-      <RegionShapeEditor regions={draft} onChange={setDraft} />
+    <ComposerShell title="Today's hours">
+      <p className="-mt-1 mb-3 text-xs leading-relaxed text-muted">
+        {usingDefaults
+          ? 'This day follows your usual shape. Editing it changes today only.'
+          : "You've already changed today's hours."}
+      </p>
 
-      {dropped > 0 && (
-        <p className="mt-3 text-xs leading-relaxed text-commit">
-          {dropped} stretch{dropped === 1 ? '' : 'es'} will be dropped — a stretch has to
-          end after it starts, and cannot run past midnight.
-        </p>
-      )}
+      <TodayHoursFields draft={draft} onDraft={onDraft} now={now} hideLegend />
 
-      <div className="mt-5 flex justify-end gap-2">
-        <GhostButton type="button" onClick={onCancel}>
+      <Actions>
+        <GhostButton type="button" onClick={onCancel} className={composerButton}>
           Cancel
         </GhostButton>
-        <PrimaryButton type="button" onClick={() => onSave(resolved)}>
+        <PrimaryButton
+          type="button"
+          onClick={() => onSave(hoursToSave(now, draft, regions))}
+          className={composerButton}
+        >
           Save for today
         </PrimaryButton>
-      </div>
-    </Dialog>
+      </Actions>
+    </ComposerShell>
   )
 }
-
-const toWallClock = (region: WorkRegion): DefaultRegion => ({
-  start: format(region.startsAt, 'HH:mm'),
-  end: format(region.endsAt, 'HH:mm'),
-})

@@ -12,6 +12,12 @@
 /** The bounds each duration field advertises, in one place per concept. */
 export const COMMITMENT_MINUTES = { min: 5, max: 480, fallback: 30 } as const
 export const BREAK_MINUTES = { min: 5, max: 240, fallback: 15 } as const
+/**
+ * The time either side of a commitment. Zero is the common answer and a
+ * perfectly good one, which is the whole difference from the two above — a
+ * commitment of no length is a mistake, an hour that needs no travel is not.
+ */
+export const MARGIN_MINUTES = { min: 0, max: 240, fallback: 0 } as const
 
 /** The value if it is usable as-is, or null while it is not. */
 export function parseBoundedMinutes(raw: string, min: number, max: number): number | null {

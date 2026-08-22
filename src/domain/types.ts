@@ -66,11 +66,29 @@ export const DEFAULT_SETTINGS: Settings = {
   soundEnabled: true,
 }
 
+/**
+ * Something already fixed in the day.
+ *
+ * `startsAt` and `durationMin` describe the thing itself — the hour in the
+ * pool, the half hour on the call. `prepMin` and `recoverMin` describe what it
+ * costs either side of that: getting changed and travelling there, then
+ * travelling back and being fit for anything afterwards. A 4pm swim is an hour
+ * long and eats two, and a planner that only knew about the hour would offer a
+ * focus block at 3:40 that the user was never going to be at their desk for.
+ *
+ * Both are optional because logs written before they existed do not have them.
+ * Read them through `commitmentSpan` rather than directly, so the `?? 0` lives
+ * in one place.
+ */
 export type Commitment = {
   id: string
   title: string
   startsAt: Ms
   durationMin: Minutes
+  /** Getting ready and getting there, before `startsAt`. */
+  prepMin?: Minutes
+  /** Getting back and settling, after it ends. */
+  recoverMin?: Minutes
 }
 
 /**
@@ -146,6 +164,18 @@ export type TimelineEntry =
     }
   | { kind: 'planned-break'; id: string; startsAt: Ms; endsAt: Ms }
   | { kind: 'commitment'; commitment: Commitment; startsAt: Ms; endsAt: Ms }
+  /**
+   * The getting-ready or getting-back time around a commitment. Its own entry
+   * rather than a longer commitment, so the calendar can draw the difference
+   * between the hour you are swimming and the half hour you are in the car.
+   */
+  | {
+      kind: 'commitment-margin'
+      commitment: Commitment
+      side: 'before' | 'after'
+      startsAt: Ms
+      endsAt: Ms
+    }
   /** Un-fillable remainder. Always shorter than the shortest block. */
   | { kind: 'margin'; startsAt: Ms; endsAt: Ms }
 
@@ -168,3 +198,19 @@ export type Interval = { start: Ms; end: Ms }
 export const MINUTE_MS = 60_000
 
 export const minutesToMs = (m: Minutes): Ms => m * MINUTE_MS
+
+/** The commitment itself, without the time it costs either side. */
+export const commitmentEvent = (c: Commitment): Interval => ({
+  start: c.startsAt,
+  end: c.startsAt + minutesToMs(c.durationMin),
+})
+
+/**
+ * Everything the commitment takes out of the day, getting there and back
+ * included. This is the interval the planner must not schedule into, and the
+ * one that decides whether a commitment is still ahead of us.
+ */
+export const commitmentSpan = (c: Commitment): Interval => ({
+  start: c.startsAt - minutesToMs(c.prepMin ?? 0),
+  end: c.startsAt + minutesToMs(c.durationMin + (c.recoverMin ?? 0)),
+})

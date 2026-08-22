@@ -11,6 +11,7 @@
  */
 
 import {
+  commitmentSpan,
   DEFAULT_SETTINGS,
   minutesToMs,
   type ActiveSegment,
@@ -47,6 +48,7 @@ export type MonoEvent =
   | { type: 'break/ended'; at: Ms }
   | { type: 'away/recorded'; at: Ms; from: Ms; to: Ms }
   | { type: 'day/reset'; at: Ms }
+  | { type: 'day/shaped'; at: Ms }
 
 export type SessionState = {
   settings: Settings
@@ -63,6 +65,17 @@ export type SessionState = {
    * that default immediately reshapes every day not yet customised.
    */
   regionOverrides: WorkRegion[] | null
+  /**
+   * When the user answered the day's opening questions, or `null` if they have
+   * not yet.
+   *
+   * This is a record of *being asked*, not of what was answered. "No meetings
+   * today" and "09:00–18:00 is right" are both real answers, and neither leaves
+   * a trace anywhere else in the state — so gating the opening prompt on the
+   * commitments list, as it used to be, meant a day with nothing fixed in it
+   * could never get past the question.
+   */
+  shapedAt: Ms | null
 }
 
 export const initialState: SessionState = {
@@ -72,6 +85,7 @@ export const initialState: SessionState = {
   active: null,
   overrides: [],
   regionOverrides: null,
+  shapedAt: null,
 }
 
 export function reduce(state: SessionState, event: MonoEvent): SessionState {
@@ -204,14 +218,20 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
       return {
         ...state,
         // History survives forever — it is the journal. The *plan* is what resets.
-        commitments: state.commitments.filter(
-          (c) => c.startsAt + minutesToMs(c.durationMin) > event.at,
-        ),
+        // Measured across the whole span: a commitment is not finished with the
+        // day while the time it costs afterwards is still running.
+        commitments: state.commitments.filter((c) => commitmentSpan(c).end > event.at),
         overrides: [],
         // Back to the recurring default shape. Yesterday's one-off evening
         // stretch should not silently become part of every day.
         regionOverrides: null,
+        // And the new day gets asked its opening questions again. Yesterday's
+        // answers were about yesterday.
+        shapedAt: null,
       }
+
+    case 'day/shaped':
+      return { ...state, shapedAt: event.at }
 
     default: {
       // The `never` keeps the switch exhaustive at compile time, but the log

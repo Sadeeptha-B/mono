@@ -24,7 +24,10 @@ async function openMono(page: Page, time: Date = TWO_PM) {
   await page.clock.install({ time: new Date(time.getTime() - 1000) })
   await page.clock.pauseAt(time)
   await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Today' })).toBeVisible()
+  // `exact` is not optional here. The day's opening question is headed "Are
+  // these your hours today?", and a substring match on "Today" — the default —
+  // resolves to both it and the calendar's own heading.
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
 }
 
 /** The stage, to disambiguate from the same text on the calendar. */
@@ -42,16 +45,46 @@ const calendar = (page: Page) => page.getByRole('complementary')
 const blocksOf = (page: Page, label: string) =>
   calendar(page).locator(`[title^="${label} ·"]`)
 
+/** The strip of stage dots under the stage. */
+const carousel = (page: Page) => page.getByRole('navigation', { name: 'Stages of the day' })
+
+/**
+ * Move between the two opening questions using the carousel.
+ *
+ * Scoped to the strip on purpose: the setup panel also carries a button to the
+ * other question, with the same name because it goes the same place. Two
+ * controls sharing an accessible name is fine for a reader and ambiguous for a
+ * locator, and this helper is specifically about the dots.
+ */
+async function goToStage(page: Page, name: string) {
+  await carousel(page).getByRole('button', { name, exact: true }).click()
+}
+
+/**
+ * Finish the opening questions. Available from either of them, and from the
+ * commitments one with nothing added — an empty day is a complete answer.
+ */
+async function startDay(page: Page) {
+  await stage(page).getByRole('button', { name: 'Start the day' }).click()
+}
+
 /**
  * The first commitment is asked for inline on the stage, which is where the
- * requirements put it. Later ones go through the calendar's own dialog.
+ * requirements put it, and it is now the first thing the day asks. Later ones
+ * go through the calendar's own composer.
  */
 async function addStandup(page: Page) {
   await page.getByLabel('Next commitment', { exact: true }).fill('Daily standup')
   // Exact matching throughout: "At" is a substring of "What".
   await page.getByLabel('At', { exact: true }).fill('17:00')
   await page.getByLabel('For (minutes)', { exact: true }).fill('15')
-  await page.getByRole('button', { name: 'Plan around it' }).click()
+  await page.getByRole('button', { name: 'Add commitment' }).click()
+  await startDay(page)
+}
+
+/** Answer both opening questions, with nothing fixed in the day. */
+async function shapeDay(page: Page) {
+  await startDay(page)
 }
 
 async function startBlock(page: Page, purpose: string) {
@@ -60,13 +93,115 @@ async function startBlock(page: Page, purpose: string) {
   await page.getByRole('button', { name: 'Start', exact: true }).click()
 }
 
+test('the day opens by asking what is already fixed, then for the hours', async ({
+  page,
+}) => {
+  await openMono(page)
+
+  // Commitments come first: they are the part of the day you cannot move, so
+  // they decide how much of it is left to declare.
+  await expect(
+    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+  ).toBeVisible()
+
+  // An empty day is a complete answer. Before "Start the day" existed, a user
+  // with no meetings could never get past this question and never start a block.
+  await startDay(page)
+  await expect(page.getByRole('button', { name: 'Start deep block' })).toBeVisible()
+
+  // And the answer sticks across a reload — it is in the event log.
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'Start deep block' })).toBeVisible()
+})
+
+test('the opening questions can be answered in either order', async ({ page }) => {
+  await openMono(page)
+
+  // The carousel is a control while the day is being set up, not just an
+  // indicator: both questions are reachable from either one.
+  await goToStage(page, "Today's hours")
+  await expect(
+    stage(page).getByRole('heading', { name: 'Are these your hours today?' }),
+  ).toBeVisible()
+  await expect(stage(page).getByLabel("Today's hours 1 start")).toHaveValue('09:00')
+
+  await stage(page).getByRole('button', { name: '+ Add a stretch' }).click()
+  await stage(page).getByLabel("Today's hours 2 start").fill('20:00')
+  await stage(page).getByLabel("Today's hours 2 end").fill('22:00')
+
+  // Back to the other question and forward again: the edit is still there,
+  // because the drafts outlive the switch.
+  await goToStage(page, "What's already fixed")
+  await expect(
+    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+  ).toBeVisible()
+  await goToStage(page, "Today's hours")
+  await expect(stage(page).getByLabel("Today's hours 2 start")).toHaveValue('20:00')
+
+  await startDay(page)
+  await expect(page.getByText(/Working until 10:00 PM/)).toBeVisible()
+  await expect(calendar(page).getByText('8 PM', { exact: true })).toBeVisible()
+})
+
+test('hours edited on one question survive finishing from the other', async ({ page }) => {
+  // The regression this guards: the hours draft used to be committed by the
+  // hours panel's own button, so answering the questions out of order and
+  // finishing from the commitments side dropped the edit on the floor.
+  await openMono(page)
+
+  await goToStage(page, "Today's hours")
+  await stage(page).getByLabel("Today's hours 1 end").fill('20:00')
+  await goToStage(page, "What's already fixed")
+  await startDay(page)
+
+  await expect(page.getByText(/Working until 8:00 PM/)).toBeVisible()
+})
+
+test('a commitment can carry the time it costs either side of itself', async ({ page }) => {
+  await openMono(page)
+
+  // The 4pm swim: an hour in the pool, half an hour getting there, twenty
+  // minutes getting back. Mono must not offer a block at 3:40.
+  await page.getByLabel('Next commitment', { exact: true }).fill('Swimming')
+  await page.getByLabel('At', { exact: true }).fill('16:00')
+  await page.getByLabel('For (minutes)', { exact: true }).fill('60')
+  await stage(page).getByRole('button', { name: '+ Time either side' }).click()
+  await page.getByLabel('Getting ready', { exact: true }).fill('30')
+  await page.getByLabel('Getting back', { exact: true }).fill('20')
+  await page.getByRole('button', { name: 'Add commitment' }).click()
+
+  // It is listed with what it really costs before the day even starts.
+  await expect(stage(page).getByText('Swimming')).toBeVisible()
+  await expect(stage(page).getByText(/1h 00m \+ 50m around/)).toBeVisible()
+
+  await startDay(page)
+
+  // Drawn as three things: the swim, and the travel either side of it.
+  await expect(blocksOf(page, 'Swimming')).toHaveCount(1)
+  await expect(blocksOf(page, 'Getting ready')).toHaveCount(1)
+  await expect(blocksOf(page, 'Getting back')).toHaveCount(1)
+
+  // 2:00 to 3:30 is exactly two deep blocks, and nothing is planned into the
+  // 3:30-5:20 the swim really occupies.
+  const titles = await calendar(page).locator('[title^="Deep ·"]').evaluateAll((els) =>
+    els.map((el) => el.getAttribute('title') ?? ''),
+  )
+  expect(titles.some((t) => t.includes('2:00 PM'))).toBe(true)
+  expect(titles.some((t) => t.includes('2:45 PM'))).toBe(true)
+  expect(titles.some((t) => t.includes('3:30 PM'))).toBe(false)
+  expect(titles.some((t) => t.includes('4:00 PM'))).toBe(false)
+  expect(titles.some((t) => t.includes('5:00 PM'))).toBe(false)
+})
+
 test('plans the runway on a time axis and charges a break against the plan', async ({
   page,
 }) => {
   await openMono(page)
 
   // A day with no shape asks for one, in place rather than behind a button.
-  await expect(stage(page).getByRole('heading', { name: /What's next in your day/ })).toBeVisible()
+  await expect(
+    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+  ).toBeVisible()
 
   await addStandup(page)
 
@@ -188,6 +323,27 @@ test('the guide is a page of its own, and keeps a running block in sight', async
   await expect(stage(page).getByText('35:00')).toBeVisible()
 })
 
+test('settings open from the guide, which quotes them', async ({ page }) => {
+  // The guide explains each setting using its current value, so it is the one
+  // page where you are most likely to want to change one. It used to be the one
+  // place you could not.
+  await openMono(page)
+  await shapeDay(page)
+
+  await page.getByRole('link', { name: 'Guide', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'How Mono works' })).toBeVisible()
+
+  const deep = page.getByLabel('Deep block', { exact: true })
+  // Exact again: the guide's own contents list has a "Settings, one by one".
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await expect(deep).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(deep).toBeHidden()
+  // Closing settings leaves the guide where it was, not back on the day.
+  await expect(page.getByRole('heading', { name: 'How Mono works' })).toBeVisible()
+})
+
 test('reopening the app long after a block ended still asks what happened', async ({
   page,
 }) => {
@@ -266,14 +422,34 @@ test('the commitment form accepts typing while the clock is running', async ({ p
   await expect(title).toHaveValue('Daily standup')
   await expect(page.getByLabel('At', { exact: true })).toHaveValue('17:00')
 
-  // And the same for the calendar's own dialog.
-  await page.getByRole('button', { name: 'Plan around it' }).click()
-  await page.getByRole('button', { name: '+ Commitment' }).click()
+  // And the same for the calendar's own composer.
+  await page.getByRole('button', { name: 'Add commitment' }).click()
+  await startDay(page)
+  await calendar(page).getByRole('button', { name: '+ Commitment' }).click()
 
-  const dialogTitle = page.getByLabel('What', { exact: true })
-  await dialogTitle.pressSequentially('Design review', { delay: 120 })
+  const composerTitle = calendar(page).getByLabel('What', { exact: true })
+  await composerTitle.pressSequentially('Design review', { delay: 120 })
   await page.waitForTimeout(1500)
-  await expect(dialogTitle).toHaveValue('Design review')
+  await expect(composerTitle).toHaveValue('Design review')
+})
+
+test('the calendar edits itself in place, without covering the day', async ({ page }) => {
+  await openMono(page)
+  await addStandup(page)
+
+  const hours = calendar(page).getByRole('button', { name: 'Hours', exact: true })
+  await hours.click()
+  await expect(hours).toHaveAttribute('aria-expanded', 'true')
+
+  // The whole point: the day is still on screen while you edit it. A dialog
+  // put a card over a blurred backdrop exactly here.
+  await expect(blocksOf(page, 'Deep')).not.toHaveCount(0)
+  await expect(calendar(page).getByText('2 PM', { exact: true })).toBeVisible()
+
+  // Clicking the open control closes it again.
+  await hours.click()
+  await expect(hours).toHaveAttribute('aria-expanded', 'false')
+  await expect(calendar(page).getByLabel("Today's hours 1 start")).toBeHidden()
 })
 
 test('plans only inside working hours, and resumes after an unstructured gap', async ({
@@ -288,10 +464,10 @@ test('plans only inside working hours, and resumes after an unstructured gap', a
 
   // Carve the evening: stop at 6, take 6-8 unstructured, work again 8-10.
   await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
-  await page.getByRole('button', { name: '+ Add a stretch' }).click()
-  await page.getByLabel('Working hours 2 start').fill('20:00')
-  await page.getByLabel('Working hours 2 end').fill('22:00')
-  await page.getByRole('button', { name: 'Save for today' }).click()
+  await calendar(page).getByRole('button', { name: '+ Add a stretch' }).click()
+  await calendar(page).getByLabel("Today's hours 2 start").fill('20:00')
+  await calendar(page).getByLabel("Today's hours 2 end").fill('22:00')
+  await calendar(page).getByRole('button', { name: 'Save for today' }).click()
 
   // The day now runs to 10, and the evening stretch is planned.
   await expect(page.getByText(/Working until 10:00 PM/)).toBeVisible()
@@ -302,14 +478,17 @@ test('plans only inside working hours, and resumes after an unstructured gap', a
 test('says when the next stretch opens instead of planning through a gap', async ({
   page,
 }) => {
-  // 7pm sits in the gap between a 9-6 day and a 8-10 evening stretch.
+  // 7pm sits in the gap between a 9-6 day and a 8-10 evening stretch. The
+  // opening question is where the evening gets declared: being outside your
+  // hours is no reason to be refused the form that sets them.
   await openMono(page, new Date(2026, 7, 20, 19, 0, 0))
 
-  await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
-  await page.getByRole('button', { name: '+ Add a stretch' }).click()
-  await page.getByLabel('Working hours 2 start').fill('20:00')
-  await page.getByLabel('Working hours 2 end').fill('22:00')
-  await page.getByRole('button', { name: 'Save for today' }).click()
+  await goToStage(page, "Today's hours")
+  await expect(stage(page).getByText(/your day starts at|past everything below/)).toBeVisible()
+  await stage(page).getByRole('button', { name: '+ Add a stretch' }).click()
+  await stage(page).getByLabel("Today's hours 2 start").fill('20:00')
+  await stage(page).getByLabel("Today's hours 2 end").fill('22:00')
+  await startDay(page)
 
   await expect(
     stage(page).getByText('Outside working hours', { exact: true }),
@@ -317,12 +496,220 @@ test('says when the next stretch opens instead of planning through a gap', async
   await expect(stage(page).getByText(/Nothing scheduled until 8:00 PM/)).toBeVisible()
   // No block can be started in time the user declared unstructured.
   await expect(page.getByRole('button', { name: /Start (deep|short) block/ })).toHaveCount(0)
+
+  // The escape hatch opens the calendar's own editor, in place.
+  await page.getByRole('button', { name: "Change today's hours" }).click()
+  await expect(calendar(page).getByLabel("Today's hours 1 start")).toBeVisible()
+})
+
+test('saving the hours editor unchanged leaves the day following the default', async ({
+  page,
+}) => {
+  // Regression: "Save for today" wrote the draft back whatever it said, so
+  // opening the editor and saving without touching anything stamped a
+  // per-day override. The day looked identical and had quietly stopped
+  // following the recurring shape.
+  await openMono(page)
+  await shapeDay(page)
+  await expect(page.getByText(/Working until 6:00 PM/)).toBeVisible()
+
+  await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
+  await calendar(page).getByRole('button', { name: 'Save for today' }).click()
+  await expect(calendar(page).getByLabel("Today's hours 1 start")).toBeHidden()
+
+  // Change the recurring shape. An uncustomised day has to follow it.
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByLabel('Working hours 1 end', { exact: true }).fill('20:00')
+  await page.keyboard.press('Escape')
+
+  await expect(page.getByText(/Working until 8:00 PM/)).toBeVisible()
+})
+
+test('a real edit in the hours editor still overrides the day', async ({ page }) => {
+  // The other half of the test above: skipping the write when nothing changed
+  // must not skip it when something did.
+  await openMono(page)
+  await shapeDay(page)
+
+  await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
+  await calendar(page).getByLabel("Today's hours 1 end").fill('16:00')
+  await calendar(page).getByRole('button', { name: 'Save for today' }).click()
+
+  await expect(page.getByText(/Working until 4:00 PM/)).toBeVisible()
+
+  // And now the day is genuinely customised, so the default no longer reaches it.
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByLabel('Working hours 1 end', { exact: true }).fill('20:00')
+  await page.keyboard.press('Escape')
+
+  await expect(page.getByText(/Working until 4:00 PM/)).toBeVisible()
+})
+
+/** Just before midnight, so the tab can be left open across the day boundary. */
+const LATE = new Date(2026, 7, 20, 23, 50, 0)
+
+/** Roll the clock into the small hours of the next day and let a tick land. */
+async function crossMidnight(page: Page) {
+  await page.clock.setSystemTime(new Date(2026, 7, 21, 0, 1, 0))
+  await page.clock.fastForward('00:02')
+}
+
+test('the calendar editors do not carry a draft into the next day', async ({ page }) => {
+  // Regression: the composers seeded their state once, at mount, and nothing
+  // closed them at the rollover. An hours draft edited at 23:59 could be saved
+  // at 00:01 and would land as an override on a day it was never about.
+  await openMono(page, LATE)
+  await shapeDay(page)
+
+  await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
+  await calendar(page).getByLabel("Today's hours 1 end").fill('22:00')
+
+  await crossMidnight(page)
+
+  // The editor is gone, and yesterday's draft with it.
+  await expect(calendar(page).getByLabel("Today's hours 1 end")).toBeHidden()
+  await expect(page.getByText(/Working until 6:00 PM/)).toBeVisible()
+
+  // Reopening seeds from the new day's own shape, not from what was typed.
+  await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
+  await expect(calendar(page).getByLabel("Today's hours 1 end")).toHaveValue('18:00')
+})
+
+test('an unanswered day left open overnight reopens on the first question', async ({
+  page,
+}) => {
+  // Regression: the reset watched `shapedAt`, which never changes when the day
+  // was not answered in the first place — so this, the case it mattered most
+  // for, was exactly the one it missed.
+  await openMono(page, LATE)
+  await goToStage(page, "Today's hours")
+  await expect(
+    stage(page).getByRole('heading', { name: 'Are these your hours today?' }),
+  ).toBeVisible()
+
+  await crossMidnight(page)
+
+  await expect(
+    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+  ).toBeVisible()
+})
+
+test('the opening questions do not carry a draft into the next day', async ({ page }) => {
+  await openMono(page, LATE)
+  await goToStage(page, "Today's hours")
+  await stage(page).getByLabel("Today's hours 1 end").fill('22:00')
+
+  await crossMidnight(page)
+
+  await goToStage(page, "Today's hours")
+  await expect(stage(page).getByLabel("Today's hours 1 end")).toHaveValue('18:00')
+
+  // And starting the new day leaves it following the recurring shape, rather
+  // than overriding it with what was typed yesterday.
+  await startDay(page)
+  await expect(page.getByText(/Working until 6:00 PM/)).toBeVisible()
+})
+
+/** Hand a file straight to the import control, without going via a download. */
+async function importSession(page: Page, contents: unknown) {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'mono-export.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from(JSON.stringify(contents)),
+  })
+  await page.keyboard.press('Escape')
+}
+
+test('an import replaces the opening questions, even one for the same day', async ({
+  page,
+}) => {
+  // The nastiest version of this bug: a same-day import into a day that was
+  // never answered moves neither the date nor the answered flag, so there was
+  // nothing for the UI to notice. The session generation is the fact itself.
+  await openMono(page)
+  await goToStage(page, "Today's hours")
+  await stage(page).getByLabel("Today's hours 1 end").fill('22:00')
+
+  await importSession(page, { version: 2, dayKey: '2026-08-20', events: [] })
+
+  // Back to the first question, with nothing carried over from before.
+  await expect(
+    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+  ).toBeVisible()
+  await goToStage(page, "Today's hours")
+  await expect(stage(page).getByLabel("Today's hours 1 end")).toHaveValue('18:00')
+
+  await startDay(page)
+  await expect(page.getByText(/Working until 6:00 PM/)).toBeVisible()
+})
+
+test('the hours question follows the recurring shape until it is edited', async ({
+  page,
+}) => {
+  // An untouched draft is not a snapshot. Change the shape every day starts
+  // from while the question is open, and the question has to be asking about
+  // the new shape — not quietly holding the old one ready to save back over it.
+  await openMono(page)
+  await goToStage(page, "Today's hours")
+  await expect(stage(page).getByLabel("Today's hours 1 end")).toHaveValue('18:00')
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByLabel('Working hours 1 end', { exact: true }).fill('16:00')
+  await page.keyboard.press('Escape')
+
+  await expect(stage(page).getByLabel("Today's hours 1 end")).toHaveValue('16:00')
+
+  // And starting the day leaves it following that shape rather than overriding
+  // it with what the panel happened to be showing when it mounted.
+  await startDay(page)
+  await expect(page.getByText(/Working until 4:00 PM/)).toBeVisible()
+})
+
+test('an edited hours draft is left alone when the default shape changes', async ({
+  page,
+}) => {
+  // The other side of it: following the day is for a draft nobody has touched.
+  // Clearing what someone is in the middle of typing would be its own bug.
+  await openMono(page)
+  await goToStage(page, "Today's hours")
+  await stage(page).getByLabel("Today's hours 1 end").fill('22:00')
+
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByLabel('Working hours 1 end', { exact: true }).fill('16:00')
+  await page.keyboard.press('Escape')
+
+  await expect(stage(page).getByLabel("Today's hours 1 end")).toHaveValue('22:00')
+
+  await startDay(page)
+  await expect(page.getByText(/Working until 10:00 PM/)).toBeVisible()
+})
+
+test('a new day opens on the first question, whatever yesterday ended on', async ({
+  page,
+}) => {
+  // Regression: the setup carousel's position was component state and nothing
+  // put it back at the day reset, so a tab left open overnight reopened on
+  // whichever question was last looked at.
+  await openMono(page)
+  await goToStage(page, "Today's hours")
+  await startDay(page)
+  await expect(page.getByRole('button', { name: 'Start deep block' })).toBeVisible()
+
+  // Midnight, with the tab still open. Nothing is running, so the day rolls.
+  await page.clock.setSystemTime(new Date(2026, 7, 21, 9, 0, 0))
+  await page.clock.fastForward('00:02')
+
+  await expect(
+    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+  ).toBeVisible()
 })
 
 test('plans nothing once the working day is over', async ({ page }) => {
   // 9pm against the default 9-6 shape. This is the case that used to run the
   // plan on to midnight regardless of the setting.
   await openMono(page, new Date(2026, 7, 20, 21, 0, 0))
+  await shapeDay(page)
 
   await expect(stage(page).getByRole('heading', { name: 'Day done' })).toBeVisible()
   await expect(blocksOf(page, 'Deep')).toHaveCount(0)

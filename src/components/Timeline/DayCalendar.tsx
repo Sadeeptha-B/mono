@@ -9,13 +9,33 @@
  * the block offsets — which keeps it correct across a DST boundary without any
  * special handling. The axis simply labels each elapsed hour with its wall
  * clock time, which is what a calendar should do on such a day anyway.
+ *
+ * The header's three controls open an editor *inside* this column rather than
+ * a dialog over the page. Which one is open is owned by `App`, because the
+ * out-of-hours panel on the stage opens the hours editor too — the two are the
+ * same affordance reached from different places, and there should only ever be
+ * one of it.
  */
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { format } from 'date-fns'
 
+import {
+  BreakComposer,
+  CommitmentComposer,
+  HoursComposer,
+  type ComposerKind,
+} from './SegmentEditor'
 import { formatClock, formatDuration } from '@/domain/time'
-import type { Interval, Ms, Timeline, TimelineEntry } from '@/domain/types'
+import type {
+  Commitment,
+  Interval,
+  Ms,
+  PlannedBreak,
+  Timeline,
+  TimelineEntry,
+  WorkRegion,
+} from '@/domain/types'
 
 const HOUR_PX = 96
 const HOUR_MS = 3_600_000
@@ -28,21 +48,31 @@ const TOP_PAD_PX = 12
 type Props = {
   timeline: Timeline
   now: Ms
+  /** Today's hours, for the editor. Not the same list as `timeline.regions`. */
+  regions: readonly WorkRegion[]
+  usingDefaultRegions: boolean
+  /** Which editor is expanded under the header, if any. Owned by `App`. */
+  composer: ComposerKind | null
+  onComposer: (next: ComposerKind | null) => void
   onRemoveBreak: (id: string) => void
   onRemoveCommitment: (id: string) => void
-  onAddBreak: () => void
-  onAddCommitment: () => void
-  onAddRegion: () => void
+  onAddBreak: (input: Omit<PlannedBreak, 'id'>) => void
+  onAddCommitment: (input: Omit<Commitment, 'id'>) => void
+  onSetRegions: (regions: WorkRegion[]) => void
 }
 
 export function DayCalendar({
   timeline,
   now,
+  regions,
+  usingDefaultRegions,
+  composer,
+  onComposer,
   onRemoveBreak,
   onRemoveCommitment,
   onAddBreak,
   onAddCommitment,
-  onAddRegion,
+  onSetRegions,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
   const { rangeStart, hours, placed } = useMemo(
@@ -65,32 +95,66 @@ export function DayCalendar({
 
   return (
     <aside className="flex h-full min-h-0 flex-col rounded-2xl border border-line bg-surface">
-      <header className="flex items-center justify-between border-b border-line px-4 py-3">
+      <header className="flex flex-wrap items-center justify-between gap-y-1 border-b border-line px-4 py-3">
         <h2 className="text-xs font-medium tracking-widest text-muted uppercase">Today</h2>
-        <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={onAddRegion}
-            className="rounded-md px-2 py-1 text-xs text-body transition hover:bg-surface-raised hover:text-bright"
-          >
+        {/* Toggles, not launchers: the panel they open is right below them and
+            stays part of this column, so the pressed state is the whole of the
+            feedback. `flex-wrap` because three of these already fill a 22rem
+            column at text-xs. */}
+        <div className="flex flex-wrap gap-1">
+          <HeaderToggle kind="hours" composer={composer} onComposer={onComposer}>
             Hours
-          </button>
-          <button
-            type="button"
-            onClick={onAddBreak}
-            className="rounded-md px-2 py-1 text-xs text-body transition hover:bg-surface-raised hover:text-bright"
-          >
+          </HeaderToggle>
+          <HeaderToggle kind="break" composer={composer} onComposer={onComposer}>
             + Break
-          </button>
-          <button
-            type="button"
-            onClick={onAddCommitment}
-            className="rounded-md px-2 py-1 text-xs text-body transition hover:bg-surface-raised hover:text-bright"
-          >
+          </HeaderToggle>
+          <HeaderToggle kind="commitment" composer={composer} onComposer={onComposer}>
             + Commitment
-          </button>
+          </HeaderToggle>
         </div>
       </header>
+
+      {/*
+        The editors live here rather than in a dialog over the page. Everything
+        they ask about — when is this, what does it displace — is drawn directly
+        below, and the axis scrolls, so the cost of opening one is a shorter
+        view of the day rather than no view of it.
+      */}
+      {composer === 'hours' && (
+        <HoursComposer
+          now={now}
+          regions={regions}
+          usingDefaults={usingDefaultRegions}
+          onSave={(next) => {
+            // `null` means the draft matched what the day already says. Saving
+            // it anyway would override the day with its own current shape and
+            // stop it following the recurring default.
+            if (next) onSetRegions(next)
+            onComposer(null)
+          }}
+          onCancel={() => onComposer(null)}
+        />
+      )}
+      {composer === 'break' && (
+        <BreakComposer
+          now={now}
+          onAdd={(input) => {
+            onAddBreak(input)
+            onComposer(null)
+          }}
+          onCancel={() => onComposer(null)}
+        />
+      )}
+      {composer === 'commitment' && (
+        <CommitmentComposer
+          now={now}
+          onAdd={(input) => {
+            onAddCommitment(input)
+            onComposer(null)
+          }}
+          onCancel={() => onComposer(null)}
+        />
+      )}
 
       <div ref={scroller} className="mono-scroll min-h-0 flex-1 overflow-y-auto">
         <div
@@ -159,6 +223,41 @@ export function DayCalendar({
           : `Working until ${formatClock(timeline.horizon)}`}
       </footer>
     </aside>
+  )
+}
+
+/**
+ * One of the header controls.
+ *
+ * Clicking the open one closes it, which is the behaviour a toggle promises and
+ * also the only way out that does not involve moving the pointer somewhere
+ * else. `aria-expanded` is what tells a screen reader this reveals something
+ * rather than navigating away.
+ */
+function HeaderToggle({
+  kind,
+  composer,
+  onComposer,
+  children,
+}: {
+  kind: ComposerKind
+  composer: ComposerKind | null
+  onComposer: (next: ComposerKind | null) => void
+  children: ReactNode
+}) {
+  const open = composer === kind
+
+  return (
+    <button
+      type="button"
+      aria-expanded={open}
+      onClick={() => onComposer(open ? null : kind)}
+      className={`rounded-md px-2 py-1 text-xs transition hover:bg-surface-raised hover:text-bright ${
+        open ? 'bg-surface-raised text-bright' : 'text-body'
+      }`}
+    >
+      {children}
+    </button>
   )
 }
 
@@ -408,6 +507,19 @@ function styleFor(entry: TimelineEntry): RowStyle {
         border: 'border-commit/40',
       }
 
+    // The commitment's own colour, at half the weight and with a dashed edge:
+    // it is unmistakably part of that commitment, and unmistakably not the
+    // thing itself.
+    case 'commitment-margin':
+      return {
+        label: entry.side === 'before' ? 'Getting ready' : 'Getting back',
+        detail: entry.commitment.title,
+        text: 'text-commit/70',
+        ring: 'ring-commit/30',
+        bg: 'bg-commit/5',
+        border: 'border-commit/30 border-dashed',
+      }
+
     case 'margin':
       return {
         label: 'Unfocused',
@@ -430,6 +542,8 @@ function keyFor(entry: TimelineEntry, index: number): string {
       return `active-${entry.segment.id}`
     case 'commitment':
       return `commit-${entry.commitment.id}`
+    case 'commitment-margin':
+      return `commit-${entry.commitment.id}-${entry.side}`
     case 'planned-break':
       return `break-${entry.id}`
     case 'planned-block':

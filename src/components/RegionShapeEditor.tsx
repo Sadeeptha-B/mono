@@ -1,24 +1,53 @@
 /**
- * The recurring daily shape, edited in settings.
+ * A list of working stretches, as wall clock.
  *
  * This replaces the old single "day ends at" time. That setting could only say
  * when the day stopped, so an unstructured evening had to be expressed by
  * pretending the day was longer than it was — and once the clock passed it, it
  * silently fell back to midnight. A list of regions says the same thing
  * precisely, and says the interesting parts too.
+ *
+ * `label` exists because there are now two of these on screen at once: the
+ * recurring shape in settings, and today's own hours on the stage or the
+ * calendar. They edit different things, and rows called "Working hours 1 start"
+ * in both places are ambiguous to a screen reader and to a test alike.
  */
 
 import { useRef } from 'react'
 
-import { fieldClass, GhostButton, labelClass } from './ui'
+import { GhostButton, labelClass } from './ui'
 import type { DefaultRegion } from '@/domain/types'
+
+/**
+ * `fieldClass` with tighter horizontal padding, spelled out rather than
+ * appended to it.
+ *
+ * Tailwind resolves a `px-3.5 px-2.5` collision by stylesheet order, not by the
+ * order the classes appear in the string, so overriding one padding utility
+ * with another silently does nothing. Two of these plus a "to" and a remove
+ * button have to fit in a 22rem column, and the padding is where the room is.
+ */
+const timeFieldClass =
+  'tnum min-w-0 flex-1 rounded-lg border border-line bg-ink px-2 py-2.5 text-bright focus:border-deep focus:outline-none'
 
 type Props = {
   regions: DefaultRegion[]
   onChange: (regions: DefaultRegion[]) => void
+  /** Names the fieldset and every row. Must be unique on the page. */
+  label?: string
+  /**
+   * Keep the legend for screen readers but drop it from the page, for callers
+   * whose own heading already says the same words directly above it.
+   */
+  hideLegend?: boolean
 }
 
-export function RegionShapeEditor({ regions, onChange }: Props) {
+export function RegionShapeEditor({
+  regions,
+  onChange,
+  label = 'Working hours',
+  hideLegend = false,
+}: Props) {
   const keys = useRowKeys(regions.length)
 
   const update = (index: number, patch: Partial<DefaultRegion>) =>
@@ -37,9 +66,13 @@ export function RegionShapeEditor({ regions, onChange }: Props) {
     onChange([...regions, last ? nextAfter(last.end) : { start: '09:00', end: '18:00' }])
   }
 
+  // `min-w-0` on the fieldset is not decoration: a fieldset's default
+  // `min-inline-size` is `min-content`, so without it the element refuses to
+  // shrink below its widest row and quietly overflows its container. In the
+  // calendar's 22rem column that put the remove buttons past the panel edge.
   return (
-    <fieldset>
-      <legend className={labelClass}>Working hours</legend>
+    <fieldset className="min-w-0">
+      <legend className={hideLegend ? 'sr-only' : labelClass}>{label}</legend>
 
       <div className="space-y-2">
         {regions.length === 0 && (
@@ -53,23 +86,23 @@ export function RegionShapeEditor({ regions, onChange }: Props) {
           <div key={keys.at(index)} className="flex items-center gap-2">
             <input
               type="time"
-              aria-label={`Working hours ${index + 1} start`}
+              aria-label={`${label} ${index + 1} start`}
               value={region.start}
               onChange={(e) => update(index, { start: e.target.value })}
-              className={`${fieldClass} tnum flex-1`}
+              className={timeFieldClass}
             />
             <span className="text-xs text-muted">to</span>
             <input
               type="time"
-              aria-label={`Working hours ${index + 1} end`}
+              aria-label={`${label} ${index + 1} end`}
               value={region.end}
               onChange={(e) => update(index, { end: e.target.value })}
-              className={`${fieldClass} tnum flex-1`}
+              className={timeFieldClass}
             />
             <button
               type="button"
               onClick={() => remove(index)}
-              aria-label={`Remove working hours ${index + 1}`}
+              aria-label={`Remove ${label.toLowerCase()} ${index + 1}`}
               className="shrink-0 rounded px-2 py-1 text-muted transition hover:text-commit"
             >
               ×
@@ -78,7 +111,10 @@ export function RegionShapeEditor({ regions, onChange }: Props) {
         ))}
       </div>
 
-      <div className="mt-2 flex items-center gap-3">
+      {/* Wraps rather than squeezing: in the calendar's 22rem column the hint
+          has nowhere near the room it has in settings, and a line of prose
+          crushed into forty pixels is worse than one sitting on its own row. */}
+      <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-2">
         <GhostButton
           type="button"
           onClick={add}
@@ -86,7 +122,7 @@ export function RegionShapeEditor({ regions, onChange }: Props) {
         >
           + Add a stretch
         </GhostButton>
-        <p className="text-xs leading-relaxed text-muted">
+        <p className="min-w-40 flex-1 text-xs leading-relaxed text-muted">
           Leave a gap for anything unstructured. Planning resumes after it.
         </p>
       </div>
@@ -102,7 +138,7 @@ export function RegionShapeEditor({ regions, onChange }: Props) {
  * and giving one an identity would put it in settings and in storage for the
  * sake of a list. So identity is tracked here instead: the removals and
  * additions both go through this component, and any other change to the list
- * (a different day opened in the dialog) is re-keyed by length.
+ * (a different day loaded into the editor) is re-keyed by length.
  */
 function useRowKeys(count: number) {
   const rows = useRef<number[]>([])

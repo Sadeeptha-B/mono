@@ -11,12 +11,16 @@
  * cost you the block you are in.
  *
  * All durations come from live settings. A guide that disagrees with the app is
- * worse than no guide.
+ * worse than no guide — which is also why Settings opens from this header. The
+ * section below explains what each one does using its current value, so the
+ * page you are reading is the natural place to change one, and reading it used
+ * to mean going back to the day first.
  */
 
 import { useMemo, type ReactNode } from 'react'
 
 import { PixelCat } from '../Companion/PixelCat'
+import { headerControlClass } from '../ui'
 import { formatTimer } from '@/domain/time'
 import { DAY_HASH } from '@/hooks/useRoute'
 import { useSession } from '@/store/session'
@@ -25,7 +29,15 @@ import type { ActiveSegment, Ms, Settings } from '@/domain/types'
 
 type Section = { id: string; title: string; body: ReactNode }
 
-export function GuidePage({ now, active }: { now: Ms; active: ActiveSegment | null }) {
+export function GuidePage({
+  now,
+  active,
+  onOpenSettings,
+}: {
+  now: Ms
+  active: ActiveSegment | null
+  onOpenSettings: () => void
+}) {
   const settings = useSession((s) => s.session.settings)
   const phase = useSession((s) => s.phase)
 
@@ -74,10 +86,10 @@ export function GuidePage({ now, active }: { now: Ms; active: ActiveSegment | nu
             {/* A page invites you to stay, so whatever the timer would be
                 saying stays in sight — including when it is waiting on you. */}
             <HeaderStatus active={active} now={now} phase={phase} />
-            <a
-              href={DAY_HASH}
-              className="rounded-lg border border-line px-3 py-1.5 text-xs text-body transition hover:bg-surface-raised hover:text-bright"
-            >
+            <button type="button" onClick={onOpenSettings} className={headerControlClass}>
+              Settings
+            </button>
+            <a href={DAY_HASH} className={headerControlClass}>
               Back to today
             </a>
           </div>
@@ -383,10 +395,27 @@ function sectionsFor(
       body: (
         <>
           <P>
+            Every day opens with two questions on the timer.{' '}
+            <Em>What's already fixed today?</Em> comes first, because what you cannot
+            move decides how much of the day is left to spend. Then{' '}
+            <Em>are these your hours today?</Em>, pre-filled with your usual shape — a
+            glance on an ordinary morning.
+          </P>
+          <P>
+            Neither one gates the other. The dots under the timer move between them in
+            either order, nothing you have typed is lost by switching, and{' '}
+            <Em>Start the day</Em> finishes from whichever you are looking at. With
+            nothing fixed today, that is the whole of it: press it and Mono plans your
+            hours end to end. Those same dots keep working afterwards as a map of where
+            in the day you are — hover one to see what it is. They never skip ahead,
+            though: naming a block is not something you can click past.
+          </P>
+          <P>
             <Em>Working hours</Em> are the only time Mono is allowed to plan in.
             Settings holds the recurring shape every day starts from — 09:00–18:00
-            unless you change it. <Em>Hours</Em> on the calendar changes today only;
-            tomorrow starts from the default again.
+            unless you change it. The opening question and <Em>Hours</Em> on the
+            calendar both change today only; tomorrow starts from the default again,
+            and confirming the shape unchanged leaves today following it.
           </P>
           <P>
             Hours are a list of stretches rather than a single end time, so an
@@ -396,9 +425,24 @@ function sectionsFor(
           </P>
           <P>
             <Em>Commitments</Em> are the things already fixed: a meeting, a call, the
-            school run. The first one is asked for on the stage, because a day with no
-            shape has nothing to plan around. After that, use <Em>+ Commitment</Em> on
-            the calendar. Mono fills the runway up to it and resumes afterwards.
+            school run. After the opening question, use <Em>+ Commitment</Em> on the
+            calendar. Mono fills the runway up to one and resumes afterwards.
+          </P>
+          <P>
+            A commitment can also cost time either side of itself, under{' '}
+            <Em>+ Time either side</Em>. A four o'clock swim is an hour in the pool, half
+            an hour getting changed and getting there, and twenty minutes getting back —
+            so it really occupies half past three to twenty past five, and a block
+            offered at twenty to four is a block you were never going to be at your desk
+            for. Mono keeps that whole span clear and draws the travel beside the
+            commitment rather than inside it, so the calendar still says how long you
+            were actually swimming.
+          </P>
+          <P>
+            <Em>Hours</Em>, <Em>+ Break</Em> and <Em>+ Commitment</Em> open in place,
+            just under the calendar's heading, rather than in a window over the top of
+            it. Every one of them asks a question about the day — when, and what does it
+            displace — and the day is drawn directly below the answer.
           </P>
           <Note>
             Adding a commitment clears every break you had pinned for later. The shape

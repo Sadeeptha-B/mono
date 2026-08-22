@@ -16,6 +16,16 @@ export const fieldClass =
 export const labelClass =
   'mb-1.5 block text-xs font-medium tracking-wide text-muted uppercase'
 
+/**
+ * The controls in the top-right of a view: Guide, Settings, Back to today.
+ *
+ * Shared because there are two headers — the day and the guide — and they carry
+ * some of the same controls. Two copies of this string drifted apart once
+ * already.
+ */
+export const headerControlClass =
+  'rounded-lg border border-line px-3 py-1.5 text-xs text-body transition hover:bg-surface-raised hover:text-bright'
+
 export function PrimaryButton({
   children,
   className = '',

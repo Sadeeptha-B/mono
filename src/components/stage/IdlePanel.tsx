@@ -1,110 +1,16 @@
 /**
- * The resting state, and the first thing a new day asks for.
+ * The resting state: nothing is running, and Mono is offering the next block.
  *
- * The requirements open with "prompt the user to note his next commitment and
- * at what time", so when the day has no shape yet that prompt *is* the stage —
- * asked in place, not behind a button in the timeline header. Once there is a
- * commitment this collapses to the start control, and further commitments are
- * added from the timeline.
+ * The day's opening questions used to live here too, gated on there being no
+ * commitments yet. They are their own panel now (`DaySetupPanel`), for two
+ * reasons: they ask about hours as well, and "no commitments" was never a
+ * usable stand-in for "not asked yet" — a day with nothing fixed in it answered
+ * the question by having nothing to say, and got asked forever.
  */
 
-import { useEffect, useRef, useState } from 'react'
-import { format } from 'date-fns'
-
-import {
-  fieldClass,
-  GhostButton,
-  labelClass,
-  MinutesInput,
-  PrimaryButton,
-  StagePrompt,
-} from '../ui'
-import { COMMITMENT_MINUTES, parseBoundedMinutes } from '../minutes'
-import { formatClock, formatDuration, nextHalfHour, wallClockOn } from '@/domain/time'
+import { GhostButton, PrimaryButton, StagePrompt } from '../ui'
+import { formatClock, formatDuration } from '@/domain/time'
 import type { BlockKind, Ms } from '@/domain/types'
-
-export function FirstCommitmentPanel({
-  now,
-  onAdd,
-}: {
-  now: Ms
-  onAdd: (input: { title: string; startsAt: number; durationMin: number }) => void
-}) {
-  const [title, setTitle] = useState('')
-  const [time, setTime] = useState(() => format(nextHalfHour(now), 'HH:mm'))
-  const [durationText, setDurationText] = useState(String(COMMITMENT_MINUTES.fallback))
-  const input = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    input.current?.focus()
-  }, [])
-
-  // Resolved against today's calendar here, at the edge. `now` is read on every
-  // render for this, but never written back into state — which is what would
-  // reset the form on each tick while typing.
-  const startsAt = wallClockOn(now, time)
-  const duration = parseBoundedMinutes(
-    durationText,
-    COMMITMENT_MINUTES.min,
-    COMMITMENT_MINUTES.max,
-  )
-  const valid = title.trim().length > 0 && startsAt !== null && duration !== null
-
-  return (
-    <form
-      className="max-w-md"
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (!valid || startsAt === null || duration === null) return
-        onAdd({ title: title.trim(), startsAt, durationMin: duration })
-      }}
-    >
-      <StagePrompt
-        eyebrow="To begin"
-        title="What's next in your day?"
-        detail="Name your next commitment and Mono will fill the runway up to it."
-      />
-
-      <input
-        ref={input}
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        placeholder="Daily standup"
-        aria-label="Next commitment"
-        maxLength={80}
-        className={`${fieldClass} py-3 text-lg`}
-      />
-
-      <div className="mt-3 grid max-w-xs grid-cols-2 gap-3">
-        <div>
-          <label className={labelClass} htmlFor="first-commitment-time">
-            At
-          </label>
-          <input
-            id="first-commitment-time"
-            type="time"
-            value={time}
-            onChange={(e) => setTime(e.target.value)}
-            className={`${fieldClass} tnum`}
-          />
-        </div>
-        <MinutesInput
-          id="first-commitment-duration"
-          label="For (minutes)"
-          text={durationText}
-          onText={setDurationText}
-          {...COMMITMENT_MINUTES}
-        />
-      </div>
-
-      <div className="mt-4">
-        <PrimaryButton type="submit" disabled={!valid}>
-          Plan around it
-        </PrimaryButton>
-      </div>
-    </form>
-  )
-}
 
 export function ReadyPanel({
   nextBlockKind,
@@ -148,6 +54,10 @@ export function ReadyPanel({
  * was not for working. The calendar beside it still shows what is coming, and
  * the escape hatch changes the declared shape rather than quietly ignoring it —
  * so working now means saying so.
+ *
+ * That escape hatch opens the calendar's own hours editor, in place, rather
+ * than a dialog over the top of it. The thing you are about to change is drawn
+ * beside this panel; covering it up to ask about it was always backwards.
  */
 export function OutsideHoursPanel({
   now,

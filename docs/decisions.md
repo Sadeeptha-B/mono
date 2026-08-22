@@ -76,7 +76,7 @@ Never introduce a `remaining -= 1` counter.
 | Never auto-complete after being away | Banking a block the user spent at lunch would poison the history, and the history is the point. On resolution the block is credited at `endsAt`, not at `now`, and the unaccounted stretch is recorded so the day still adds up. |
 | The priorities timer is a real block | It consumes plan time and lands in history like anything else, rather than being a special case outside the model. Not being able to name a purpose is worth knowing. |
 | Phase is not persisted | It is which prompt is open. A running *segment* must survive a reload, and does; a stale question must not. |
-| Prompts are inline on the stage, not modals | "Do you need a break?" is only answerable while you can see the rest of the day. Dialogs are reserved for genuine asides: settings, and the calendar's own editors. |
+| Prompts are inline on the stage, not modals | "Do you need a break?" is only answerable while you can see the rest of the day. Dialogs are reserved for genuine asides: settings, and the calendar's own editors. **The exemption for the calendar's editors was dropped on 2026-08-22 — see the log.** Settings is now the only dialog. |
 | Outside working hours, Mono says so | It names the next stretch and refuses to offer a block. The escape hatch is changing the declared hours, so working anyway means saying so. |
 
 ### The companion
@@ -100,10 +100,15 @@ Things that have already bitten.
 
 **`now` ticks every second — never put it in a `useEffect` dependency list.**
 The commitment form reset itself once a second, which reads while typing as the
-field clearing on every keystroke. The fix is `useSeedOnOpen`, which seeds on
-open only and reads the current time through a ref. Reading `now` during
-*render* is fine; writing it into state on a tick is not. There is a regression
-test that types with the real clock running.
+field clearing on every keystroke. Reading `now` during *render* is fine;
+writing it into state on a tick is not. There is a regression test that types
+with the real clock running.
+
+The fix used to be `useSeedOnOpen`, a hook that seeded a permanently-mounted
+dialog once per open and read the clock through a ref. It is gone: the forms
+mount when they open now, so they seed from a lazy `useState` initialiser and
+the hazard cannot arise. Anything that goes back to an `open` prop on a mounted
+form brings the hazard back with it.
 
 **Zustand's `persist` rehydrates synchronously, during module evaluation.**
 With a sync storage, `migrate` and `onRehydrateStorage` execute at the
@@ -145,6 +150,27 @@ Use `{ exact: true }` liberally, and scope with `role=main` (the stage) versus
 
 **Calendar blocks are found by their `title`**, in the shape
 `Deep · 2:00 PM · 45m`. Changing that attribute breaks the e2e helpers.
+
+**Forms that never used to coexist now do.** While the editors were dialogs,
+only one could be on screen, so identical labels in two of them were harmless.
+Inline, the day's opening question, the calendar's composer and the settings
+panel can all be mounted at once. Two consequences, both structural rather than
+worked around in the tests: `RegionShapeEditor` takes a `label`, so today's
+hours are `Today's hours 1 start` while the recurring shape stays
+`Working hours 1 start`; and `CommitmentFields` takes an `idPrefix`, because two
+`id="commitment-title"` inputs point every second label at the first field.
+
+**"Today" is a substring of "Are these your hours today?"** — one of the two
+headings the app opens with, and `getByRole('heading', { name: 'Today' })` is the
+readiness gate in `openMono`, load-bearing for every single e2e test. It needs
+`{ exact: true }`. So does `Settings`, which the guide's own contents list
+matches with "Settings, one by one".
+
+**The stage carousel duplicates the setup panel's own navigation.** Both the
+dot and the ghost button go to the other opening question, so both carry the
+same accessible name — correct for a reader, ambiguous for a locator. The e2e
+helper scopes to `role=navigation` named "Stages of the day". Do not "fix" the
+duplicate names by making one of them vaguer.
 
 **A finished block is not in the log until the user answers.** `timerElapsed`
 moves `focusing` to `blockComplete` and appends *nothing* — the block stays
@@ -247,3 +273,185 @@ stay plain node scripts, runnable without a build — and that copy is now on it
 second drift. It has cost a misleading picture twice and a wrong app zero
 times, so the trade still holds; but when a script copies a constant, the copy
 needs updating in the same commit as the original, not the next review.
+
+**2026-08-22 — The last of the modals, and a day that asks about its hours.**
+Three changes that turned out to be one.
+
+*The calendar's editors are no longer dialogs.* The settled row above says
+prompts are inline "because 'do you need a break?' is only answerable while you
+can see the rest of the day", and then exempts "the calendar's own editors".
+That exemption does not survive being read next to its own justification.
+`Hours`, `+ Break` and `+ Commitment` are edits *to* the timeline, and `Dialog`
+centres a 30rem card over an `ink/80` backdrop with a blur — it hid precisely
+the thing needed to answer "when?". They expand under the calendar's heading
+now, and the hour axis, which already scrolled, simply gets shorter. Settings is
+the only dialog left, and is the one thing here that really is an aside.
+
+A pleasant side effect: `useSeedOnOpen` is gone. It existed because a dialog
+stays mounted behind an `open` prop, so seeding a form from `now` re-ran every
+second and read, while typing, as the field clearing itself. A composer that
+mounts when it opens seeds from a lazy initialiser and cannot have the problem.
+The regression test still types with the real clock running, and now covers the
+opening question and the composer rather than the stage and a dialog.
+
+*The day asks for its hours before it asks for anything else.* It never did,
+which was backwards: working hours are the only time Mono may plan in, so every
+block it offers is downstream of them, and they were reachable only through a
+`text-xs` button in a 22rem column. Two steps rather than one form, because
+every other panel on the stage asks exactly one thing. Step one is pre-filled
+from the recurring shape, so an ordinary morning is a glance and one click.
+
+*`day/shaped`, and the bug it turned up.* The opening prompt used to be gated on
+`hasCommitments`, which is not the same question as "have we asked yet" — a day
+with nothing fixed in it answered by having nothing to say, and got asked
+forever, so it could never reach the start control at all. There was no skip.
+The marker is a real event rather than a stamped `regionOverrides`, which was
+the cheaper option: stamping would have detached *every* day from the recurring
+default, and "today's regions are derived, not seeded" is the whole reason
+changing the default shape reshapes an uncustomised day. Confirming an unedited
+shape therefore writes nothing. It also gives "Nothing fixed today" somewhere to
+be recorded.
+
+Consequently the setup now outranks the out-of-hours panel, which used to
+outrank everything. Opening Mono at 08:30 against a 09:00 start is the commonest
+time to be looking at this, and being told "outside working hours" by the app
+that has not yet asked where those hours are is a closed loop. The panel folds
+the clock in as context instead — "It's 8:30 — your day starts at 9:00" — and
+the out-of-hours escape hatch now opens the calendar's editor rather than a
+dialog, so there is one hours editor reached from two places instead of two.
+
+*Settings opens from the guide.* It always should have: the guide explains each
+setting using its live value, so it is the page you are most likely to be
+reading when you want to change one, and it was the one place you could not.
+`App` renders the panel on both routes; the route swap only changes the view.
+
+**2026-08-22 — Commitments first, the stage carousel, and the time around a
+commitment.** Three more, from the same session.
+
+*The opening questions swapped order.* Commitments now come before hours. What
+is already fixed is the part of the day you do not control, and it decides how
+much of the day is left to declare — asking "when are you working?" first meant
+asking it again the moment the user remembered the school run. Note this
+reverses the order shipped earlier the same day, which had hours first on the
+grounds that they are the more fundamental input. Both are true; the ordering
+argument that wins is the one about which answer changes the other.
+
+*They are no longer a sequence.* Two questions with a Next button is a wizard,
+and a wizard for two questions is ceremony. `StageCarousel` moves between them
+in either direction, and `Start the day` finishes from whichever one is on
+screen. The consequence worth knowing: **the drafts moved up into
+`DaySetupPanel`**, because it is the component that stays mounted across the
+switch. Putting them in the two panels would lose whatever was typed the moment
+you changed your mind about which question to answer first, and there is an e2e
+test holding that shut.
+
+The same strip stays on screen for the rest of the day as an indicator, which is
+why it names the session phases too. It deliberately cannot navigate to them.
+Being able to click past "One thing" would skip naming the block, and naming the
+block is the entire product. The dots carry `aria-label` and `title` and no text
+content at all — visually-hidden labels would collide with the timer's own
+words, since "Break" is both a stage and what the timer says during one, and
+that would make every text query on the stage ambiguous.
+
+*Two follow-ups from review, both about state that outlived the thing it
+described.*
+
+Saving the calendar's hours editor **without editing anything** used to write
+the draft back regardless, which stamped a per-day override that changed not one
+minute of the day — and silently detached it from the recurring shape, so a
+later edit to the default in settings no longer reached it. The setup panel
+already guarded against this and the composer did not, which is the giveaway:
+one rule, two implementations. There is now one, `hoursToSave`, and it returns
+`null` for an untouched draft. Both e2e halves are covered — an unchanged save
+must still follow the default, and a real edit must still override.
+
+**Day-specific UI state is reset by the session's `generation`.** Three rounds of
+review on one bug, and the first two fixes were aimed at signals that only
+correlated with it.
+
+`setupStage` — which of the two opening questions is on screen — **survived the
+midnight reset**. The store resets `phase` in `checkDayRollover` and clears the
+day's answers, but that state lives in `App`, so a tab left open overnight
+reopened on whichever question was last looked at rather than on commitments,
+which is the whole point of the order. It is adjusted during render against the
+previous `dayShaped`, the way `MinutesField` does it, rather than in an effect
+that would paint yesterday's question for a frame first. The general lesson is
+worth more than the fix: anything that mirrors "where the user is in the day"
+has to be reset by the day reset, and the reset lives in the store while some of
+that state does not.
+
+It took three rounds of review to get this right, and the first two answers were
+both *signals inferred from symptoms*. Worth recording the failures, because the
+shape of them is the lesson.
+
+Attempt one watched `shapedAt` going from set to null. Wrong in the case that
+matters most: a day nobody answered rolls over with `shapedAt` null on *both*
+sides, so the flag never moves. Attempt two watched `dayKey`, which fixed that
+and also caught the larger version of the same bug — **the calendar's composers
+hold day-specific drafts too**, seeded at mount, and nothing closed them at the
+rollover. An hours draft edited at 23:59 could be saved at 00:01 onto a day it
+was never about; the break and commitment composers resolve their wall-clock
+times against whatever `now` is when you press the button, so they would have
+booked yesterday's plan into today. But `dayKey` does not move when an import
+lands on the *same* day, so a same-day import into an unanswered day still left
+the old drafts on screen.
+
+Three attempts, three different cases missed, all for the same reason: the UI
+was trying to deduce "the session was replaced" from things that merely
+correlate with it. So the store says it outright. **`generation` is a counter
+bumped at the two places that replace the session** — the midnight reset and an
+import — and nothing else. There is no fourth signal to go looking for, because
+this one is the fact rather than a shadow of it.
+
+Two mechanisms hang off it. `App` resets its own day-specific state when the
+generation moves (which opening question is showing, which calendar editor is
+expanded — closing that one unmounts all three composers and takes their drafts
+with them). And `Stage` is **keyed** by it, which re-seeds every draft its
+panels hold: the setup panel's two forms, the purpose being typed, the break
+length chosen. Remounting is safe there precisely because neither discontinuity
+can happen mid-segment — `checkDayRollover` returns early while something is
+running, and an import lands idle — so there is no timer in that subtree to
+interrupt.
+
+**The other half is that an untouched draft should not exist at all.** A seeded
+copy of the day's hours is a photograph, and the day can change underneath it
+without any discontinuity: edit the recurring shape in settings while the
+opening question is open, and the panel keeps showing the old one — then saves
+it back as an override, silently undoing the edit. `useHoursDraft` holds `null`
+until the user actually types, and `null` renders whatever the day currently
+says, re-read every render. Only a draft someone is in the middle of typing is
+held, and that one is deliberately *not* disturbed by a settings change; it is
+cleared by the generation, like everything else.
+
+Both halves have e2e coverage, including the control cases — an edited draft
+must survive a settings change, and a real edit must still override the day.
+
+The rule, generalised: **if a piece of state describes the current session,
+something has to notice when that session is replaced — and it should be told,
+not left to infer it.** For the store that is `day/reset`; for React state it is
+`generation`, compared during render or used as a `key`; and state that can be
+derived from the store on every render is better than state that has to be
+reset at all.
+
+While in there: `Start the day` is disabled when the draft resolves to no
+working hours at all, which is correct — Mono plans inside them and nowhere
+else — but it said nothing about why, on a panel where the hours are behind the
+other question. It explains itself now.
+
+*Commitments gained `prepMin` and `recoverMin`.* A four o'clock swim is an hour
+in the pool and two hours out of the day: getting changed and getting there
+beforehand, getting back afterwards. Mono knew about the hour and offered a deep
+block at twenty to four.
+
+Three decisions inside that one. The blocked interval is `commitmentSpan`, and
+it is what `busy` and the still-ahead-of-us filter both use, so the planner
+needed no other change — but the **timeline entry for the commitment keeps the
+commitment's own length**, with the margins emitted as their own
+`commitment-margin` entries. Merging them into one long entry would have been
+less code and would say the user is in the meeting while they are in the car.
+And both fields are **optional**, because logs written before today do not have
+them and `onRehydrateStorage` replays events raw, without going through the
+import sanitiser — so the `?? 0` has to live somewhere every reader passes,
+which is `commitmentSpan`. `sanitiseMarginMinutes` returns three values rather
+than two for the same reason: absent is normal, present-and-broken is not, and
+zero is a perfectly good answer where a zero-length commitment would not be.

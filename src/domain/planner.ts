@@ -11,6 +11,8 @@
 
 
 import {
+  commitmentEvent,
+  commitmentSpan,
   minutesToMs,
   type ActiveSegment,
   type BlockKind,
@@ -85,13 +87,41 @@ export function derivePlan(input: DerivePlanInput): Timeline {
   }
 
   // Commitments that are still ahead of us shape the plan; ones already behind
-  // us are history's business, not the planner's.
-  const upcomingCommitments = commitments.filter(
-    (c) => toCommitmentInterval(c).end > planFrom,
-  )
+  // us are history's business, not the planner's. "Behind us" means the whole
+  // span, so a meeting that has finished but still has twenty minutes of
+  // getting back attached to it is not yet in the past.
+  const upcomingCommitments = commitments.filter((c) => commitmentSpan(c).end > planFrom)
   for (const commitment of upcomingCommitments) {
-    const { start, end } = toCommitmentInterval(commitment)
-    entries.push({ kind: 'commitment', commitment, startsAt: start, endsAt: end })
+    // The commitment is drawn at its own length, and the time it costs either
+    // side is drawn as its own thing. Merging them into one long entry would
+    // say the user is in the meeting while they are still in the car.
+    const event = commitmentEvent(commitment)
+    entries.push({
+      kind: 'commitment',
+      commitment,
+      startsAt: event.start,
+      endsAt: event.end,
+    })
+
+    const span = commitmentSpan(commitment)
+    if (span.start < event.start) {
+      entries.push({
+        kind: 'commitment-margin',
+        commitment,
+        side: 'before',
+        startsAt: span.start,
+        endsAt: event.start,
+      })
+    }
+    if (span.end > event.end) {
+      entries.push({
+        kind: 'commitment-margin',
+        commitment,
+        side: 'after',
+        startsAt: event.end,
+        endsAt: span.end,
+      })
+    }
   }
 
   const upcomingBreaks = overrides.filter(
@@ -110,7 +140,7 @@ export function derivePlan(input: DerivePlanInput): Timeline {
   // Anything the user has already committed the time to — meetings and the
   // breaks they pinned — is unavailable. What is left over gets filled.
   const busy = mergeIntervals([
-    ...upcomingCommitments.map(toCommitmentInterval),
+    ...upcomingCommitments.map(commitmentSpan),
     ...upcomingBreaks.map(toBreakInterval),
   ])
 
@@ -246,11 +276,6 @@ function isBetterFill(a: Fill, b: Fill, policy: Settings['plannerPolicy']): bool
   if (a.focusMs !== b.focusMs) return a.focusMs > b.focusMs
   return a.deepCount > b.deepCount
 }
-
-const toCommitmentInterval = (c: Commitment): Interval => ({
-  start: c.startsAt,
-  end: c.startsAt + minutesToMs(c.durationMin),
-})
 
 const toBreakInterval = (b: PlannedBreak): Interval => ({
   start: b.startsAt,

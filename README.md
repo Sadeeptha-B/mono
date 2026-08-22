@@ -54,9 +54,12 @@ the timer occupies, not in a modal over the top of it. The **calendar** on the
 right lays the same derived timeline out against real hours, so a 45-minute
 block looks like 45 minutes and the gaps read as gaps.
 
-Dialogs are reserved for genuine asides: settings, and editing the timeline
-from its own header. They are sized to the viewport rather than to their
-content — the title stays put and the body scrolls — and they close three ways:
+Both panels edit themselves in place. The calendar's `Hours`, `+ Break` and
+`+ Commitment` expand under its own heading rather than opening a window over
+the page — every one of them asks a question about the day, and the day is
+drawn directly below the answer. **Settings is the only dialog left**, because
+it is the only genuine aside. It is sized to the viewport rather than to its
+content — the title stays put and the body scrolls — and it closes three ways:
 the ×, escape, or a click on the backdrop.
 
 The **guide** is the exception that proves the rule: it is read rather than
@@ -97,11 +100,25 @@ about how the day has gone.
   boundary, it asks what happened and records the unaccounted stretch, so the
   day still adds up.
 - **The plan resets at midnight**, but never mid-block, and history is kept.
-- **Commitments** are asked for on the stage when the day has no shape yet, and
-  added from the calendar header (`+ Commitment`) after that. Both resolve a
-  wall-clock time against today's calendar at the edge; the domain only ever
-  sees epoch milliseconds. A commitment outside every work region still shows on
-  the calendar, but it does not extend the horizon.
+- **The day opens with two questions** on the stage: what is already fixed, then
+  today's hours. Commitments come first because they are the part of the day you
+  cannot move, so they decide how much is left to declare. Neither gates the
+  other — the stage carousel moves between them freely and `Start the day`
+  finishes from either — but the carousel never skips ahead to naming a block.
+  Finishing appends `day/shaped`, a record of having been *asked*: an empty day
+  is a real answer, and confirming an unedited shape deliberately writes no
+  region override, so the day stays derived from the default.
+- **A commitment can cost time either side of itself.** `prepMin` and
+  `recoverMin` cover getting ready, travelling and settling back in — a 4pm swim
+  is an hour long and occupies 3:30 to 5:20. The planner keeps the whole span
+  clear; the calendar draws the travel as its own entries so the commitment
+  still shows its real length. Both are optional, so logs written before they
+  existed replay unchanged. Read them through `commitmentSpan`.
+- **Commitments** after the opening question are added from the calendar header
+  (`+ Commitment`). Both surfaces resolve a wall-clock time against today's
+  calendar at the edge; the domain only ever sees epoch milliseconds. A
+  commitment outside every work region still shows on the calendar, but it does
+  not extend the horizon.
 - **Outside working hours Mono says so** and names the next stretch, rather than
   offering a block in time you declared unstructured. The way to work anyway is
   to change the hours.
@@ -109,9 +126,10 @@ about how the day has gone.
 ## Working hours
 
 Settings holds the recurring daily shape — a list of stretches, `09:00-18:00` by
-default. Every day starts seeded from it. Editing a day's hours from the
-calendar (`Hours`) overrides that day only; the midnight reset drops the
-override so tomorrow starts from the default again.
+default. Every day starts seeded from it. Editing a day's hours — from the
+opening question, or from the calendar's `Hours` afterwards — overrides that day
+only; the midnight reset drops the override so tomorrow starts from the default
+again.
 
 Regions do not wrap past midnight — the plan is scoped to a calendar day, so a
 late stretch ends at 23:59 rather than running into tomorrow.

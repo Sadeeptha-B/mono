@@ -40,6 +40,27 @@ type SessionStore = {
   session: SessionState
   phase: Phase
   dayKey: string | null
+  /**
+   * Bumped whenever the session is *replaced* rather than appended to: the
+   * midnight reset, and an import.
+   *
+   * This exists for the UI, and specifically for the drafts it holds — a
+   * half-typed set of working hours, the commitment being written, the purpose
+   * being named. Every one of those describes a particular day's session, and
+   * when that session is swapped out underneath them they are not stale data,
+   * they are answers to a question nobody is asking any more.
+   *
+   * It is a counter rather than a flag anything can read a meaning into, and it
+   * is set at the two places that cause the discontinuity rather than inferred
+   * from a symptom of it. Three separate bugs came from inferring: `dayKey`
+   * does not move when an import lands on the same day, `shapedAt` does not
+   * move when the day was never answered, and between them they missed a
+   * different case each time. There is no third signal to find, because this
+   * one is the fact itself.
+   *
+   * Not persisted. A reload remounts everything, so the drafts are fresh anyway.
+   */
+  generation: number
 
   dispatch: (action: Action) => void
   append: (...events: MonoEvent[]) => void
@@ -50,6 +71,8 @@ type SessionStore = {
   removeBreak: (id: string) => void
   setRegions: (regions: WorkRegion[]) => void
   updateSettings: (patch: Partial<Settings>) => void
+  /** The user answered the day's opening questions. Records only that. */
+  shapeDay: () => void
 
   /** Roll the day over if the calendar day changed. Safe to call every tick. */
   checkDayRollover: (now: Ms) => void
@@ -81,6 +104,7 @@ export const useSession = create<SessionStore>()(
       session: initialState,
       phase: initialPhase,
       dayKey: null,
+      generation: 0,
 
       append: (...events) =>
         set((state) => ({
@@ -123,6 +147,8 @@ export const useSession = create<SessionStore>()(
       updateSettings: (patch) =>
         get().append({ type: 'settings/changed', at: Date.now(), patch }),
 
+      shapeDay: () => get().append({ type: 'day/shaped', at: Date.now() }),
+
       checkDayRollover: (now) => {
         const today = dayKey(now)
         const { dayKey: storedDay, session } = get()
@@ -138,7 +164,9 @@ export const useSession = create<SessionStore>()(
         if (session.active) return
 
         get().append({ type: 'day/reset', at: now })
-        set({ dayKey: today, phase: initialPhase })
+        // A discontinuity, not an append: yesterday's answers are gone and
+        // anything the UI was holding about them goes with them.
+        set({ dayKey: today, phase: initialPhase, generation: get().generation + 1 })
       },
 
       exportJSON: () =>
@@ -157,7 +185,16 @@ export const useSession = create<SessionStore>()(
         // Same rule as a reload: only a *running* segment resurrects a phase.
         // After an out-of-date import there is none — the day reset inside
         // `readImport` only runs when nothing is active — so this lands idle.
-        set({ events, session, dayKey: day, phase: phaseForActive(session) })
+        // The whole session was replaced, so this is a discontinuity even when
+        // the imported file turns out to be for the same day — which is
+        // precisely the case that has no other tell.
+        set({
+          events,
+          session,
+          dayKey: day,
+          phase: phaseForActive(session),
+          generation: get().generation + 1,
+        })
       },
     }),
     {

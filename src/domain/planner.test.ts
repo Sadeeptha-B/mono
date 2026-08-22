@@ -63,6 +63,9 @@ const commitment = (
   title = id,
 ): Commitment => ({ id, title, startsAt, durationMin })
 
+const commitmentMargins = (t: Timeline) =>
+  t.entries.filter((e) => e.kind === 'commitment-margin')
+
 const plannedBlocks = (t: Timeline) =>
   t.entries.filter((e) => e.kind === 'planned-block')
 
@@ -209,6 +212,81 @@ describe('derivePlan', () => {
 
     for (const block of plannedBlocks(plan)) {
       expect(block.startsAt >= at(16) || block.endsAt <= at(15)).toBe(true)
+    }
+  })
+
+  it('keeps the time around a commitment clear as well as the commitment', () => {
+    // The 4pm swim: an hour in the pool, half an hour getting there, twenty
+    // minutes getting back. Nothing may be planned between 3:30 and 5:20.
+    const swim: Commitment = {
+      ...commitment('swim', at(16), 60),
+      prepMin: 30,
+      recoverMin: 20,
+    }
+    const plan = derivePlan(input({ commitments: [swim] }))
+
+    for (const block of plannedBlocks(plan)) {
+      expect(block.startsAt >= at(17, 20) || block.endsAt <= at(15, 30)).toBe(true)
+    }
+
+    // 2:00 to 3:30 is 90 minutes, which is exactly two deep blocks. Without the
+    // half hour of getting ready it would have been 2:00 to 4:00 and held two
+    // deep plus a short.
+    const before = plannedBlocks(plan).filter((b) => b.endsAt <= at(15, 30))
+    expect(before).toHaveLength(2)
+    expect(before.every((b) => b.blockKind === 'deep')).toBe(true)
+    expect(before[0]?.startsAt).toBe(at(14))
+    expect(before.at(-1)?.endsAt).toBe(at(15, 30))
+  })
+
+  it('draws the time around a commitment as its own entries, not a longer one', () => {
+    const swim: Commitment = {
+      ...commitment('swim', at(16), 60),
+      prepMin: 30,
+      recoverMin: 20,
+    }
+    const plan = derivePlan(input({ commitments: [swim] }))
+
+    // The commitment is still an hour long. Stretching it to cover the travel
+    // would say the user is in the pool while they are in the car.
+    const event = plan.entries.find((e) => e.kind === 'commitment')
+    expect(event).toMatchObject({ startsAt: at(16), endsAt: at(17) })
+
+    const around = commitmentMargins(plan)
+    expect(around).toHaveLength(2)
+    expect(around.find((e) => e.side === 'before')).toMatchObject({
+      startsAt: at(15, 30),
+      endsAt: at(16),
+    })
+    expect(around.find((e) => e.side === 'after')).toMatchObject({
+      startsAt: at(17),
+      endsAt: at(17, 20),
+    })
+  })
+
+  it('draws no margin entries for a commitment that costs nothing either side', () => {
+    const plan = derivePlan(input({ commitments: [commitment('standup', at(17), 15)] }))
+    expect(commitmentMargins(plan)).toHaveLength(0)
+  })
+
+  it('still counts a commitment as ahead of us while its cooldown runs', () => {
+    // The swim finished at 3pm; twenty minutes of getting back are still owed,
+    // so the 3:00-3:20 stretch is not free.
+    const swim: Commitment = { ...commitment('swim', at(14), 60), recoverMin: 20 }
+    const plan = derivePlan(input({ now: at(14, 55), commitments: [swim] }))
+
+    expect(plannedBlocks(plan).every((b) => b.startsAt >= at(15, 20))).toBe(true)
+    expect(commitmentMargins(plan)).toHaveLength(1)
+  })
+
+  it('charges preparation that starts before the working day against the day', () => {
+    // A 9:15 commitment with 30 minutes of prep reaches back to 8:45, outside
+    // the 9-6 region. The part inside the region still has to be kept clear.
+    const early: Commitment = { ...commitment('school', at(9, 15), 30), prepMin: 30 }
+    const plan = derivePlan(input({ now: at(8), commitments: [early] }))
+
+    for (const block of plannedBlocks(plan)) {
+      expect(block.startsAt >= at(9, 45)).toBe(true)
     }
   })
 

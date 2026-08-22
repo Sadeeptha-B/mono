@@ -4,6 +4,11 @@
  * Everything on screen is a view of one derived timeline. The stage shows the
  * current phase, the calendar shows all of it against the clock, and the
  * companion shows the mood — so none of them can disagree with the others.
+ *
+ * Two pieces of UI state live up here rather than where they are used. The
+ * calendar's open editor, because the stage opens the hours one too and there
+ * must only ever be one of it; and the settings panel, because it is the one
+ * thing reachable from both routes.
  */
 
 import { useMemo, useState } from 'react'
@@ -14,12 +19,11 @@ import { GuidePage } from '@/components/Guide/GuidePage'
 import { Companion } from '@/components/Companion/Companion'
 import { PixelCat } from '@/components/Companion/PixelCat'
 import { Stage } from '@/components/stage/Stage'
+import { StageCarousel } from '@/components/stage/StageCarousel'
+import { FIRST_SETUP_STAGE, stageFor, type SetupStageId } from '@/components/stage/stages'
 import { DayCalendar } from '@/components/Timeline/DayCalendar'
-import {
-  AddBreakDialog,
-  AddCommitmentDialog,
-  TodayHoursDialog,
-} from '@/components/Timeline/SegmentEditor'
+import { headerControlClass } from '@/components/ui'
+import type { ComposerKind } from '@/components/Timeline/SegmentEditor'
 
 import { useNow } from '@/hooks/useNow'
 import { useRoute, GUIDE_HASH } from '@/hooks/useRoute'
@@ -40,13 +44,14 @@ export function App() {
   const unlock = useUnlock()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [addingBreak, setAddingBreak] = useState(false)
-  const [addingCommitment, setAddingCommitment] = useState(false)
-  const [editingHours, setEditingHours] = useState(false)
+  const [composer, setComposer] = useState<ComposerKind | null>(null)
+  const [setupStage, setSetupStage] = useState<SetupStageId>(FIRST_SETUP_STAGE)
+  const [seenGeneration, setSeenGeneration] = useState(() => store.generation)
 
   const { phase, session } = store
   const planInput = useMemo(() => toPlanInput(store, now), [store, now])
   const timeline = useMemo(() => derivePlan(planInput), [planInput])
+  const regions = selectRegions(store, now)
 
   const nextBlock = timeline.entries.find((e) => e.kind === 'planned-block')
   const nextBlockKind: BlockKind | null =
@@ -55,6 +60,22 @@ export function App() {
   const planned = countPlannedFocus(timeline)
   const withinHours = isWithinRegions(now, timeline.regions)
   const upNext = nextRegionStart(now, timeline.regions)
+  const dayShaped = session.shapedAt !== null
+
+  // The session was replaced under us — midnight came round with the tab open,
+  // or a file was imported. The store resets its own state; this is the rest of
+  // it, which lives out here: which of the opening questions is on screen, and
+  // which calendar editor is expanded.
+  //
+  // Adjusted during render as React documents rather than in an effect, so the
+  // new session never paints the old one's state for a frame first.
+  if (seenGeneration !== store.generation) {
+    setSeenGeneration(store.generation)
+    setSetupStage(FIRST_SETUP_STAGE)
+    setComposer(null)
+  }
+
+  const stage = stageFor(phase, dayShaped, setupStage)
   const startBlock = (kind: BlockKind): void => {
     // The one gesture that unlocks audio and asks for notification permission.
     // Deliberately not awaited: the permission prompt is a browser-modal the
@@ -65,10 +86,29 @@ export function App() {
     store.dispatch({ type: 'startBlock', at: Date.now(), blockKind: kind })
   }
 
+  // Settings is the last dialog in Mono, and the only thing both routes offer.
+  // Opening it closes whatever the calendar had expanded: they both edit
+  // working hours, and two editors of the same thing on screen at once is a
+  // question about which one wins that nobody should have to ask.
+  const openSettings = () => {
+    setComposer(null)
+    setSettingsOpen(true)
+  }
+  const settings = (
+    <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+  )
+
   // A view swap rather than a mount swap: every hook above stays live, so a
   // block in flight keeps ticking, chiming and reconciling while the guide is
   // open. Nothing about the session depends on this component's subtree.
-  if (route === 'guide') return <GuidePage now={now} active={session.active} />
+  if (route === 'guide') {
+    return (
+      <>
+        <GuidePage now={now} active={session.active} onOpenSettings={openSettings} />
+        {settings}
+      </>
+    )
+  }
 
   return (
     <div className="min-h-dvh bg-ink">
@@ -92,11 +132,7 @@ export function App() {
             <a href={GUIDE_HASH} className={headerControlClass}>
               Guide
             </a>
-            <button
-              type="button"
-              onClick={() => setSettingsOpen(true)}
-              className={headerControlClass}
-            >
+            <button type="button" onClick={openSettings} className={headerControlClass}>
               Settings
             </button>
           </div>
@@ -115,13 +151,30 @@ export function App() {
             </div>
 
             {/* The stage: every prompt Mono makes happens here, in place. */}
-            <div className="flex flex-1 items-center py-8">
+            {/* The stage is centred in whatever room is left, with the stage
+                strip under it. Kept tight on purpose: the setup panel is the
+                tallest thing Mono ever shows, and its Start control has to
+                stay above the fold on a laptop in landscape. */}
+            <div className="flex flex-1 flex-col justify-center gap-4 py-4">
+              {/* Keyed by the session's generation so a rollover or an import
+                  re-seeds every draft a panel is holding: the setup panel's
+                  hours and commitment forms, the purpose being typed, the break
+                  length chosen. All of it describes one particular session, and
+                  none of it has anywhere else to be reset from. Safe to remount
+                  because neither discontinuity can happen while a segment is
+                  running — the rollover returns early, and an import lands
+                  idle — so there is no timer here to interrupt. */}
               <Stage
+                key={store.generation}
                 now={now}
                 phase={phase}
                 active={session.active}
                 settings={session.settings}
-                hasCommitments={session.commitments.length > 0}
+                dayShaped={dayShaped}
+                setupStage={setupStage}
+                onSetupStage={setSetupStage}
+                commitments={session.commitments}
+                regions={regions}
                 withinHours={withinHours}
                 hasRegions={timeline.regions.length > 0}
                 nextRegionStart={upNext}
@@ -131,7 +184,10 @@ export function App() {
                 // baseline is that very timeline rather than a second derive.
                 costOf={(minutes) => breakCost(planInput, now, minutes, timeline)}
                 onAddCommitment={store.addCommitment}
-                onEditHours={() => setEditingHours(true)}
+                onRemoveCommitment={store.removeCommitment}
+                onSaveRegions={store.setRegions}
+                onDayShaped={store.shapeDay}
+                onEditHours={() => setComposer('hours')}
                 onStartBlock={startBlock}
                 onSetPurpose={(purpose) =>
                   store.dispatch({ type: 'setPurpose', at: Date.now(), purpose })
@@ -155,6 +211,15 @@ export function App() {
                   store.dispatch({ type: 'resolveAway', at: Date.now(), outcome })
                 }
               />
+
+              {/* Where in the day you are. A control while the opening
+                  questions are open — they can be answered in either order —
+                  and an indicator once the day is under way. It never offers a
+                  way past "One thing": naming the block is not skippable. */}
+              <StageCarousel
+                current={stage}
+                {...(dayShaped ? {} : { onNavigate: setSetupStage })}
+              />
             </div>
 
             <div className="border-t border-line pt-4 text-xs text-muted">
@@ -167,51 +232,20 @@ export function App() {
           <DayCalendar
             timeline={timeline}
             now={now}
-            onAddBreak={() => setAddingBreak(true)}
-            onAddCommitment={() => setAddingCommitment(true)}
-            onAddRegion={() => setEditingHours(true)}
+            regions={regions}
+            usingDefaultRegions={session.regionOverrides === null}
+            composer={composer}
+            onComposer={setComposer}
+            onAddBreak={store.planBreak}
+            onAddCommitment={store.addCommitment}
+            onSetRegions={store.setRegions}
             onRemoveBreak={store.removeBreak}
             onRemoveCommitment={store.removeCommitment}
           />
         </div>
       </div>
 
-      <AddCommitmentDialog
-        open={addingCommitment}
-        now={now}
-        onAdd={(input) => {
-          store.addCommitment(input)
-          setAddingCommitment(false)
-        }}
-        onCancel={() => setAddingCommitment(false)}
-      />
-
-      <AddBreakDialog
-        open={addingBreak}
-        now={now}
-        onAdd={(input) => {
-          store.planBreak(input)
-          setAddingBreak(false)
-        }}
-        onCancel={() => setAddingBreak(false)}
-      />
-
-      <TodayHoursDialog
-        open={editingHours}
-        now={now}
-        regions={selectRegions(store, now)}
-        usingDefaults={session.regionOverrides === null}
-        onSave={(regions) => {
-          store.setRegions(regions.map((r, i) => ({ ...r, id: `today-${i}-${r.startsAt}` })))
-          setEditingHours(false)
-        }}
-        onCancel={() => setEditingHours(false)}
-      />
-
-      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      {settings}
     </div>
   )
 }
-
-const headerControlClass =
-  'rounded-lg border border-line px-3 py-1.5 text-xs text-body transition hover:bg-surface-raised hover:text-bright'

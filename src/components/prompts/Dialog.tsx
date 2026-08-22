@@ -1,15 +1,24 @@
 /**
- * The shared dialog shell.
+ * The shared dialog shell, with one dialog left to shell.
  *
- * Mono is mostly dialogs interrupting a timer, so these are built on Radix
- * primitives rather than hand-rolled: focus trapping, escape handling, scroll
- * locking and the aria wiring all matter and are all easy to get subtly wrong.
+ * Mono used to be mostly dialogs interrupting a timer. It is now settings and
+ * nothing else: the prompts moved onto the stage, and the calendar's editors
+ * moved onto the calendar, both for the same reason — a card over a blurred
+ * backdrop hides the day you are being asked about. Settings survives because
+ * it genuinely is an aside. You are not answering it in the middle of anything.
  *
- * Most of Mono's prompts are *not* dismissible. "Did you finish this block?"
- * has no correct default answer, so there is no close button, escape does
- * nothing, and clicking away does nothing — the user has to say what happened.
- * All three ways out appear together with `onDismiss`, which is what keeps
- * that promise: a dialog either offers every way out or none of them.
+ * Still built on Radix rather than hand-rolled: focus trapping, escape
+ * handling, scroll locking and the aria wiring all matter and are all easy to
+ * get subtly wrong.
+ *
+ * A dialog here is *not* necessarily dismissible. "Did you finish this block?"
+ * has no correct default answer, so a prompt like that gets no close button,
+ * escape does nothing, and clicking away does nothing — the user has to say
+ * what happened. All three ways out appear together with `onDismiss`, which is
+ * what keeps that promise: a dialog either offers every way out or none of
+ * them. Nothing uses the unskippable mode today, because everything that would
+ * have is now a panel on the stage. It stays because it is the contract that
+ * makes the dismissible half honest.
  *
  * The card is bounded by the viewport rather than by its content: the title
  * stays put and the body scrolls. Settings is long enough to overflow a laptop
