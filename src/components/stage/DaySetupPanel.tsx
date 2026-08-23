@@ -16,6 +16,13 @@
  * what was said: starting the day with nothing fixed and the usual hours is a
  * complete answer, and before there was somewhere to put it a day with no
  * meetings could never get past the question at all.
+ *
+ * The same panel comes back when the questions are re-opened from the strip
+ * later in the day, which is what `revisiting` is for. Only the way out
+ * differs: the day has already been shaped, so there is nothing to record and
+ * nothing to gate — a day whose hours you have just deleted is a decision, not
+ * an unfinished answer, and the calendar's own hours editor has always allowed
+ * it.
  */
 
 import { useState } from 'react'
@@ -43,6 +50,7 @@ export function DaySetupPanel({
   now,
   stage,
   onStage,
+  revisiting,
   regions,
   withinHours,
   nextRegionStart,
@@ -55,6 +63,8 @@ export function DaySetupPanel({
   now: Ms
   stage: SetupStageId
   onStage: (stage: SetupStageId) => void
+  /** Re-opened after the day was already shaped, rather than the first ask. */
+  revisiting: boolean
   regions: readonly WorkRegion[]
   /** Whether `now` falls inside one of them. */
   withinHours: boolean
@@ -90,13 +100,14 @@ export function DaySetupPanel({
   // them is a day it can do nothing with. The button says no; the line under it
   // has to say why, and where to fix it.
   const noHours = resolveHours(now, hours).length === 0
+  const eyebrow = revisiting ? 'Changing today' : 'To begin'
 
   return (
     <div className="max-w-md">
       {stage === 'commitments' ? (
         <>
           <StagePrompt
-            eyebrow="To begin"
+            eyebrow={eyebrow}
             title="What's already fixed today?"
             detail="Anything you can't move. These come first because they decide how much of the day is yours to spend."
           />
@@ -141,7 +152,7 @@ export function DaySetupPanel({
       ) : (
         <>
           <StagePrompt
-            eyebrow="To begin"
+            eyebrow={eyebrow}
             title="Are these your hours today?"
             detail={hoursDetail(now, regions.length > 0, withinHours, nextRegionStart)}
           />
@@ -152,18 +163,22 @@ export function DaySetupPanel({
       {/* Outside the form above, so that Enter in a field adds a commitment
           rather than ending the setup. */}
       <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-4">
-        <PrimaryButton type="button" onClick={finish} disabled={noHours}>
-          Start the day
+        <PrimaryButton type="button" onClick={finish} disabled={!revisiting && noHours}>
+          {revisiting ? 'Back to the day' : 'Start the day'}
         </PrimaryButton>
         <GhostButton type="button" onClick={() => onStage(otherSetupStage(stage))}>
           {stage === 'commitments' ? "Today's hours" : "What's already fixed"}
         </GhostButton>
         <p className="w-full text-xs leading-relaxed text-muted">
           {noHours
-            ? "Mono plans inside your working hours and nowhere else, so it needs at least one stretch. Add one under Today's hours."
-            : commitments.length === 0
-              ? 'Nothing fixed today? Start the day and Mono will plan the whole of it.'
-              : 'Add as many as you like. Mono plans the runway between them.'}
+            ? revisiting
+              ? "With no stretches left under Today's hours there is nowhere for Mono to plan. Go back and the rest of the day stays empty."
+              : "Mono plans inside your working hours and nowhere else, so it needs at least one stretch. Add one under Today's hours."
+            : revisiting
+              ? 'Anything you change here re-derives the plan. Nothing running is disturbed.'
+              : commitments.length === 0
+                ? 'Nothing fixed today? Start the day and Mono will plan the whole of it.'
+                : 'Add as many as you like. Mono plans the runway between them.'}
         </p>
       </div>
     </div>

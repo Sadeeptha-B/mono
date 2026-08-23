@@ -15,26 +15,38 @@
  * out-of-hours panel on the stage opens the hours editor too — the two are the
  * same affordance reached from different places, and there should only ever be
  * one of it.
+ *
+ * The blocks reopen those same editors, through a named control on the block
+ * rather than a click anywhere on it — see the note beside them. A break you
+ * pinned and a commitment you named are the two things on this axis that you
+ * wrote, so they are the two that carry one. Everything else here is derived,
+ * and the way to change a derived block is to change what it was derived from.
  */
 
 import { useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { format } from 'date-fns'
 
 import {
+  adding,
   BreakComposer,
   CommitmentComposer,
+  editingId,
   HoursComposer,
+  type Composer,
   type ComposerKind,
+  type EntryComposer,
 } from './SegmentEditor'
+import { EditGlyph } from '../ui'
 import { formatClock, formatDuration } from '@/domain/time'
-import type {
-  Commitment,
-  Interval,
-  Ms,
-  PlannedBreak,
-  Timeline,
-  TimelineEntry,
-  WorkRegion,
+import {
+  commitmentSpan,
+  type Commitment,
+  type Interval,
+  type Ms,
+  type PlannedBreak,
+  type Timeline,
+  type TimelineEntry,
+  type WorkRegion,
 } from '@/domain/types'
 
 const HOUR_PX = 96
@@ -51,13 +63,25 @@ type Props = {
   /** Today's hours, for the editor. Not the same list as `timeline.regions`. */
   regions: readonly WorkRegion[]
   usingDefaultRegions: boolean
+  /**
+   * The two lists an editor can be pointed at, as the store holds them.
+   *
+   * Taken from the store rather than off the timeline entry that was clicked,
+   * because the planner draws what is *left* of a break already under way — it
+   * clips the entry at `now` — and a form seeded from that would quietly shorten
+   * the break it claimed to be editing.
+   */
+  commitments: readonly Commitment[]
+  breaks: readonly PlannedBreak[]
   /** Which editor is expanded under the header, if any. Owned by `App`. */
-  composer: ComposerKind | null
-  onComposer: (next: ComposerKind | null) => void
+  composer: Composer | null
+  onComposer: (next: Composer | null) => void
   onRemoveBreak: (id: string) => void
   onRemoveCommitment: (id: string) => void
   onAddBreak: (input: Omit<PlannedBreak, 'id'>) => void
   onAddCommitment: (input: Omit<Commitment, 'id'>) => void
+  onUpdateBreak: (id: string, patch: Partial<PlannedBreak>) => void
+  onUpdateCommitment: (id: string, patch: Partial<Commitment>) => void
   onSetRegions: (regions: WorkRegion[]) => void
 }
 
@@ -66,12 +90,16 @@ export function DayCalendar({
   now,
   regions,
   usingDefaultRegions,
+  commitments,
+  breaks,
   composer,
   onComposer,
   onRemoveBreak,
   onRemoveCommitment,
   onAddBreak,
   onAddCommitment,
+  onUpdateBreak,
+  onUpdateCommitment,
   onSetRegions,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
@@ -92,6 +120,26 @@ export function DayCalendar({
 
   const nowOffset = TOP_PAD_PX + ((now - rangeStart) / HOUR_MS) * HOUR_PX
   const nowVisible = now >= rangeStart && now <= rangeStart + hours.length * HOUR_MS
+
+  const editing = composer === null ? null : editingId(composer)
+  const editingBreak = byId(breaks, composer?.kind === 'break' ? composer.editing : null)
+  const editingCommitment = byId(
+    commitments,
+    composer?.kind === 'commitment' ? composer.editing : null,
+  )
+
+  // Removing the thing an editor is open on leaves the editor asking about
+  // nothing. The × and the block are the same gesture's two halves — you
+  // clicked into it to decide, and deciding it should not be there at all is
+  // one of the answers — so the close belongs here rather than in `App`.
+  const removeBreak = (id: string) => {
+    if (composer?.kind === 'break' && composer.editing === id) onComposer(null)
+    onRemoveBreak(id)
+  }
+  const removeCommitment = (id: string) => {
+    if (composer?.kind === 'commitment' && composer.editing === id) onComposer(null)
+    onRemoveCommitment(id)
+  }
 
   return (
     <aside className="flex h-full min-h-0 flex-col rounded-2xl border border-line bg-surface">
@@ -120,7 +168,7 @@ export function DayCalendar({
         below, and the axis scrolls, so the cost of opening one is a shorter
         view of the day rather than no view of it.
       */}
-      {composer === 'hours' && (
+      {composer?.kind === 'hours' && (
         <HoursComposer
           now={now}
           regions={regions}
@@ -135,21 +183,40 @@ export function DayCalendar({
           onCancel={() => onComposer(null)}
         />
       )}
-      {composer === 'break' && (
+      {/*
+        Keyed by what is being edited, so clicking a second break while the
+        first one is open is a new form rather than the same one still holding
+        the first answer. The composers seed their drafts once, on mount — see
+        the note at the top of `SegmentEditor` — which is exactly what makes
+        them safe against a clock that ticks every second and exactly what makes
+        this key necessary.
+      */}
+      {/*
+        Both halves read the same lookup rather than the id in `composer`, so
+        the form and what saving it does cannot disagree: an id pointing at
+        something no longer on the day is simply a new one.
+      */}
+      {composer?.kind === 'break' && (
         <BreakComposer
+          key={editingBreak?.id ?? 'new'}
           now={now}
-          onAdd={(input) => {
-            onAddBreak(input)
+          editing={editingBreak}
+          onSubmit={(input) => {
+            if (editingBreak) onUpdateBreak(editingBreak.id, input)
+            else onAddBreak(input)
             onComposer(null)
           }}
           onCancel={() => onComposer(null)}
         />
       )}
-      {composer === 'commitment' && (
+      {composer?.kind === 'commitment' && (
         <CommitmentComposer
+          key={editingCommitment?.id ?? 'new'}
           now={now}
-          onAdd={(input) => {
-            onAddCommitment(input)
+          editing={editingCommitment}
+          onSubmit={(input) => {
+            if (editingCommitment) onUpdateCommitment(editingCommitment.id, input)
+            else onAddCommitment(input)
             onComposer(null)
           }}
           onCancel={() => onComposer(null)}
@@ -198,8 +265,10 @@ export function DayCalendar({
               key={item.key}
               item={item}
               now={now}
-              onRemoveBreak={onRemoveBreak}
-              onRemoveCommitment={onRemoveCommitment}
+              editing={editing}
+              onEdit={onComposer}
+              onRemoveBreak={removeBreak}
+              onRemoveCommitment={removeCommitment}
             />
           ))}
 
@@ -233,6 +302,10 @@ export function DayCalendar({
  * also the only way out that does not involve moving the pointer somewhere
  * else. `aria-expanded` is what tells a screen reader this reveals something
  * rather than navigating away.
+ *
+ * Pressed only while the form below is adding. The same form opened by clicking
+ * a break on the axis is about that break, and this button still means "a new
+ * one" — showing it lit would be claiming the editor belongs to it.
  */
 function HeaderToggle({
   kind,
@@ -241,17 +314,17 @@ function HeaderToggle({
   children,
 }: {
   kind: ComposerKind
-  composer: ComposerKind | null
-  onComposer: (next: ComposerKind | null) => void
+  composer: Composer | null
+  onComposer: (next: Composer | null) => void
   children: ReactNode
 }) {
-  const open = composer === kind
+  const open = composer !== null && composer.kind === kind && editingId(composer) === null
 
   return (
     <button
       type="button"
       aria-expanded={open}
-      onClick={() => onComposer(open ? null : kind)}
+      onClick={() => onComposer(open ? null : adding(kind))}
       className={`rounded-md px-2 py-1 text-xs transition hover:bg-surface-raised hover:text-bright ${
         open ? 'bg-surface-raised text-bright' : 'text-body'
       }`}
@@ -260,6 +333,10 @@ function HeaderToggle({
     </button>
   )
 }
+
+/** The one in the list with this id, if it is still there. */
+const byId = <T extends { id: string }>(items: readonly T[], id: string | null): T | null =>
+  id === null ? null : (items.find((item) => item.id === id) ?? null)
 
 function RegionBand({ region, rangeStart }: { region: Interval; rangeStart: Ms }) {
   const top = TOP_PAD_PX + ((region.start - rangeStart) / HOUR_MS) * HOUR_PX
@@ -277,11 +354,16 @@ function RegionBand({ region, rangeStart }: { region: Interval; rangeStart: Ms }
 function Block({
   item,
   now,
+  editing,
+  onEdit,
   onRemoveBreak,
   onRemoveCommitment,
 }: {
   item: Placed
   now: Ms
+  /** What the open composer is editing, so this can say if it is this. */
+  editing: string | null
+  onEdit: (next: EntryComposer) => void
   onRemoveBreak: (id: string) => void
   onRemoveCommitment: (id: string) => void
 }) {
@@ -290,6 +372,8 @@ function Block({
   const isPast = entry.endsAt <= now
   const isActive = entry.kind === 'active'
   const showLabel = height >= LABEL_MIN_PX
+  const editor = editorFor(entry, now)
+  const isEditing = editor !== null && editor.editing === editing
 
   const remove =
     entry.kind === 'planned-break'
@@ -309,6 +393,7 @@ function Block({
         style.bg,
         isPast && !isActive ? 'opacity-40' : '',
         isActive ? 'z-10 ring-1 ring-inset ' + style.ring : '',
+        isEditing ? 'z-10 ring-1 ring-inset ring-bright/70' : '',
       ].join(' ')}
       style={{ top, height: Math.max(height, 4), width, left }}
       title={`${style.label} · ${formatClock(entry.startsAt)} · ${formatDuration(
@@ -321,15 +406,38 @@ function Block({
             <span className={`truncate text-xs font-medium ${style.text}`}>
               {style.label}
             </span>
-            {remove && !isPast && (
-              <button
-                type="button"
-                onClick={remove}
-                aria-label={`Remove ${style.label}`}
-                className="shrink-0 text-muted opacity-0 transition group-hover:opacity-100 hover:text-commit focus-visible:opacity-100"
-              >
-                ×
-              </button>
+            {/*
+              Named controls rather than a click anywhere on the block. The
+              block is a drawing of a span of the day, and the day is a thing
+              you point at while you think — a bare surface that silently means
+              "open a form" is the kind of affordance you discover by accident.
+              Hidden until the pointer or the keyboard arrives, so the axis
+              stays a picture of the day at rest; `focus-within` is what keeps
+              them reachable without a mouse.
+            */}
+            {(editor !== null || (remove !== null && !isPast)) && (
+              <span className="flex shrink-0 items-baseline gap-1 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100">
+                {editor !== null && (
+                  <button
+                    type="button"
+                    onClick={() => onEdit(editor)}
+                    aria-label={`Edit ${style.label}`}
+                    className="text-muted transition hover:text-bright"
+                  >
+                    <EditGlyph />
+                  </button>
+                )}
+                {remove !== null && !isPast && (
+                  <button
+                    type="button"
+                    onClick={remove}
+                    aria-label={`Remove ${style.label}`}
+                    className="text-muted transition hover:text-commit"
+                  >
+                    ×
+                  </button>
+                )}
+              </span>
             )}
           </div>
           {height >= 44 && style.detail && (
@@ -346,6 +454,34 @@ function Block({
       )}
     </div>
   )
+}
+
+/**
+ * The editor this entry opens, or null if it does not open one.
+ *
+ * Only the two things the user put on the day by hand. Everything else here is
+ * derived — the way to move a focus block is to change the hours or the
+ * commitments it was planned around, and offering to edit one directly would be
+ * offering to edit the output of a pure function.
+ *
+ * A commitment's margins are part of the commitment rather than entries in
+ * their own right, so the travel either side opens the same form. Whether it is
+ * still worth opening is asked of the whole span rather than of the entry: the
+ * getting-ready half is behind us the moment the meeting starts, and the
+ * meeting is very much still ahead.
+ */
+function editorFor(entry: TimelineEntry, now: Ms): EntryComposer | null {
+  switch (entry.kind) {
+    case 'planned-break':
+      return entry.endsAt > now ? { kind: 'break', editing: entry.id } : null
+    case 'commitment':
+    case 'commitment-margin':
+      return commitmentSpan(entry.commitment).end > now
+        ? { kind: 'commitment', editing: entry.commitment.id }
+        : null
+    default:
+      return null
+  }
 }
 
 type Placed = {

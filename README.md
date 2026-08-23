@@ -93,6 +93,7 @@ about how the day has gone.
   day can hold, so taking a break is a visible trade — the duration prompt tells
   you what it costs before you commit.
 - **Adding a commitment clears every future break**, deliberately, and says so.
+  Changing one does the same, for the same reason.
 - **Blocks can be abandoned but not paused.** A paused timer means `endsAt` is
   no longer a fixed instant, which is where timer bugs come from.
 - **Coming back after being away never auto-completes a block.** If the app was
@@ -108,6 +109,14 @@ about how the day has gone.
   Finishing appends `day/shaped`, a record of having been *asked*: an empty day
   is a real answer, and confirming an unedited shape deliberately writes no
   region override, so the day stays derived from the default.
+- **Both questions stay reachable between blocks.** The strip goes back to them
+  whenever nothing is running, and `Back to the day` returns; `day/shaped` is
+  not appended a second time, because coming back to change an answer is not
+  being asked again. While a block runs the strip is an indicator only. Only one
+  editor of today's hours is ever on screen — opening the stage's question
+  closes the calendar's `Hours`, and opening `Hours` takes the question off the
+  stage — because each holds its own draft and the second save would silently
+  win.
 - **A commitment can cost time either side of itself.** `prepMin` and
   `recoverMin` cover getting ready, travelling and settling back in — a 4pm swim
   is an hour long and occupies 3:30 to 5:20. The planner keeps the whole span
@@ -119,6 +128,12 @@ about how the day has gone.
   calendar at the edge; the domain only ever sees epoch milliseconds. A
   commitment outside every work region still shows on the calendar, but it does
   not extend the horizon.
+- **The two things you wrote can be rewritten.** A pinned break and a commitment
+  each carry a `✎` on their block, which reopens the composer that made them,
+  seeded from what they say now. Editing keeps the id, so the plan re-derives
+  around the same thing moved rather than around a new one. Nothing else on the
+  axis is editable: a focus block is output, and the way to move it is to change
+  the hours or the commitments it was planned around.
 - **Outside working hours Mono says so** and names the next stretch, rather than
   offering a block in time you declared unstructured. The way to work anyway is
   to change the hours.

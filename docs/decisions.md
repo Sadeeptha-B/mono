@@ -455,3 +455,206 @@ import sanitiser — so the `?? 0` has to live somewhere every reader passes,
 which is `commitmentSpan`. `sanitiseMarginMinutes` returns three values rather
 than two for the same reason: absent is normal, present-and-broken is not, and
 zero is a perfectly good answer where a zero-length commitment would not be.
+
+**2026-08-22 (later) — The opening questions stop being a one-way door.**
+
+*They can be re-opened, and the strip is how.* Shaping the day used to close
+them for good: `day/shaped` flipped the panel out of existence and the two dots
+went inert with it. There is nothing behind that. What is already fixed today
+and which hours are yours are ordinary facts about a day, and they keep
+changing — a four o'clock meeting lands at eleven, an evening opens up. The
+gate that matters is the one after "One thing", and it is untouched: naming the
+block is the product, so the strip still refuses to skip ahead, and while a
+block is running it offers nothing at all. `setupReachable` is `phase.name ===
+'idle'`, which is a stronger rule than "not yet shaped" and a weaker one than
+"never again".
+
+The state that carries it is `revisitingSetup`, in `App` beside `setupStage`,
+and it is deliberately *not* an event. `day/shaped` records having been asked,
+once; coming back to change an answer is not being asked a second time, so
+`finishSetup` appends nothing when the day is already shaped and the panel says
+`Back to the day` rather than `Start the day`. It is day-specific UI state, so
+it is reset by the session `generation` like everything else up there — see the
+rule at the end of the previous entry.
+
+One consequence worth stating: `Start the day` is disabled with no working
+hours because a day Mono cannot plan in is not a finished answer, but on the
+way *back* that guard is dropped. Deleting every stretch at two in the
+afternoon is a decision, not an unfinished form, and the calendar's own hours
+editor has always allowed exactly that. Trapping someone behind a disabled
+button on a day they have already started would be the worse bug.
+
+*One editor of today's hours, ever.* The stage's hours question and the
+calendar's `Hours` composer ask the identical question and each holds its own
+draft, so both open at once is a race with a human in it: type in one, type in
+the other, and whichever you save second silently overwrites the first, with no
+sign that anything was lost. Settings has followed the "only one of it" rule
+since it started closing the composer on open; the opening question was simply
+never included, and it could always be on screen at the same time — this change
+only made it likelier. Now it is symmetric. Going to the question on the stage
+closes the composer; opening the composer takes the question off the stage —
+back to the day when it was re-opened, and to the *other* opening question when
+the day is not shaped yet and the panel cannot close. Both directions have e2e
+coverage.
+
+The commitment forms deliberately do not get the same treatment. Two of them
+can be on screen and it is not the same situation: they append, they do not
+overwrite, so the worst case is two commitments where you wanted two
+commitments. The rule is about editors of a single value, not about duplicate
+affordances.
+
+*The strip reads at a glance now.* The dots were `bg-muted` for the navigable
+ones and `bg-line` for the rest, which is a hairline colour on a near-black
+surface — invisible in daylight, and the indicator half of the strip only works
+if you can see it. They are `body/85` and `muted/80` at 7px, with the seam
+between setup and session at `muted/50`. The odd number is deliberate: 8px read
+as a row of buttons under the timer, which is exactly what the strip must not
+become. It is the second-quietest thing on the stage, and only the companion is
+allowed to be quieter.
+
+And the names come off `title`. The browser's tooltip waits about a second
+before it appears, which is far too slow for a strip whose whole design is that
+you hover it to read it. The replacement is the `stage-dot` utility in
+`index.css`: `content: attr(data-label)` on an `::after`, shown on hover and on
+`:focus-visible`. The pseudo-element is the point rather than an implementation
+detail — the previous entry records why these dots carry no text content at
+all, and a real element containing the word "Break" would put a second answer
+in front of every text query on the stage. `attr()` content is visible to the
+eye and absent from the DOM, which is the only arrangement that satisfies both
+constraints.
+
+
+**2026-08-22 (later still) — Breaks and commitments can be edited, not just
+added and deleted.**
+
+*Editing is a patch on the same id, never a delete followed by an add.* The
+event log already had `commitment/updated` sitting unused; `break/updated` is
+its twin, and both merge a patch into the entry with that id. Remove-then-add
+would have been two lines of store code and wrong in three ways: the id changes,
+so the timeline entry drawn from it gets a new React key and the block visibly
+blinks out and back rather than moving; the log stops being able to say that a
+meeting *moved*, which is the fact a history view would want; and there is an
+instant between the two events where the day is derived without it. A patch has
+none of that, and `replay` over an old log is untouched — an event type that did
+not exist yesterday cannot appear in yesterday's log, so `SCHEMA_VERSION` stays
+where it is.
+
+*A merged patch has one trap, and it is the margins.* `readCommitment` omits a
+zero `prepMin` deliberately — the previous entry explains why a commitment with
+no travel should look exactly like one written before margins existed. Merge
+that result onto an existing commitment and deleting a half hour of travel does
+nothing at all: the field is absent from the patch, so the old value survives,
+and the form insists it is gone while the planner keeps the time clear.
+`readCommitmentEdit` is the same read with `{ prepMin: 0, recoverMin: 0 }`
+spread underneath it, and the difference between the two functions is the whole
+reason there are two.
+
+*The composer knows an id, not a commitment.* `Composer` went from a bare
+`'hours' | 'break' | 'commitment'` to that plus which entry is being edited, and
+the entry is carried as an id that `DayCalendar` looks up against the store on
+every render. A copy taken when the form opened would be a second answer to what
+that commitment is, diverging from the first the moment anything else touched
+it. The lookup also has to go to the store rather than to the timeline entry
+that was clicked: the planner clips a pinned break that is already under way to
+what is *left* of it, so a form seeded from the entry would silently shorten the
+break it claimed to be editing. Both halves — the form's contents and what
+saving it does — read that one lookup, so an id pointing at something no longer
+on the day is simply a new one rather than a save into nowhere.
+
+*A named control, not a clickable block.* The block was briefly the button, on
+the reasoning that clicking the drawing of a thing to change it is what every
+calendar teaches. It is also what makes the axis unusable as a picture: the
+calendar is a thing you point at while you think about your afternoon, and a
+bare surface that silently means "open a form" is an affordance you discover by
+accident. So the `✎` sits beside the `×`, both hidden until the pointer or the
+keyboard arrives — and the pencil is mirrored in CSS, because every pencil
+Unicode has points to the lower right (U+270E is *named* LOWER RIGHT PENCIL)
+and the one that points the other way, U+1F589, is missing from enough system
+fonts to render as an empty box. `EditGlyph` in `ui.tsx` is where that lives,
+as a component rather than a character typed twice, because the guide quotes
+this control and the calendar draws it — `group-hover` and `group-focus-within` together, because the
+keyboard route has to reveal them too. They are siblings rather than nested, for
+the ordinary reason that a button inside a button is invalid markup that
+browsers resolve differently from one another. Blocks shorter than
+`LABEL_MIN_PX` carry neither, which was already true of the `×`: at twenty
+pixels there is room for the label or the controls, and the label is the one
+that says what you would be changing.
+
+*Only the two things you wrote.* A commitment's prep and recovery margins open
+the commitment, because they are part of it rather than entries in their own
+right — and whether they are still worth opening is asked of the whole span, so
+the getting-ready half stays live while the meeting it belongs to is still
+ahead. Focus blocks and margins open nothing. They are the output of
+`derivePlan`, and an edit to the output of a pure function has nowhere to be
+stored; the way to move a block is to change the hours or the commitments it was
+planned around, which is the first invariant restated as an interaction.
+
+*Editing a commitment clears pinned breaks, exactly as adding one does.* A
+meeting pushed an hour later takes the runway with it, so the rest points either
+side of it were answers to a question that is no longer being asked. The
+composer says so in the same sentence it always did, with one word changed.
+Removing the entry an editor is open on closes that editor, in `DayCalendar`
+rather than `App`: the `✎` and the `×` are two halves of one gesture — you
+opened it to decide, and "it should not be there at all" is one of the answers.
+
+**2026-08-23 — Two things a pinned break should survive, and one that was never
+wrong.**
+
+*Taking a break stopped deleting the rest of them.* `break/ended` shared
+`onlyBreakInProgress` with the commitment events, and that filter keeps only a
+break actually under way — so ending an ad-hoc break at three deleted the walk
+pinned for five, silently, and the comment beside the call said it dropped "any
+pinned break it was fulfilling", which is what it was meant to do and not what
+it did. The filter is right where it is used for commitments: adding or moving
+one moves the whole runway, every pin on it is an answer to a question that has
+changed, and the composer says so before you add one. Taking a break is not
+that. `pinsStillAhead` keeps every pin with time left in it when the break
+ended: a break run to the end of the pin it fulfilled spends it, spent pins are
+tidied away as before, and the rest of the day is left alone. Ending a break
+early leaves the remainder of that reservation standing, which is what the old
+filter did too.
+
+The filter is deliberately a **superset** of the one it replaced, and the first
+version was not — it kept pins *starting* after the break, which quietly changed
+a second case nobody asked about: fifteen minutes taken inside a two-hour
+reservation dropped the whole reservation, where `onlyBreakInProgress` had kept
+it. Measuring the change against "which pins used to survive?" is what caught
+it, and it is the right question for any filter that deletes user intent — a fix
+that removes something *else* is not a fix. Locked by `leaves what is left of a
+longer pin it happened inside`.
+
+Worth noting what is *not* affected: the break you actually took is history the
+moment it ends, and the calendar draws every history segment, so an ad-hoc
+break is on the timeline after the fact at the length it really ran. The pins
+are a different object — a future intention — which is why deleting them was so
+quiet.
+
+*An open calendar editor closes when "You were away" arrives.* `stageFor`
+returns `null` for `reconciling` and the strip hides itself, because that panel
+is an interruption rather than a stage and nothing is recorded until it is
+answered. The calendar's composers were the one part of the UI not following
+that rule, and an expanded editor beside that prompt is somewhere else for the
+answering click to land. `App` closes it on the *transition* into the phase,
+not on the phase itself: the latter would shut a composer the user deliberately
+opened during one, half a frame after they pressed the button, and the header
+toggles would look broken. Same render-time adjustment as the `generation`
+reset above it.
+
+*The narrow-screen worry was wrong, and the real one is different.* The claim
+was that below `lg` the calendar stacks under the stage, so an editor opened
+from the stage expands off the bottom of the screen — and the fix would be to
+scroll the column into view. It was written and then measured, which is the
+right order to find out it does nothing: the shell is `h-dvh`, so the grid
+divides that height between the two panels rather than letting the page grow.
+At 390×844 the calendar sits at y=481 with the composer fully visible. There is
+no scroll to do, because nothing scrolls.
+
+What measuring *did* find is a real defect at short viewports, which is a
+different bug: the column is squeezed rather than pushed. At 640×420 — a phone
+in landscape — the calendar column is 119px tall, the composer is `shrink-0`,
+and its time fields render below the fold of a page that cannot scroll. Not
+fixed here, because the fix is a layout call rather than a patch: either the
+page scrolls below `lg` (`min-h-dvh lg:h-dvh`, at which point the calendar
+becomes full-length on a phone and scrolling *into view* finally means
+something), or the composer gets to shrink and scroll inside the column. Both
+change how Mono looks on a phone, so both want deciding rather than defaulting.

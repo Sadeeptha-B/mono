@@ -66,8 +66,19 @@ type SessionStore = {
   append: (...events: MonoEvent[]) => void
 
   addCommitment: (input: Omit<Commitment, 'id'>) => void
+  /**
+   * Change one already on the day, keeping its id.
+   *
+   * A patch rather than a replacement so the caller does not have to carry the
+   * id back around, and an edit rather than a remove-then-add so the plan
+   * re-derives around the same commitment moved rather than a different one in
+   * a new place. Note the trap in `readCommitmentEdit`: a patch is merged, so
+   * clearing a margin means sending a zero, not omitting the field.
+   */
+  updateCommitment: (id: string, patch: Partial<Commitment>) => void
   removeCommitment: (id: string) => void
   planBreak: (input: Omit<PlannedBreak, 'id'>) => void
+  updateBreak: (id: string, patch: Partial<PlannedBreak>) => void
   removeBreak: (id: string) => void
   setRegions: (regions: WorkRegion[]) => void
   updateSettings: (patch: Partial<Settings>) => void
@@ -129,6 +140,9 @@ export const useSession = create<SessionStore>()(
           commitment: { ...input, id: newId() },
         }),
 
+      updateCommitment: (id, patch) =>
+        get().append({ type: 'commitment/updated', at: Date.now(), id, patch }),
+
       removeCommitment: (id) =>
         get().append({ type: 'commitment/removed', at: Date.now(), id }),
 
@@ -138,6 +152,9 @@ export const useSession = create<SessionStore>()(
           at: Date.now(),
           plannedBreak: { ...input, id: newId() },
         }),
+
+      updateBreak: (id, patch) =>
+        get().append({ type: 'break/updated', at: Date.now(), id, patch }),
 
       removeBreak: (id) => get().append({ type: 'break/removed', at: Date.now(), id }),
 

@@ -37,8 +37,10 @@ type Props = {
   phase: Phase
   active: ActiveSegment | null
   settings: Settings
-  /** Whether the day's opening questions have been answered yet. */
-  dayShaped: boolean
+  /** Whether the day's opening questions are the thing being asked. */
+  setupOpen: boolean
+  /** True when they are open again *after* the day was shaped, not for the first time. */
+  revisitingSetup: boolean
   /** Which opening question is on screen. Owned by `App`, so the carousel can move it. */
   setupStage: SetupStageId
   onSetupStage: (stage: SetupStageId) => void
@@ -77,12 +79,17 @@ export function Stage(props: Props) {
       // the first of the two questions, so refusing to plan until they are set
       // and then not asking would be a closed loop. The panel folds the clock
       // in as context instead.
-      if (!props.dayShaped) {
+      //
+      // It also outranks them when the user has gone *back* to the questions
+      // from the strip, for the same reason in reverse: they asked to see the
+      // question, so the question is what the stage shows.
+      if (props.setupOpen) {
         return (
           <DaySetupPanel
             now={now}
             stage={props.setupStage}
             onStage={props.onSetupStage}
+            revisiting={props.revisitingSetup}
             regions={props.regions}
             withinHours={props.withinHours}
             nextRegionStart={props.nextRegionStart}

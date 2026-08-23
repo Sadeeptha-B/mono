@@ -157,6 +157,91 @@ test('hours edited on one question survive finishing from the other', async ({ p
   await expect(page.getByText(/Working until 8:00 PM/)).toBeVisible()
 })
 
+test('the opening questions can be re-opened once the day is under way', async ({
+  page,
+}) => {
+  // Answering them once used to be the only chance: `day/shaped` closed the
+  // questions for good and the dots went inert. But what is fixed today and
+  // which hours are yours are ordinary facts about a day, and they keep
+  // changing — so between blocks the strip goes back to them.
+  await openMono(page)
+  await shapeDay(page)
+  await expect(page.getByRole('button', { name: 'Start deep block' })).toBeVisible()
+
+  await goToStage(page, "What's already fixed")
+  await expect(
+    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+  ).toBeVisible()
+
+  await page.getByLabel('Next commitment', { exact: true }).fill('Dentist')
+  await page.getByLabel('At', { exact: true }).fill('16:00')
+  await page.getByLabel('For (minutes)', { exact: true }).fill('30')
+  await page.getByRole('button', { name: 'Add commitment' }).click()
+
+  // The way out is not "Start the day" a second time: the day has already
+  // begun, and `day/shaped` records having been asked rather than the answer.
+  await stage(page).getByRole('button', { name: 'Back to the day' }).click()
+  await expect(page.getByRole('button', { name: 'Start deep block' })).toBeVisible()
+  await expect(blocksOf(page, 'Dentist')).toHaveCount(1)
+
+  // Hours edited on the way through are saved by the same button.
+  await goToStage(page, "Today's hours")
+  await stage(page).getByLabel("Today's hours 1 end").fill('16:00')
+  await stage(page).getByRole('button', { name: 'Back to the day' }).click()
+  await expect(page.getByText(/Working until 4:00 PM/)).toBeVisible()
+})
+
+test('the strip never offers the questions while a block is running', async ({ page }) => {
+  // The other half of the rule above. Naming the block is the product, so the
+  // strip must not become a way to click past it.
+  await openMono(page)
+  await shapeDay(page)
+  await startBlock(page, 'Write the thing')
+
+  await expect(
+    carousel(page).getByRole('button', { name: "What's already fixed" }),
+  ).toHaveAttribute('aria-disabled', 'true')
+  await expect(
+    carousel(page).getByRole('button', { name: "Today's hours" }),
+  ).toHaveAttribute('aria-disabled', 'true')
+})
+
+test("there is only ever one editor of today's hours on screen", async ({ page }) => {
+  // Two of them, each holding its own draft, is a race with a user in it: type
+  // in both and whichever you save second silently overwrites the first.
+  await openMono(page)
+  await shapeDay(page)
+
+  await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
+  await expect(calendar(page).getByLabel("Today's hours 1 end")).toBeVisible()
+
+  // Going to the question on the stage closes the composer.
+  await goToStage(page, "Today's hours")
+  await expect(stage(page).getByLabel("Today's hours 1 end")).toBeVisible()
+  await expect(calendar(page).getByLabel("Today's hours 1 end")).toBeHidden()
+
+  // And opening the composer takes the question back off the stage.
+  await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
+  await expect(calendar(page).getByLabel("Today's hours 1 end")).toBeVisible()
+  await expect(stage(page).getByLabel("Today's hours 1 end")).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Start deep block' })).toBeVisible()
+})
+
+test('the unanswered day moves to the other question rather than asking twice', async ({
+  page,
+}) => {
+  // The same rule where the setup panel cannot simply close, because the day
+  // has not been shaped yet. The question moves; the composer wins the edit.
+  await openMono(page)
+  await goToStage(page, "Today's hours")
+
+  await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
+  await expect(calendar(page).getByLabel("Today's hours 1 end")).toBeVisible()
+  await expect(
+    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+  ).toBeVisible()
+})
+
 test('a commitment can carry the time it costs either side of itself', async ({ page }) => {
   await openMono(page)
 
@@ -367,6 +452,25 @@ test('reopening the app long after a block ended still asks what happened', asyn
   await expect(blocksOf(page, 'Away')).toHaveCount(1)
 })
 
+test('an open calendar editor closes when Mono asks what happened', async ({ page }) => {
+  // "You were away" is an interruption rather than a stage — the strip hides
+  // itself for it, because nothing is recorded until it is answered. An editor
+  // left expanded beside it is somewhere else for that click to land.
+  await openMono(page)
+  await shapeDay(page)
+  await startBlock(page, 'Write the planner tests')
+
+  await calendar(page).getByRole('button', { name: '+ Commitment' }).click()
+  await expect(calendar(page).getByLabel('What', { exact: true })).toBeVisible()
+
+  // The machine slept across the end of the block.
+  await page.clock.setSystemTime(new Date(2026, 7, 20, 16, 0, 0))
+  await page.clock.fastForward('00:02')
+
+  await expect(stage(page).getByText('You were away')).toBeVisible()
+  await expect(calendar(page).getByLabel('What', { exact: true })).toBeHidden()
+})
+
 test('settings close every way they offer, and refuse a nonsense duration', async ({
   page,
 }) => {
@@ -450,6 +554,50 @@ test('the calendar edits itself in place, without covering the day', async ({ pa
   await hours.click()
   await expect(hours).toHaveAttribute('aria-expanded', 'false')
   await expect(calendar(page).getByLabel("Today's hours 1 start")).toBeHidden()
+})
+
+test('a break and a commitment are edited where they are drawn', async ({ page }) => {
+  await openMono(page)
+  await addStandup(page)
+
+  // The block is the control. There is no pencil to find, and no dialog: the
+  // form that made the commitment opens under the calendar header, seeded from
+  // it, with the day still drawn below.
+  await calendar(page).getByRole('button', { name: 'Edit Daily standup' }).click()
+  const what = calendar(page).getByLabel('What', { exact: true })
+  await expect(what).toHaveValue('Daily standup')
+  await expect(calendar(page).getByLabel('At', { exact: true })).toHaveValue('17:00')
+  await expect(calendar(page).getByLabel('For (minutes)', { exact: true })).toHaveValue('15')
+
+  await what.fill('Design review')
+  await calendar(page).getByLabel('At', { exact: true }).fill('16:00')
+  await calendar(page).getByRole('button', { name: 'Save', exact: true }).click()
+
+  // Moved and renamed, not duplicated: this is the same commitment.
+  await expect(blocksOf(page, 'Daily standup')).toHaveCount(0)
+  await expect(blocksOf(page, 'Design review')).toHaveAttribute(
+    'title',
+    'Design review · 4:00 PM · 15m',
+  )
+
+  // And the same for a pinned break.
+  await calendar(page).getByRole('button', { name: '+ Break' }).click()
+  await calendar(page).getByLabel('From', { exact: true }).fill('15:00')
+  await calendar(page).getByLabel('For (minutes)', { exact: true }).fill('20')
+  await calendar(page).getByRole('button', { name: 'Add break' }).click()
+  await expect(blocksOf(page, 'Break')).toHaveAttribute('title', 'Break · 3:00 PM · 20m')
+
+  await calendar(page).getByRole('button', { name: 'Edit Break' }).click()
+  await expect(calendar(page).getByLabel('From', { exact: true })).toHaveValue('15:00')
+  await calendar(page).getByLabel('For (minutes)', { exact: true }).fill('45')
+  await calendar(page).getByRole('button', { name: 'Save break' }).click()
+  await expect(blocksOf(page, 'Break')).toHaveAttribute('title', 'Break · 3:00 PM · 45m')
+
+  // It survives a reload, because it went into the log rather than into the
+  // component holding the form.
+  await page.reload()
+  await expect(blocksOf(page, 'Break')).toHaveAttribute('title', 'Break · 3:00 PM · 45m')
+  await expect(blocksOf(page, 'Design review')).toHaveCount(1)
 })
 
 test('plans only inside working hours, and resumes after an unstructured gap', async ({

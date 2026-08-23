@@ -9,8 +9,10 @@
  *
  * Two of these are freely navigable and the rest are not, and the difference is
  * not cosmetic. The opening questions are a form: answer them in whatever order
- * you like. Everything after "One thing" is a gate — you do not get to skip
- * naming the block by clicking a dot, because naming it is the product.
+ * you like, and they stay answerable — between blocks the day's shape is still
+ * a question, and re-opening it is how you change your mind about it.
+ * Everything after "One thing" is a gate — you do not get to skip naming the
+ * block by clicking a dot, because naming it is the product.
  */
 
 import type { Phase } from '@/domain/machine'
@@ -57,8 +59,30 @@ export const otherSetupStage = (stage: SetupStageId): SetupStageId =>
   stage === 'commitments' ? 'hours' : 'commitments'
 
 /**
+ * Whether the two opening questions can be reached from the strip right now.
+ *
+ * Only while nothing is running, which is a stronger rule than "before the day
+ * is shaped" and a weaker one than "never again afterwards". Shaping the day
+ * used to close the questions for good, and there is nothing behind that: what
+ * is fixed today and which hours are yours are ordinary facts about the day
+ * that keep changing, and answering them once should not be the only chance.
+ *
+ * Mid-block is the case this excludes, and deliberately. The strip must never
+ * offer a way out of "One thing" — naming the block is the product — and the
+ * calendar's own `Hours` and `+ Commitment` are right there for a day whose
+ * shape changed while you were working.
+ */
+export const setupReachable = (phase: Phase): boolean => phase.name === 'idle'
+
+/**
  * Where the day is now, or `null` when the question on screen is not part of
  * the journey at all.
+ *
+ * `setupOpen` is the one thing here the phase cannot tell us. A day that has
+ * not been shaped yet is always in setup; a day that has can be *put back*
+ * there, which is a decision `App` holds rather than the event log — re-reading
+ * the opening questions is not a fact about the day, it is where the user is
+ * looking.
  *
  * "You were away" is the null case. It is an interruption rather than a stage —
  * it can arrive from any of them and returns to where it came from — and a
@@ -67,12 +91,12 @@ export const otherSetupStage = (stage: SetupStageId): SetupStageId =>
  */
 export function stageFor(
   phase: Phase,
-  dayShaped: boolean,
+  setupOpen: boolean,
   setupStage: SetupStageId,
 ): StageId | null {
   switch (phase.name) {
     case 'idle':
-      return dayShaped ? 'ready' : setupStage
+      return setupOpen ? setupStage : 'ready'
     case 'definingPurpose':
       return 'purpose'
     case 'reflecting':

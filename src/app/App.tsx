@@ -9,6 +9,12 @@
  * calendar's open editor, because the stage opens the hours one too and there
  * must only ever be one of it; and the settings panel, because it is the one
  * thing reachable from both routes.
+ *
+ * Both of those, and which opening question is on screen, describe *this*
+ * session and this moment in it. So each one is adjusted during render against
+ * something that says the moment has moved on — the session `generation`, and
+ * the phase — rather than in an effect that would paint the stale answer for a
+ * frame first.
  */
 
 import { useMemo, useState } from 'react'
@@ -20,10 +26,16 @@ import { Companion } from '@/components/Companion/Companion'
 import { PixelCat } from '@/components/Companion/PixelCat'
 import { Stage } from '@/components/stage/Stage'
 import { StageCarousel } from '@/components/stage/StageCarousel'
-import { FIRST_SETUP_STAGE, stageFor, type SetupStageId } from '@/components/stage/stages'
+import {
+  FIRST_SETUP_STAGE,
+  otherSetupStage,
+  setupReachable,
+  stageFor,
+  type SetupStageId,
+} from '@/components/stage/stages'
 import { DayCalendar } from '@/components/Timeline/DayCalendar'
 import { headerControlClass } from '@/components/ui'
-import type { ComposerKind } from '@/components/Timeline/SegmentEditor'
+import type { Composer } from '@/components/Timeline/SegmentEditor'
 
 import { useNow } from '@/hooks/useNow'
 import { useRoute, GUIDE_HASH } from '@/hooks/useRoute'
@@ -44,11 +56,17 @@ export function App() {
   const unlock = useUnlock()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
-  const [composer, setComposer] = useState<ComposerKind | null>(null)
+  const [composer, setComposer] = useState<Composer | null>(null)
   const [setupStage, setSetupStage] = useState<SetupStageId>(FIRST_SETUP_STAGE)
+  // The opening questions, re-opened after the day was already shaped. It is
+  // where the user is looking rather than anything about the day, so it lives
+  // here and not in the log — `day/shaped` records being asked, and coming back
+  // to change an answer is not being asked again.
+  const [revisitingSetup, setRevisitingSetup] = useState(false)
   const [seenGeneration, setSeenGeneration] = useState(() => store.generation)
 
   const { phase, session } = store
+  const [seenPhase, setSeenPhase] = useState(phase.name)
   const planInput = useMemo(() => toPlanInput(store, now), [store, now])
   const timeline = useMemo(() => derivePlan(planInput), [planInput])
   const regions = selectRegions(store, now)
@@ -72,10 +90,50 @@ export function App() {
   if (seenGeneration !== store.generation) {
     setSeenGeneration(store.generation)
     setSetupStage(FIRST_SETUP_STAGE)
+    setRevisitingSetup(false)
     setComposer(null)
   }
 
-  const stage = stageFor(phase, dayShaped, setupStage)
+  // Waking up across a block boundary is an interruption rather than a stage:
+  // `stageFor` returns null for it and the strip hides itself entirely, because
+  // nothing that happened while we were away is recorded until the question is
+  // answered. The calendar's editors were the one part of the UI that did not
+  // follow, and a composer still expanded beside that prompt is somewhere else
+  // for the answering click to land.
+  //
+  // On the transition into the phase rather than on the phase itself. Closing
+  // it whenever the phase *is* reconciling would shut a composer the user
+  // deliberately opened during one, half a frame after they pressed the button,
+  // and the header toggles would look broken.
+  if (seenPhase !== phase.name) {
+    setSeenPhase(phase.name)
+    if (phase.name === 'reconciling') setComposer(null)
+  }
+
+  // The stage shows the opening questions while they are unanswered, and again
+  // whenever the user goes back to them.
+  const setupOpen = !dayShaped || revisitingSetup
+  const stage = stageFor(phase, setupOpen, setupStage)
+  /**
+   * Move the stage to one of the opening questions.
+   *
+   * The same gesture before the day is shaped and after it: the strip is the
+   * navigation either way, and after it this is also what re-opens the panel.
+   * The questions do not stop being answerable just because they were answered
+   * once — what is fixed today and which hours are yours both keep changing.
+   */
+  const goToSetupStage = (next: SetupStageId) => {
+    setSetupStage(next)
+    setRevisitingSetup(true)
+    if (next === 'hours' && composer?.kind === 'hours') setComposer(null)
+  }
+
+  /** Leaving the opening questions, from either of them. */
+  const finishSetup = () => {
+    if (!dayShaped) store.shapeDay()
+    setRevisitingSetup(false)
+  }
+
   const startBlock = (kind: BlockKind): void => {
     // The one gesture that unlocks audio and asks for notification permission.
     // Deliberately not awaited: the permission prompt is a browser-modal the
@@ -93,6 +151,26 @@ export function App() {
   const openSettings = () => {
     setComposer(null)
     setSettingsOpen(true)
+  }
+
+  /**
+   * The same rule, applied to the other pair that edits today's hours.
+   *
+   * The stage's opening question and the calendar's `Hours` composer ask
+   * exactly the same thing, and each holds its own draft of the answer. Both
+   * open at once is a race with a user in it: type in one, type in the other,
+   * and whichever you save second silently overwrites the first. So opening
+   * the composer takes the question off the stage — back to the day if it was
+   * re-opened, to the other question if the day has not been shaped yet and
+   * the panel cannot close. `goToSetupStage` closes the composer for the same
+   * reason in the other direction.
+   */
+  const openComposer = (next: Composer | null) => {
+    if (next?.kind === 'hours' && stage === 'hours') {
+      if (dayShaped) setRevisitingSetup(false)
+      else setSetupStage(otherSetupStage('hours'))
+    }
+    setComposer(next)
   }
   const settings = (
     <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
@@ -170,9 +248,10 @@ export function App() {
                 phase={phase}
                 active={session.active}
                 settings={session.settings}
-                dayShaped={dayShaped}
+                setupOpen={setupOpen}
+                revisitingSetup={setupOpen && dayShaped}
                 setupStage={setupStage}
-                onSetupStage={setSetupStage}
+                onSetupStage={goToSetupStage}
                 commitments={session.commitments}
                 regions={regions}
                 withinHours={withinHours}
@@ -186,8 +265,8 @@ export function App() {
                 onAddCommitment={store.addCommitment}
                 onRemoveCommitment={store.removeCommitment}
                 onSaveRegions={store.setRegions}
-                onDayShaped={store.shapeDay}
-                onEditHours={() => setComposer('hours')}
+                onDayShaped={finishSetup}
+                onEditHours={() => openComposer({ kind: 'hours' })}
                 onStartBlock={startBlock}
                 onSetPurpose={(purpose) =>
                   store.dispatch({ type: 'setPurpose', at: Date.now(), purpose })
@@ -212,13 +291,15 @@ export function App() {
                 }
               />
 
-              {/* Where in the day you are. A control while the opening
-                  questions are open — they can be answered in either order —
-                  and an indicator once the day is under way. It never offers a
-                  way past "One thing": naming the block is not skippable. */}
+              {/* Where in the day you are. A control whenever nothing is
+                  running — the two opening questions can be answered in either
+                  order, and reached again between blocks, because the shape of
+                  a day keeps changing — and an indicator the rest of the time.
+                  It never offers a way past "One thing": naming the block is
+                  not skippable. */}
               <StageCarousel
                 current={stage}
-                {...(dayShaped ? {} : { onNavigate: setSetupStage })}
+                {...(setupReachable(phase) ? { onNavigate: goToSetupStage } : {})}
               />
             </div>
 
@@ -235,9 +316,13 @@ export function App() {
             regions={regions}
             usingDefaultRegions={session.regionOverrides === null}
             composer={composer}
-            onComposer={setComposer}
+            onComposer={openComposer}
+            commitments={session.commitments}
+            breaks={session.overrides}
             onAddBreak={store.planBreak}
             onAddCommitment={store.addCommitment}
+            onUpdateBreak={store.updateBreak}
+            onUpdateCommitment={store.updateCommitment}
             onSetRegions={store.setRegions}
             onRemoveBreak={store.removeBreak}
             onRemoveCommitment={store.removeCommitment}

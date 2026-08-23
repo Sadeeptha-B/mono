@@ -19,6 +19,7 @@
  */
 
 import { useState, type Ref } from 'react'
+import { format } from 'date-fns'
 
 import { fieldClass, labelClass, MinutesInput } from './ui'
 import { COMMITMENT_MINUTES, MARGIN_MINUTES, parseBoundedMinutes } from './minutes'
@@ -39,6 +40,23 @@ export const emptyDraft = (time: string): CommitmentDraft => ({
   durationText: String(COMMITMENT_MINUTES.fallback),
   prepText: String(MARGIN_MINUTES.fallback),
   recoverText: String(MARGIN_MINUTES.fallback),
+})
+
+/**
+ * A draft of a commitment that already exists, for editing it.
+ *
+ * Back to wall clock, which is the direction `readCommitment` does not go: the
+ * store holds an instant, the field holds "HH:mm", and this is the only place
+ * that turns one into the other. An absent margin becomes "0" rather than an
+ * empty field, so the fieldset shows what the commitment actually costs and
+ * the number input has something to step from.
+ */
+export const draftFromCommitment = (commitment: Commitment): CommitmentDraft => ({
+  title: commitment.title,
+  time: format(commitment.startsAt, 'HH:mm'),
+  durationText: String(commitment.durationMin),
+  prepText: String(commitment.prepMin ?? 0),
+  recoverText: String(commitment.recoverMin ?? 0),
 })
 
 /**
@@ -75,6 +93,25 @@ export function readCommitment(
     ...(prepMin === 0 ? {} : { prepMin }),
     ...(recoverMin === 0 ? {} : { recoverMin }),
   }
+}
+
+/**
+ * The same draft, read as an edit to a commitment that already exists.
+ *
+ * The difference is the one line below, and it is the whole reason this is a
+ * separate function. `readCommitment` omits a zero margin, which is right for
+ * something new — it then looks exactly like every commitment written before
+ * margins existed. It is wrong for an edit: the result is merged onto the
+ * commitment it came from, so an omitted `prepMin` keeps the old one. Deleting
+ * the half hour of travel would leave the plan still keeping it clear, with the
+ * form insisting it was gone.
+ */
+export function readCommitmentEdit(
+  now: Ms,
+  draft: CommitmentDraft,
+): Omit<Commitment, 'id'> | null {
+  const next = readCommitment(now, draft)
+  return next === null ? null : { prepMin: 0, recoverMin: 0, ...next }
 }
 
 const parseMargin = (raw: string): number | null =>

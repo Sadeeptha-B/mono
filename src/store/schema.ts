@@ -174,6 +174,12 @@ function sanitiseImportedEvent(event: MonoEvent): MonoEvent | null {
       return plannedBreak === null ? null : { type: event.type, at: event.at, plannedBreak }
     }
 
+    case 'break/updated': {
+      const id = sanitiseString(raw.id)
+      const patch = sanitiseBreakPatch(raw.patch)
+      return id === null || patch === null ? null : { type: event.type, at: event.at, id, patch }
+    }
+
     case 'break/removed': {
       const id = sanitiseString(raw.id)
       return id === null ? null : { type: event.type, at: event.at, id }
@@ -357,6 +363,24 @@ function sanitiseCommitmentPatch(value: unknown): Partial<Commitment> | null {
     const recoverMin = sanitiseMarginMinutes(value.recoverMin)
     if (recoverMin === null || recoverMin === undefined) return null
     patch.recoverMin = recoverMin
+  }
+
+  return patch
+}
+
+function sanitiseBreakPatch(value: unknown): Partial<PlannedBreak> | null {
+  if (!isRecord(value)) return null
+
+  const patch: Partial<PlannedBreak> = {}
+  if ('startsAt' in value) {
+    const startsAt = sanitiseNumber(value.startsAt)
+    if (startsAt === null) return null
+    patch.startsAt = startsAt
+  }
+  if ('durationMin' in value) {
+    const durationMin = sanitisePositiveMinutes(value.durationMin)
+    if (durationMin === null) return null
+    patch.durationMin = durationMin
   }
 
   return patch

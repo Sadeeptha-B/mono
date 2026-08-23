@@ -26,6 +26,23 @@ export const labelClass =
 export const headerControlClass =
   'rounded-lg border border-line px-3 py-1.5 text-xs text-body transition hover:bg-surface-raised hover:text-bright'
 
+/**
+ * The pencil on an editable block, pointing left.
+ *
+ * Unicode's pencil dingbats all point to the lower *right* — U+270E is
+ * literally named LOWER RIGHT PENCIL — so this is that character mirrored
+ * rather than a codepoint of its own. U+1F589 LOWER LEFT PENCIL does exist and
+ * would be the honest answer, but it is missing from enough system fonts to
+ * render as an empty box, and a control that is sometimes a box is worse than a
+ * pencil facing the wrong way. The transform needs `inline-block`: it does
+ * nothing at all to a bare inline span.
+ *
+ * A component rather than a character typed in two places, because the guide
+ * quotes this control and the calendar draws it. One of them being a mirror
+ * image of the other reads as two different buttons.
+ */
+export const EditGlyph = () => <span className="inline-block -scale-x-100">✎</span>
+
 export function PrimaryButton({
   children,
   className = '',

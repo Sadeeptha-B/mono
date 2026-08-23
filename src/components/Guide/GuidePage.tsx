@@ -20,7 +20,7 @@
 import { useMemo, type ReactNode } from 'react'
 
 import { PixelCat } from '../Companion/PixelCat'
-import { headerControlClass } from '../ui'
+import { EditGlyph, headerControlClass } from '../ui'
 import { formatTimer } from '@/domain/time'
 import { DAY_HASH } from '@/hooks/useRoute'
 import { useSession } from '@/store/session'
@@ -406,9 +406,13 @@ function sectionsFor(
             either order, nothing you have typed is lost by switching, and{' '}
             <Em>Start the day</Em> finishes from whichever you are looking at. With
             nothing fixed today, that is the whole of it: press it and Mono plans your
-            hours end to end. Those same dots keep working afterwards as a map of where
-            in the day you are — hover one to see what it is. They never skip ahead,
-            though: naming a block is not something you can click past.
+            hours end to end. Those same dots keep working afterwards, in both of their
+            jobs: they are a map of where in the day you are — hover one to see what it
+            is — and between blocks they go back to either question, because a meeting
+            that appears at four is no different from one you knew about at nine.{' '}
+            <Em>Back to the day</Em> returns. They never skip ahead, though: naming a
+            block is not something you can click past, and while one is running the
+            questions are the calendar's to answer.
           </P>
           <P>
             <Em>Working hours</Em> are the only time Mono is allowed to plan in.
@@ -445,16 +449,24 @@ function sectionsFor(
             displace — and the day is drawn directly below the answer.
           </P>
           <Note>
-            Adding a commitment clears every break you had pinned for later. The shape
-            of the day just changed, so those rest points were answers to a different
-            question. Pin them again wherever they still make sense.
+            Adding a commitment — or changing one — clears every break you had pinned
+            for later. The shape of the day just changed, so those rest points were
+            answers to a different question. Pin them again wherever they still make
+            sense.
           </Note>
           <P>
             On the calendar, lit bands are your working hours and everything outside them
             is time Mono will not touch. Blocks are drawn at their real length, so
             forty-five minutes looks like forty-five minutes and a gap reads as a gap.
-            The bright line is now, past entries are dimmed, and the <Em>×</Em> on a
-            break or a commitment removes it.
+            The bright line is now, past entries are dimmed, and a break or a commitment
+            carries two controls:{' '}
+            <Em>
+              <EditGlyph />
+            </Em>{' '}
+            reopens the form that made it, seeded with what it says now, and{' '}
+            <Em>×</Em> removes it. Focus blocks carry neither, because they are worked out
+            from your hours and your commitments — change one of those and the blocks
+            follow.
           </P>
         </>
       ),
@@ -603,7 +615,12 @@ function sectionsFor(
           <P>
             You can also pin a break in advance with <Em>+ Break</Em> on the calendar,
             for rest you already know you will need. The plan works around it exactly
-            like a commitment.
+            like a commitment, and like a commitment you can move it or change its
+            length afterwards with the{' '}
+            <Em>
+              <EditGlyph />
+            </Em>{' '}
+            on the block.
           </P>
         </>
       ),

@@ -31,6 +31,7 @@ export type MonoEvent =
   | { type: 'commitment/removed'; at: Ms; id: string }
   | { type: 'region/set'; at: Ms; regions: WorkRegion[] }
   | { type: 'break/planned'; at: Ms; plannedBreak: PlannedBreak }
+  | { type: 'break/updated'; at: Ms; id: string; patch: Partial<PlannedBreak> }
   | { type: 'break/removed'; at: Ms; id: string }
   | {
       type: 'block/started'
@@ -103,6 +104,9 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
         overrides: onlyBreakInProgress(state.overrides, event.at),
       }
 
+    // Editing a commitment moves the same walls of the day that adding one
+    // does — a meeting pushed an hour later takes the runway with it — so the
+    // pinned breaks go for exactly the reason they go above.
     case 'commitment/updated':
       return {
         ...state,
@@ -135,6 +139,20 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
         overrides: [...state.overrides, event.plannedBreak].sort(
           (a, b) => a.startsAt - b.startsAt,
         ),
+      }
+
+    // A patch rather than a remove followed by an add, for the same reason
+    // `commitment/updated` is one: the break keeps its id, so the timeline
+    // entry drawn from it keeps its React key and the plan re-derives around a
+    // break that moved rather than around a different break. Re-sorted because
+    // `break/planned` maintains that order and moving one across its neighbour
+    // is the ordinary edit.
+    case 'break/updated':
+      return {
+        ...state,
+        overrides: state.overrides
+          .map((b) => (b.id === event.id ? { ...b, ...event.patch } : b))
+          .sort((a, b) => a.startsAt - b.startsAt),
       }
 
     case 'break/removed':
@@ -193,9 +211,12 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
           ...state.history,
           { kind: 'break', id, startedAt, endedAt: event.at, plannedEndsAt: endsAt },
         ],
-        // A break that ends drops any pinned break it was fulfilling, so the
-        // plan does not schedule the same rest twice.
-        overrides: onlyBreakInProgress(state.overrides, event.at),
+        // The pin this break was fulfilling is spent, so the plan does not
+        // schedule the same rest twice. Only the spent ones: this used to share
+        // the blunt filter above, which deleted every pin still to come — take
+        // an ad-hoc break at two and the walk you had pinned for four vanished,
+        // silently, having nothing to do with the rest you just had.
+        overrides: pinsStillAhead(state.overrides, event.at),
         active: null,
       }
     }
@@ -254,9 +275,36 @@ export const replay = (events: readonly MonoEvent[]): SessionState =>
  * Two things go: the ones that have not started, which is the point of calling
  * this, and the ones that finished long ago, which nothing reads but which
  * otherwise pile up in state until midnight clears them.
+ *
+ * Deliberately blunt, and only for the commitment events, where the whole
+ * runway moves and every pin on it is an answer to a question that has changed.
+ * The composer says so before you add one. Taking a break is not that — see
+ * `pinsStillAhead`.
  */
 const onlyBreakInProgress = (breaks: PlannedBreak[], at: Ms): PlannedBreak[] =>
   breaks.filter((b) => b.startsAt <= at && b.startsAt + minutesToMs(b.durationMin) > at)
+
+/**
+ * What survives taking a break: every pin with time left in it.
+ *
+ * A break taken against a pin runs to its end, which spends it, so it goes —
+ * and so does anything else already behind us, which nothing reads but which
+ * would otherwise pile up until midnight. Cut a break short and what is left of
+ * that reservation stays, which is what it did before and is the honest answer:
+ * the time was set aside, and stopping early does not un-set it. A walk pinned
+ * for four o'clock is untouched by a break taken at three.
+ *
+ * Deliberately a *superset* of what `onlyBreakInProgress` kept: a pin still
+ * running when the break ended survives here exactly as it did before, so
+ * taking fifteen minutes inside a two-hour reservation leaves the rest of the
+ * reservation standing. The only pins whose fate changed are the ones still to
+ * come, which is the whole of the fix. Read `at` as the moment the break ended,
+ * not as now — after a long sleep, `resolveAway` ends the break at its planned
+ * end, so a pin that has since gone stale is left for the midnight reset to
+ * clear rather than being caught here. The planner does not draw it either way.
+ */
+const pinsStillAhead = (breaks: PlannedBreak[], at: Ms): PlannedBreak[] =>
+  breaks.filter((b) => b.startsAt + minutesToMs(b.durationMin) > at)
 
 /**
  * The history entry a running block turns into.

@@ -1,5 +1,5 @@
 /**
- * The three things you can add to the timeline, edited on the timeline.
+ * The three things you can put on the timeline, edited on the timeline.
  *
  * These were dialogs. The argument for that was the same one that keeps
  * settings in a dialog — an aside you dismiss — but it does not survive contact
@@ -16,6 +16,13 @@
  * on every keystroke. Mounting on open removes that problem rather than working
  * around it.
  *
+ * Two of them also *change* what is already there: the ✎ on a break or a
+ * commitment below opens the same form seeded from it. The same
+ * form on purpose — a commitment does not become a different kind of thing once
+ * it exists, and the question "when is this, and what does it cost either side"
+ * is identical whether it is being answered for the first time or the second.
+ * The only difference is where the answer goes, which is the caller's problem.
+ *
  * Times are wall clock here, resolved against today's calendar at the edge. The
  * domain only ever sees epoch milliseconds.
  */
@@ -25,18 +32,42 @@ import { format } from 'date-fns'
 
 import {
   CommitmentFields,
+  draftFromCommitment,
   emptyDraft,
   readCommitment,
+  readCommitmentEdit,
   type CommitmentDraft,
 } from '../CommitmentFields'
 import { hoursToSave, TodayHoursFields, useHoursDraft } from '../TodayHours'
 import { fieldClass, GhostButton, labelClass, MinutesInput, PrimaryButton } from '../ui'
 import { BREAK_MINUTES, parseBoundedMinutes } from '../minutes'
 import { nextHalfHour, wallClockOn } from '@/domain/time'
-import type { Ms, WorkRegion } from '@/domain/types'
+import type { Commitment, Ms, PlannedBreak, WorkRegion } from '@/domain/types'
 
-/** Which composer is open, if any. */
+/** Which of the three forms a composer is. */
 export type ComposerKind = 'hours' | 'break' | 'commitment'
+
+/**
+ * The composer expanded under the calendar header, if any.
+ *
+ * Two of the three can also be pointed at something already on the day, which
+ * is what `editing` carries: the id of the break or commitment being changed,
+ * or `null` for the new one the header buttons open. An id rather than the
+ * thing itself, because the plan is re-derived every second and a copy taken
+ * when the form opened would be a second, quietly diverging answer to what that
+ * commitment is.
+ */
+export type EntryComposer = { kind: 'break' | 'commitment'; editing: string | null }
+
+export type Composer = { kind: 'hours' } | EntryComposer
+
+/** The composer a header button opens: this form, adding rather than editing. */
+export const adding = (kind: ComposerKind): Composer =>
+  kind === 'hours' ? { kind } : { kind, editing: null }
+
+/** What this composer is editing, or null while it is adding something new. */
+export const editingId = (composer: Composer): string | null =>
+  composer.kind === 'hours' ? null : composer.editing
 
 /**
  * The frame every composer shares.
@@ -66,25 +97,34 @@ const composerButton = 'px-3 py-1.5 text-xs'
 
 export function CommitmentComposer({
   now,
-  onAdd,
+  editing,
+  onSubmit,
   onCancel,
 }: {
   now: Ms
-  onAdd: (input: { title: string; startsAt: Ms; durationMin: number }) => void
+  /**
+   * The commitment being changed, or null for a new one. The caller remounts
+   * this on a change of identity, which is what lets the seed below be lazy.
+   */
+  editing: Commitment | null
+  onSubmit: (input: Omit<Commitment, 'id'>) => void
   onCancel: () => void
 }) {
-  // Default to the next round half hour — the most likely answer.
+  // Seeded from the commitment when there is one, and otherwise defaulted to
+  // the next round half hour — the most likely answer.
   const [draft, setDraft] = useState<CommitmentDraft>(() =>
-    emptyDraft(format(nextHalfHour(now), 'HH:mm')),
+    editing ? draftFromCommitment(editing) : emptyDraft(format(nextHalfHour(now), 'HH:mm')),
   )
-  const ready = readCommitment(now, draft)
+  // Not the same read: an edit is merged onto what is already there, so it has
+  // to say a margin is zero rather than leave it out. See `readCommitmentEdit`.
+  const ready = editing ? readCommitmentEdit(now, draft) : readCommitment(now, draft)
 
   return (
-    <ComposerShell title="Next commitment">
+    <ComposerShell title={editing ? 'Edit commitment' : 'Next commitment'}>
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (ready) onAdd(ready)
+          if (ready) onSubmit(ready)
         }}
       >
         <CommitmentFields
@@ -95,8 +135,8 @@ export function CommitmentComposer({
         />
 
         <p className="mt-3 text-xs leading-relaxed text-muted">
-          Adding this re-derives the plan, which clears any breaks you had pinned. Add
-          them back wherever they still make sense.
+          {editing ? 'Changing' : 'Adding'} this re-derives the plan, which clears any
+          breaks you had pinned. Add them back wherever they still make sense.
         </p>
 
         <Actions>
@@ -104,7 +144,7 @@ export function CommitmentComposer({
             Cancel
           </GhostButton>
           <PrimaryButton type="submit" disabled={!ready} className={composerButton}>
-            Add
+            {editing ? 'Save' : 'Add'}
           </PrimaryButton>
         </Actions>
       </form>
@@ -114,15 +154,22 @@ export function CommitmentComposer({
 
 export function BreakComposer({
   now,
-  onAdd,
+  editing,
+  onSubmit,
   onCancel,
 }: {
   now: Ms
-  onAdd: (input: { startsAt: Ms; durationMin: number }) => void
+  /** The pinned break being changed, or null for a new one. */
+  editing: PlannedBreak | null
+  onSubmit: (input: Omit<PlannedBreak, 'id'>) => void
   onCancel: () => void
 }) {
-  const [time, setTime] = useState(() => format(nextHalfHour(now), 'HH:mm'))
-  const [durationText, setDurationText] = useState(String(BREAK_MINUTES.fallback))
+  const [time, setTime] = useState(() =>
+    format(editing ? editing.startsAt : nextHalfHour(now), 'HH:mm'),
+  )
+  const [durationText, setDurationText] = useState(
+    String(editing ? editing.durationMin : BREAK_MINUTES.fallback),
+  )
 
   const startsAt = wallClockOn(now, time)
   const durationMin = parseBoundedMinutes(
@@ -133,12 +180,12 @@ export function BreakComposer({
   const valid = startsAt !== null && durationMin !== null
 
   return (
-    <ComposerShell title="Plan a break">
+    <ComposerShell title={editing ? 'Edit break' : 'Plan a break'}>
       <form
         onSubmit={(e) => {
           e.preventDefault()
           if (startsAt === null || durationMin === null) return
-          onAdd({ startsAt, durationMin })
+          onSubmit({ startsAt, durationMin })
         }}
       >
         <div className="grid grid-cols-2 gap-3">
@@ -169,7 +216,7 @@ export function BreakComposer({
             Cancel
           </GhostButton>
           <PrimaryButton type="submit" disabled={!valid} className={composerButton}>
-            Add break
+            {editing ? 'Save break' : 'Add break'}
           </PrimaryButton>
         </Actions>
       </form>
