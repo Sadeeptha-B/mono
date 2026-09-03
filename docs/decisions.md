@@ -658,3 +658,124 @@ page scrolls below `lg` (`min-h-dvh lg:h-dvh`, at which point the calendar
 becomes full-length on a phone and scrolling *into view* finally means
 something), or the composer gets to shrink and scroll inside the column. Both
 change how Mono looks on a phone, so both want deciding rather than defaulting.
+
+**2026-08-23 (later) — A finished commitment stays on the axis.**
+
+One filter was doing two jobs. `upcomingCommitments` decided what shapes the
+plan *and* what gets drawn, so a meeting disappeared off the calendar the
+instant its last minute — its recovery margin included — passed. The comment
+next to it said the ones behind us are "history's business", which sounded
+right and was not: `history` is blocks, breaks and away stretches, a commitment
+never becomes one of those, and so nothing else was ever going to draw it. The
+day drew every block you ran and every break you took, and silently dropped the
+two hours you spent in a meeting — the very thing the blocks either side of it
+were arranged around.
+
+Now every commitment is drawn and only the upcoming ones enter `busy`. The two
+lists say different things and there is no reason for them to be the same list.
+Note the filter on `busy` is, strictly, unnecessary — free stretches begin at
+`planFrom` and `subtractIntervals` skips anything ending before its cursor, so
+a past span could go in harmlessly. It is kept because "only what is ahead of
+us shapes the plan" is a rule worth being able to read in the code rather than
+deduce from an interaction two functions away.
+
+Nothing in the UI needed changing, which is the tell that this was a bug rather
+than a missing feature: `Block` already dims an entry whose `endsAt` has passed,
+already hides `×` on one, and `editorFor` already refuses an editor once
+`commitmentSpan(...).end <= now`. All three were written for a case the planner
+never produced. The test that had locked the old behaviour — `ignores
+commitments that are already over` — was itself the bug, written from the
+planner's point of view rather than the calendar's, and now reads
+`plans past commitments as though they were not there — but draws them`.
+
+**2026-08-23 (later still) — Commitments stop clearing the whole afternoon, and
+an orphaned editor closes.**
+
+*The blunt rule was reversed on its own evidence.* `commitment/added` and
+`commitment/updated` deleted every pinned break still to come. The argument for
+it is in the entry above and it is a good one as far as it goes: a commitment
+moves the walls of the runway, so a pin placed against the old shape is an
+answer to a question that has changed. What that argument does not survive is
+an example — add a nine o'clock standup and the walk you pinned for four
+disappears, having nothing whatever to do with the standup.
+
+`pinsClearOf` drops only the pins that overlap the commitment's span, margins
+included. That is the case where deletion is the *only* honest outcome: the
+planner merges an overlapping pin into one busy interval with the commitment,
+so keeping it would draw rest as part of the meeting and give it to nobody.
+Everywhere else, the day changing shape under a break you can still take is a
+reason to let you move it, not to move it for you by deleting it. Same shape as
+the `break/ended` fix earlier today, same reasoning, and it makes three filters
+in `events.ts` that all now say "drop what genuinely cannot stand, keep the
+rest".
+
+For an edit it measures against where the meeting *ends up*, not where it was:
+that is the shape the day now has, and a pin in the slot it just vacated is
+honourable again. `commitment/updated` therefore has to merge the patch before
+it can ask, which is also why an id that is not there now returns early — it
+changes nothing, so it clears nothing.
+
+`onlyBreakInProgress` is gone, having had both callers taken off it.
+
+*An editor whose subject vanished now closes.* `DayCalendar` already did this
+for the `×`; the same thing arriving from elsewhere — the pin spent by a break
+ending, or cleared by a commitment that covers it — left the composer open,
+where it silently became an *add* form: same fields, same values, different
+meaning, and the header toggle still reading unpressed. Now `orphaned` closes
+it. It has to be an effect rather than a check during render, because the state
+belongs to `App` and a child may not set a parent's state while rendering.
+
+Worth saying what was rejected. Keeping the form alive and re-labelling it
+("this break was cleared — save to pin it again") preserves what was typed and
+was tempting, but it needs the composer to explain a state it cannot see the
+cause of, and the fix above makes that state rare enough not to be worth a
+paragraph of UI. And *preventing* the clear while an editor is open was never
+on: the store would have to know what the calendar has expanded, which is the
+layering this app is built to avoid.
+
+**2026-09-03 — The pin-and-commitment rule is kept from both ends.**
+
+The entry above made `pinsClearOf` drop only the pins a commitment lands on top
+of, which was right, and left the rule half built. Nothing stopped the pin
+arriving second. `+ Break` at ten past five against a five o'clock meeting was
+accepted, stored and drawn straight through the middle of it — the exact state
+`pinsClearOf` exists to delete, reached by walking around it. The next touch of
+that commitment then cleaned it up in silence: `commitment/updated` runs the
+filter whatever the patch says, so *renaming* a meeting deleted a break.
+
+`break/planned` and `break/updated` now refuse an event that would lay a pin
+across a commitment span. The two filters together say something neither could
+say alone: **no pinned break ever overlaps a commitment.** It holds under replay
+in either order — pin first and the commitment clears it, meeting first and the
+pin is refused — which is the point, because a log also arrives from an import,
+and from a version of Mono written before either half of the rule existed.
+
+Refused rather than stored and corrected, because there is nothing to correct it
+to. A *move* is declined and the break stays where it was: aiming at a bad time
+is a reason to decline the move and no reason at all to lose the break.
+
+The visible half is `BreakComposer`, which now takes today's commitments and
+says *That runs into Daily standup* with the button disabled. The rule belongs
+in the reducer, where an imported log meets it too; the explanation belongs in
+the form, where the person choosing a time is. A refusal the user has to infer
+from a form that closed and did nothing is not an answer. `breakSpan` and
+`overlaps` moved to `types.ts` so the reducer, the planner and the composer all
+ask the question the same way — `toBreakInterval` in the planner was the same
+function under another name, and is gone.
+
+One casualty worth naming. The test *measures against where the meeting ends up,
+not where it was* used to prove that moving a meeting off a pin inside it
+brought that pin back. There is no such pin to bring back any more, so the test
+now proves the same thing from the only direction still reachable: a break clear
+of the swim at four, swallowed by it at two. The sentence in the entry above
+about a vacated slot being "honourable again" describes a case that can no
+longer be built.
+
+*An orphaned editor closes once rather than three times.* `DayCalendar` had a
+close beside the ×, and nothing beside the other two ways an editor's subject
+can vanish — which is how that bug got in. `orphaned` asks about the state, the
+lookup having failed, rather than about the gesture that caused it, and the ×
+closes nothing itself now. `useLayoutEffect` rather than `useEffect`: the
+composers are keyed on what they are editing, so a passive effect lets through
+one painted frame of the form remounted empty as an *add*, which is precisely
+the thing being prevented.

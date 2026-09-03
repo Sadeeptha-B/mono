@@ -42,7 +42,16 @@ import { hoursToSave, TodayHoursFields, useHoursDraft } from '../TodayHours'
 import { fieldClass, GhostButton, labelClass, MinutesInput, PrimaryButton } from '../ui'
 import { BREAK_MINUTES, parseBoundedMinutes } from '../minutes'
 import { nextHalfHour, wallClockOn } from '@/domain/time'
-import type { Commitment, Ms, PlannedBreak, WorkRegion } from '@/domain/types'
+import {
+  commitmentSpan,
+  minutesToMs,
+  overlaps,
+  type Commitment,
+  type Interval,
+  type Ms,
+  type PlannedBreak,
+  type WorkRegion,
+} from '@/domain/types'
 
 /** Which of the three forms a composer is. */
 export type ComposerKind = 'hours' | 'break' | 'commitment'
@@ -135,8 +144,9 @@ export function CommitmentComposer({
         />
 
         <p className="mt-3 text-xs leading-relaxed text-muted">
-          {editing ? 'Changing' : 'Adding'} this re-derives the plan, which clears any
-          breaks you had pinned. Add them back wherever they still make sense.
+          {editing ? 'Changing' : 'Adding'} this re-derives the plan. Any break you
+          pinned inside it — the time either side included — is cleared, since it
+          would be rest nobody gets. The rest of the day's breaks stay where they are.
         </p>
 
         <Actions>
@@ -155,12 +165,23 @@ export function CommitmentComposer({
 export function BreakComposer({
   now,
   editing,
+  commitments,
   onSubmit,
   onCancel,
 }: {
   now: Ms
   /** The pinned break being changed, or null for a new one. */
   editing: PlannedBreak | null
+  /**
+   * Today's commitments, so this form can say no before the reducer has to.
+   *
+   * A break pinned across a commitment is refused there — see
+   * `clashesWithCommitment` — and a refusal the user cannot see is a form that
+   * closes having silently done nothing. The rule belongs in the reducer, where
+   * an imported log meets it too; the *explanation* belongs here, where the
+   * person choosing a time is.
+   */
+  commitments: readonly Commitment[]
   onSubmit: (input: Omit<PlannedBreak, 'id'>) => void
   onCancel: () => void
 }) {
@@ -177,14 +198,28 @@ export function BreakComposer({
     BREAK_MINUTES.min,
     BREAK_MINUTES.max,
   )
-  const valid = startsAt !== null && durationMin !== null
+  const span: Interval | null =
+    startsAt === null || durationMin === null
+      ? null
+      : { start: startsAt, end: startsAt + minutesToMs(durationMin) }
+
+  // The commitment this break would be laid across, if there is one. The
+  // commitment rather than a boolean, because "that clashes with something" is
+  // a worse answer than "that runs into the swim" when the thing to do next is
+  // pick a different time.
+  const clash =
+    span === null
+      ? null
+      : (commitments.find((c) => overlaps(span, commitmentSpan(c))) ?? null)
+
+  const valid = startsAt !== null && durationMin !== null && clash === null
 
   return (
     <ComposerShell title={editing ? 'Edit break' : 'Plan a break'}>
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (startsAt === null || durationMin === null) return
+          if (startsAt === null || durationMin === null || clash !== null) return
           onSubmit({ startsAt, durationMin })
         }}
       >
@@ -210,6 +245,14 @@ export function BreakComposer({
             {...BREAK_MINUTES}
           />
         </div>
+
+        {clash && (
+          <p className="mt-3 text-xs leading-relaxed text-muted">
+            That runs into <span className="text-bright">{clash.title}</span>, counting
+            the time either side of it. Rest inside a meeting is rest nobody gets — pick
+            an hour clear of it, or move the commitment.
+          </p>
+        )}
 
         <Actions>
           <GhostButton type="button" onClick={onCancel} className={composerButton}>

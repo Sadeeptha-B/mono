@@ -9,6 +9,10 @@
  *    function stays pure and testable.
  */
 
+// -----------------------------------------------------------------------------
+// Time and planner vocabulary
+// -----------------------------------------------------------------------------
+
 /** Epoch milliseconds. */
 export type Ms = number
 
@@ -41,6 +45,10 @@ export type DefaultRegion = { start: string; end: string }
 /** A work region resolved onto a specific day. */
 export type WorkRegion = { id: string; startsAt: Ms; endsAt: Ms }
 
+// -----------------------------------------------------------------------------
+// User settings
+// -----------------------------------------------------------------------------
+
 export type Settings = {
   deepMinutes: Minutes
   shortMinutes: Minutes
@@ -65,6 +73,10 @@ export const DEFAULT_SETTINGS: Settings = {
   notificationsEnabled: false,
   soundEnabled: true,
 }
+
+// -----------------------------------------------------------------------------
+// Fixed items in the day
+// -----------------------------------------------------------------------------
 
 /**
  * Something already fixed in the day.
@@ -101,6 +113,10 @@ export type PlannedBreak = {
   startsAt: Ms
   durationMin: Minutes
 }
+
+// -----------------------------------------------------------------------------
+// Session history and active work
+// -----------------------------------------------------------------------------
 
 /** A block or break that has finished. History is append-only and immutable. */
 export type CompletedSegment =
@@ -146,6 +162,10 @@ export type ActiveSegment =
       startedAt: Ms
       endsAt: Ms
     }
+
+// -----------------------------------------------------------------------------
+// Derived timeline
+// -----------------------------------------------------------------------------
 
 /**
  * An entry in the derived timeline. Past entries come from history, `active`
@@ -195,6 +215,10 @@ export type Timeline = {
 /** A half-open interval `[start, end)`. */
 export type Interval = { start: Ms; end: Ms }
 
+// -----------------------------------------------------------------------------
+// Time helpers
+// -----------------------------------------------------------------------------
+
 export const MINUTE_MS = 60_000
 
 export const minutesToMs = (m: Minutes): Ms => m * MINUTE_MS
@@ -214,3 +238,20 @@ export const commitmentSpan = (c: Commitment): Interval => ({
   start: c.startsAt - minutesToMs(c.prepMin ?? 0),
   end: c.startsAt + minutesToMs(c.durationMin + (c.recoverMin ?? 0)),
 })
+
+/** The stretch of the day a pinned break reserves. */
+export const breakSpan = (b: PlannedBreak): Interval => ({
+  start: b.startsAt,
+  end: b.startsAt + minutesToMs(b.durationMin),
+})
+
+/**
+ * Do these two stretches want any of the same minutes?
+ *
+ * Half-open, like `Interval` says: a thing ending at ten and a thing starting
+ * at ten are clear of each other, not touching. That is what makes a break
+ * pinned to the minute a meeting ends legal, and it should be — the whole
+ * reason to care about an overlap is time that cannot be spent twice.
+ */
+export const overlaps = (a: Interval, b: Interval): boolean =>
+  a.start < b.end && b.start < a.end

@@ -23,7 +23,7 @@
  * and the way to change a derived block is to change what it was derived from.
  */
 
-import { useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
 import { format } from 'date-fns'
 
 import {
@@ -128,18 +128,42 @@ export function DayCalendar({
     composer?.kind === 'commitment' ? composer.editing : null,
   )
 
-  // Removing the thing an editor is open on leaves the editor asking about
-  // nothing. The × and the block are the same gesture's two halves — you
-  // clicked into it to decide, and deciding it should not be there at all is
-  // one of the answers — so the close belongs here rather than in `App`.
-  const removeBreak = (id: string) => {
-    if (composer?.kind === 'break' && composer.editing === id) onComposer(null)
-    onRemoveBreak(id)
-  }
-  const removeCommitment = (id: string) => {
-    if (composer?.kind === 'commitment' && composer.editing === id) onComposer(null)
-    onRemoveCommitment(id)
-  }
+  /**
+   * An editor left pointing at something that is no longer there.
+   *
+   * Three ways to arrive at it, and they used to be handled by one. The × below
+   * is the obvious one — you clicked into a break to decide about it, and
+   * deciding it should not be there at all is one of the answers — and it closed
+   * itself. The other two never pass through this component: a pin spent by a
+   * break ending, and a pin cleared by a commitment that now covers it. Those
+   * left the form open, where it quietly became an *add*. Both halves of it read
+   * the lookups above rather than the id in `composer`, so the same fields
+   * holding the same values would have written a second entry, with the header
+   * toggle still reading unpressed.
+   *
+   * So it is asked once, about the state, rather than three times about the
+   * gestures that produce it — which is why the × no longer closes anything
+   * itself. Removing an entry fails the lookup like any other cause, and one
+   * rule that cannot be forgotten at a fourth call site is worth more than a
+   * close that happens a fraction earlier.
+   *
+   * It has to be an effect: the composer belongs to `App`, and a child may not
+   * set a parent's state while rendering. `useLayoutEffect` rather than
+   * `useEffect` so it runs before the browser paints — the composers are keyed
+   * on what they are editing, so the frame a passive effect would let through is
+   * that form remounted empty as an *add*, which is the exact thing being
+   * prevented here.
+   */
+  const orphaned =
+    composer !== null &&
+    composer.kind !== 'hours' &&
+    composer.editing !== null &&
+    (composer.kind === 'break' ? editingBreak : editingCommitment) === null
+
+  useLayoutEffect(() => {
+    if (orphaned) onComposer(null)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orphaned])
 
   return (
     <aside className="flex h-full min-h-0 flex-col rounded-2xl border border-line bg-surface">
@@ -201,6 +225,7 @@ export function DayCalendar({
           key={editingBreak?.id ?? 'new'}
           now={now}
           editing={editingBreak}
+          commitments={commitments}
           onSubmit={(input) => {
             if (editingBreak) onUpdateBreak(editingBreak.id, input)
             else onAddBreak(input)
@@ -267,8 +292,8 @@ export function DayCalendar({
               now={now}
               editing={editing}
               onEdit={onComposer}
-              onRemoveBreak={removeBreak}
-              onRemoveCommitment={removeCommitment}
+              onRemoveBreak={onRemoveBreak}
+              onRemoveCommitment={onRemoveCommitment}
             />
           ))}
 

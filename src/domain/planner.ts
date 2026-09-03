@@ -11,6 +11,7 @@
 
 
 import {
+  breakSpan,
   commitmentEvent,
   commitmentSpan,
   minutesToMs,
@@ -86,12 +87,19 @@ export function derivePlan(input: DerivePlanInput): Timeline {
     })
   }
 
-  // Commitments that are still ahead of us shape the plan; ones already behind
-  // us are history's business, not the planner's. "Behind us" means the whole
-  // span, so a meeting that has finished but still has twenty minutes of
-  // getting back attached to it is not yet in the past.
-  const upcomingCommitments = commitments.filter((c) => commitmentSpan(c).end > planFrom)
-  for (const commitment of upcomingCommitments) {
+  // Every commitment is drawn, including the ones already behind us. They used
+  // to be filtered out here on the grounds that the past is "history's
+  // business" — but history is blocks, breaks and away stretches, and a
+  // commitment never becomes one of those, so a meeting simply vanished off the
+  // axis the moment it finished. The calendar draws every block you ran and
+  // every break you took; the meeting you sat in is the same kind of fact about
+  // the day, and it is the one the two hours either side of it were spent on.
+  //
+  // Only the ones still ahead of us *shape* the plan, which is what
+  // `upcomingCommitments` below is for. "Ahead" means the whole span, so a
+  // meeting that has finished but still has twenty minutes of getting back
+  // attached to it is not yet in the past.
+  for (const commitment of commitments) {
     // The commitment is drawn at its own length, and the time it costs either
     // side is drawn as its own thing. Merging them into one long entry would
     // say the user is in the meeting while they are still in the car.
@@ -125,10 +133,10 @@ export function derivePlan(input: DerivePlanInput): Timeline {
   }
 
   const upcomingBreaks = overrides.filter(
-    (b) => toBreakInterval(b).end > planFrom,
+    (b) => breakSpan(b).end > planFrom,
   )
   for (const plannedBreak of upcomingBreaks) {
-    const { start, end } = toBreakInterval(plannedBreak)
+    const { start, end } = breakSpan(plannedBreak)
     entries.push({
       kind: 'planned-break',
       id: plannedBreak.id,
@@ -138,10 +146,13 @@ export function derivePlan(input: DerivePlanInput): Timeline {
   }
 
   // Anything the user has already committed the time to — meetings and the
-  // breaks they pinned — is unavailable. What is left over gets filled.
+  // breaks they pinned — is unavailable. What is left over gets filled. Past
+  // commitments are excluded rather than left to `subtractIntervals` to skip:
+  // the two lists say different things, and only one of them is about planning.
+  const upcomingCommitments = commitments.filter((c) => commitmentSpan(c).end > planFrom)
   const busy = mergeIntervals([
     ...upcomingCommitments.map(commitmentSpan),
-    ...upcomingBreaks.map(toBreakInterval),
+    ...upcomingBreaks.map(breakSpan),
   ])
 
   // Free time is what is left of each work region once the parts already spoken
@@ -276,11 +287,6 @@ function isBetterFill(a: Fill, b: Fill, policy: Settings['plannerPolicy']): bool
   if (a.focusMs !== b.focusMs) return a.focusMs > b.focusMs
   return a.deepCount > b.deepCount
 }
-
-const toBreakInterval = (b: PlannedBreak): Interval => ({
-  start: b.startsAt,
-  end: b.startsAt + minutesToMs(b.durationMin),
-})
 
 /** Sort, then coalesce anything that touches or overlaps. */
 export function mergeIntervals(intervals: readonly Interval[]): Interval[] {

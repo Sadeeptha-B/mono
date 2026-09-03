@@ -556,6 +556,125 @@ test('the calendar edits itself in place, without covering the day', async ({ pa
   await expect(calendar(page).getByLabel("Today's hours 1 start")).toBeHidden()
 })
 
+test('a commitment stays on the calendar once it is over', async ({ page }) => {
+  // Regression: the filter deciding what *shapes* the plan was also deciding
+  // what is drawn, so a meeting vanished off the axis the moment its last
+  // minute passed — while every block and break of the day stayed put.
+  await openMono(page)
+  await addStandup(page)
+  await expect(blocksOf(page, 'Daily standup')).toHaveCount(1)
+
+  // Half an hour after it finished, with the working day still running.
+  await page.clock.setSystemTime(new Date(2026, 7, 20, 17, 30, 0))
+  await page.clock.fastForward('00:02')
+
+  await expect(blocksOf(page, 'Daily standup')).toHaveCount(1)
+  await expect(page.getByRole('button', { name: 'Remove Daily standup' })).toHaveCount(0)
+})
+
+test('a commitment clears only the breaks it swallows', async ({ page }) => {
+  // Adding one used to delete every pin still to come, so a meeting at five
+  // wiped a break pinned for three. Only the rest it would be drawn on top of
+  // goes now.
+  await openMono(page)
+  await shapeDay(page)
+
+  const pinBreak = async (time: string) => {
+    await calendar(page).getByRole('button', { name: '+ Break' }).click()
+    await calendar(page).getByLabel('From', { exact: true }).fill(time)
+    await calendar(page).getByRole('button', { name: 'Add break', exact: true }).click()
+  }
+
+  await pinBreak('15:00')
+  await pinBreak('17:10')
+  await expect(blocksOf(page, 'Break')).toHaveCount(2)
+
+  // A five o'clock meeting covers the second pin and nothing near the first.
+  await calendar(page).getByRole('button', { name: '+ Commitment' }).click()
+  await calendar(page).getByLabel('What', { exact: true }).fill('Design review')
+  await calendar(page).getByLabel('At', { exact: true }).fill('17:00')
+  await calendar(page).getByLabel('For (minutes)', { exact: true }).fill('45')
+  await calendar(page).getByRole('button', { name: 'Add', exact: true }).click()
+
+  await expect(blocksOf(page, 'Design review')).toHaveCount(1)
+  await expect(blocksOf(page, 'Break')).toHaveCount(1)
+  await expect(blocksOf(page, 'Break')).toHaveAttribute('title', /3:00 PM/)
+})
+
+test('a break cannot be pinned across a commitment', async ({ page }) => {
+  // The other half of the rule above. A commitment arriving on top of a pin
+  // clears it; a pin aimed at a commitment is refused, and refused *here*,
+  // where the person picking a time can see why — the reducer declines it too,
+  // but a form that closes having silently done nothing is not an answer.
+  await openMono(page)
+  await addStandup(page)
+
+  const from = calendar(page).getByLabel('From', { exact: true })
+  const add = calendar(page).getByRole('button', { name: 'Add break', exact: true })
+
+  await calendar(page).getByRole('button', { name: '+ Break' }).click()
+  await from.fill('17:05')
+  await expect(calendar(page).getByText(/That runs into/)).toBeVisible()
+  await expect(add).toBeDisabled()
+
+  // Naming it, rather than saying "that clashes" — the meeting is the thing
+  // the user has to think about to answer.
+  await expect(calendar(page).getByText(/Daily standup/).first()).toBeVisible()
+
+  // Clear of it, and the form is a form again.
+  await from.fill('15:00')
+  await expect(add).toBeEnabled()
+  await add.click()
+  await expect(blocksOf(page, 'Break')).toHaveAttribute('title', /3:00 PM/)
+})
+
+test('an editor closes when the thing it is editing is cleared', async ({ page }) => {
+  // Not by the × — that path already closed it — but by the pin being cleared
+  // out from under the form. It used to stay open and quietly become an *add*
+  // form: the same fields, the same values, a different meaning.
+  await openMono(page)
+  await shapeDay(page)
+
+  await calendar(page).getByRole('button', { name: '+ Break' }).click()
+  await calendar(page).getByLabel('From', { exact: true }).fill('17:10')
+  await calendar(page).getByRole('button', { name: 'Add break', exact: true }).click()
+
+  await calendar(page).getByRole('button', { name: 'Edit Break' }).click()
+  await expect(calendar(page).getByLabel('From', { exact: true })).toHaveValue('17:10')
+
+  // Answering the day's first question again is the way to add a commitment
+  // without touching the calendar's own composer. Every locator here is scoped
+  // to the stage: two forms are deliberately on screen at once, and they share
+  // the field names — which is the whole reason this case exists.
+  await goToStage(page, "What's already fixed")
+  await stage(page).getByLabel('Next commitment', { exact: true }).fill('Design review')
+  await stage(page).getByLabel('At', { exact: true }).fill('17:00')
+  await stage(page).getByLabel('For (minutes)', { exact: true }).fill('45')
+  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+
+  await expect(calendar(page).getByLabel('From', { exact: true })).toBeHidden()
+})
+
+test('removing the thing an editor is open on closes the editor', async ({ page }) => {
+  // The × used to close the composer itself. It does not any more — the same
+  // rule that catches a pin cleared from elsewhere catches this, because both
+  // are the lookup failing — so the behaviour needs a test of its own rather
+  // than a line of code beside the gesture.
+  await openMono(page)
+  await shapeDay(page)
+
+  await calendar(page).getByRole('button', { name: '+ Break' }).click()
+  await calendar(page).getByLabel('From', { exact: true }).fill('15:00')
+  await calendar(page).getByRole('button', { name: 'Add break', exact: true }).click()
+
+  await calendar(page).getByRole('button', { name: 'Edit Break' }).click()
+  await expect(calendar(page).getByLabel('From', { exact: true })).toHaveValue('15:00')
+
+  await calendar(page).getByRole('button', { name: 'Remove Break' }).click()
+  await expect(calendar(page).getByLabel('From', { exact: true })).toBeHidden()
+  await expect(blocksOf(page, 'Break')).toHaveCount(0)
+})
+
 test('a break and a commitment are edited where they are drawn', async ({ page }) => {
   await openMono(page)
   await addStandup(page)

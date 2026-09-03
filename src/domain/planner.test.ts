@@ -279,6 +279,17 @@ describe('derivePlan', () => {
     expect(commitmentMargins(plan)).toHaveLength(1)
   })
 
+  it('keeps the time either side of a finished commitment drawn too', () => {
+    const swim: Commitment = {
+      ...commitment('swim', at(10), 60),
+      prepMin: 30,
+      recoverMin: 20,
+    }
+    const plan = derivePlan(input({ now: at(15), commitments: [swim] }))
+
+    expect(commitmentMargins(plan)).toHaveLength(2)
+  })
+
   it('charges preparation that starts before the working day against the day', () => {
     // A 9:15 commitment with 30 minutes of prep reaches back to 8:45, outside
     // the 9-6 region. The part inside the region still has to be kept clear.
@@ -440,11 +451,15 @@ describe('derivePlan', () => {
     expect(plannedBlocks(plan).every((b) => b.startsAt >= at(15))).toBe(true)
   })
 
-  it('ignores commitments that are already over', () => {
+  it('plans past commitments as though they were not there — but draws them', () => {
+    // This used to assert that a finished commitment produced no entry at all,
+    // which is what made a meeting vanish off the axis the moment it ended.
+    // Being over stops it shaping the plan; it does not stop it having
+    // happened.
     const plan = derivePlan(
       input({ now: at(14), commitments: [commitment('past', at(9), 30)] }),
     )
-    expect(plan.entries.some((e) => e.kind === 'commitment')).toBe(false)
+    expect(plan.entries.filter((e) => e.kind === 'commitment')).toHaveLength(1)
     expect(plannedBlocks(plan)).toHaveLength(5)
   })
 

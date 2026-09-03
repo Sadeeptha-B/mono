@@ -449,17 +449,23 @@ function sectionsFor(
             displace — and the day is drawn directly below the answer.
           </P>
           <Note>
-            Adding a commitment — or changing one — clears every break you had pinned
-            for later. The shape of the day just changed, so those rest points were
-            answers to a different question. Pin them again wherever they still make
-            sense.
+            A pinned break and a meeting never share a minute, and Mono keeps that from
+            both ends. Adding a commitment — or moving one — clears any break you had
+            pinned inside it, counting the time either side, because that is rest that
+            would be drawn as part of the meeting and had by nobody. Every other break
+            stays put: the shape of the day around them has changed, and whether that
+            is still where you want to stop is yours to decide, not Mono's to assume.
+            Going the other way, <Em>+ Break</Em> will not pin one across a meeting in
+            the first place — it names the one in the way instead.
           </Note>
           <P>
             On the calendar, lit bands are your working hours and everything outside them
             is time Mono will not touch. Blocks are drawn at their real length, so
             forty-five minutes looks like forty-five minutes and a gap reads as a gap.
-            The bright line is now, past entries are dimmed, and a break or a commitment
-            carries two controls:{' '}
+            The bright line is now and past entries are dimmed — a meeting stays where
+            it was after you have sat through it, like the blocks and breaks around it,
+            so the axis reads back as the day you actually had. A break or a commitment
+            still ahead of you carries two controls:{' '}
             <Em>
               <EditGlyph />
             </Em>{' '}
@@ -621,6 +627,13 @@ function sectionsFor(
               <EditGlyph />
             </Em>{' '}
             on the block.
+          </P>
+          <P>
+            The one answer it refuses is a time already spoken for. A break pinned
+            across a meeting is rest nobody gets — the plan would draw it as part of the
+            meeting — so the form names the commitment in the way and waits for a
+            different hour. Moving an existing break onto one is declined the same way,
+            and leaves it where it was rather than losing it.
           </P>
         </>
       ),

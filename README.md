@@ -92,8 +92,15 @@ about how the day has gone.
 - **Breaks are never planned for you.** The timeline shows the maximum focus the
   day can hold, so taking a break is a visible trade — the duration prompt tells
   you what it costs before you commit.
-- **Adding a commitment clears every future break**, deliberately, and says so.
-  Changing one does the same, for the same reason.
+- **A pinned break and a commitment never share a minute**, and the rule is
+  kept from both ends. Adding or moving a commitment clears the breaks it
+  swallows — a pin inside its span, the time either side counted, would be
+  merged into the meeting and drawn as rest nobody gets — and only those. Pins
+  elsewhere in the day stay, because the day changing shape around a break you
+  can still take is a reason to let you move it, not to delete it. From the
+  other end, a break cannot be pinned or dragged across a commitment: the
+  composer names the one in the way and the reducer refuses the event, so a log
+  replays to the same day whichever order it was written in.
 - **Blocks can be abandoned but not paused.** A paused timer means `endsAt` is
   no longer a fixed instant, which is where timer bugs come from.
 - **Coming back after being away never auto-completes a block.** If the app was
@@ -127,7 +134,9 @@ about how the day has gone.
   (`+ Commitment`). Both surfaces resolve a wall-clock time against today's
   calendar at the edge; the domain only ever sees epoch milliseconds. A
   commitment outside every work region still shows on the calendar, but it does
-  not extend the horizon.
+  not extend the horizon. A commitment stops shaping the plan when its span
+  ends and stays drawn, dimmed, where it was — the axis is the day as it
+  happened as well as the day as planned.
 - **The two things you wrote can be rewritten.** A pinned break and a commitment
   each carry a `✎` on their block, which reopens the composer that made them,
   seeded from what they say now. Editing keeps the id, so the plan re-derives

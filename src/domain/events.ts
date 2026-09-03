@@ -11,13 +11,16 @@
  */
 
 import {
+  breakSpan,
   commitmentSpan,
   DEFAULT_SETTINGS,
   minutesToMs,
+  overlaps,
   type ActiveSegment,
   type BlockKind,
   type Commitment,
   type CompletedSegment,
+  type Interval,
   type Ms,
   type PlannedBreak,
   type Settings,
@@ -98,23 +101,32 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
       return {
         ...state,
         commitments: [...state.commitments, event.commitment],
-        // A new commitment reshapes the runway, so every break the user pinned
-        // is cleared and re-derived from scratch. Deliberately blunt: the UI
-        // says so, and re-adding a break is one click.
-        overrides: onlyBreakInProgress(state.overrides, event.at),
+        // Only the pins this commitment would swallow. See `pinsClearOf`.
+        overrides: pinsClearOf(
+          state.overrides,
+          commitmentSpan(event.commitment),
+          event.at,
+        ),
       }
 
-    // Editing a commitment moves the same walls of the day that adding one
-    // does — a meeting pushed an hour later takes the runway with it — so the
-    // pinned breaks go for exactly the reason they go above.
-    case 'commitment/updated':
+    // Editing a commitment moves the same walls that adding one does — a
+    // meeting pushed an hour later takes the runway with it — so the pins go
+    // for exactly the reason they go above, and only the same ones. Measured
+    // against where the meeting *ends up*, which is the shape the day now has.
+    // The slot it vacated needs no thought, because nothing was ever allowed to
+    // pin a break inside it — see `clashesWithCommitment`.
+    case 'commitment/updated': {
+      const existing = state.commitments.find((c) => c.id === event.id)
+      // An id that is not there changes nothing, so it clears nothing either.
+      if (!existing) return state
+
+      const updated = { ...existing, ...event.patch }
       return {
         ...state,
-        commitments: state.commitments.map((c) =>
-          c.id === event.id ? { ...c, ...event.patch } : c,
-        ),
-        overrides: onlyBreakInProgress(state.overrides, event.at),
+        commitments: state.commitments.map((c) => (c.id === event.id ? updated : c)),
+        overrides: pinsClearOf(state.overrides, commitmentSpan(updated), event.at),
       }
+    }
 
     case 'commitment/removed':
       return {
@@ -133,7 +145,10 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
           .sort((a, b) => a.startsAt - b.startsAt),
       }
 
+    // A pin laid across something already fixed is not recorded at all. See
+    // `clashesWithCommitment` for why that is a refusal rather than a cleanup.
     case 'break/planned':
+      if (clashesWithCommitment(event.plannedBreak, state.commitments)) return state
       return {
         ...state,
         overrides: [...state.overrides, event.plannedBreak].sort(
@@ -147,13 +162,26 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
     // break that moved rather than around a different break. Re-sorted because
     // `break/planned` maintains that order and moving one across its neighbour
     // is the ordinary edit.
-    case 'break/updated':
+    case 'break/updated': {
+      const existing = state.overrides.find((b) => b.id === event.id)
+      // An id that is not there changes nothing, exactly as for a commitment.
+      if (!existing) return state
+
+      // Dragging a pin onto a meeting is refused for the reason pinning one
+      // there is. The move does not happen and the break stays where it was,
+      // which is the smaller lie of the two available: deleting a break because
+      // the user tried to put it somewhere it cannot go would be a surprise,
+      // and the composer has already said no before this can be reached.
+      const updated = { ...existing, ...event.patch }
+      if (clashesWithCommitment(updated, state.commitments)) return state
+
       return {
         ...state,
         overrides: state.overrides
-          .map((b) => (b.id === event.id ? { ...b, ...event.patch } : b))
+          .map((b) => (b.id === event.id ? updated : b))
           .sort((a, b) => a.startsAt - b.startsAt),
       }
+    }
 
     case 'break/removed':
       return { ...state, overrides: state.overrides.filter((b) => b.id !== event.id) }
@@ -270,19 +298,61 @@ export const replay = (events: readonly MonoEvent[]): SessionState =>
   events.reduce(reduce, initialState)
 
 /**
- * Only the pinned break that is actually under way survives.
+ * The pins a commitment occupying `span` can still be honoured alongside.
  *
- * Two things go: the ones that have not started, which is the point of calling
- * this, and the ones that finished long ago, which nothing reads but which
- * otherwise pile up in state until midnight clears them.
+ * A pin overlapping the span cannot survive in any useful sense: the planner
+ * merges the two into one busy interval, so it would be drawn as part of the
+ * meeting and rest nobody gets. That is the whole of the reason to delete one,
+ * and it says nothing about the pin at four o'clock when the meeting is at
+ * nine.
  *
- * Deliberately blunt, and only for the commitment events, where the whole
- * runway moves and every pin on it is an answer to a question that has changed.
- * The composer says so before you add one. Taking a break is not that — see
- * `pinsStillAhead`.
+ * This used to clear *every* pin still to come, on the argument that a new
+ * commitment reshapes the runway and every pin on it was an answer to a
+ * question that had changed. True of the pins in its way and not of the rest —
+ * and where the day's shape has changed under a pin that can still be kept,
+ * moving it is the user's call to make, not ours to make for them by deletion.
+ *
+ * `end > at` is the same tidying every one of these filters does: pins already
+ * spent are read by nothing and would otherwise sit in state until midnight.
  */
-const onlyBreakInProgress = (breaks: PlannedBreak[], at: Ms): PlannedBreak[] =>
-  breaks.filter((b) => b.startsAt <= at && b.startsAt + minutesToMs(b.durationMin) > at)
+const pinsClearOf = (
+  breaks: PlannedBreak[],
+  span: Interval,
+  at: Ms,
+): PlannedBreak[] =>
+  breaks.filter((b) => {
+    const pin = breakSpan(b)
+    return pin.end > at && !overlaps(pin, span)
+  })
+
+/**
+ * Would this pin want minutes the day has already promised to a commitment?
+ *
+ * The other half of `pinsClearOf`, and what turns a pair of filters into a rule
+ * that can be stated: **no pinned break ever overlaps a commitment.** That one
+ * clears the pins a commitment lands on top of, which settles the case where
+ * the meeting arrives second. This settles the case where the pin does. Pinning
+ * a break across a meeting, or dragging an existing pin onto one, used to be
+ * allowed — and produced precisely the state `pinsClearOf` exists to delete:
+ * two intervals the planner merges into one, drawn as rest inside a meeting and
+ * had by nobody. The invariant was being enforced from one side only.
+ *
+ * The event is refused rather than stored and tidied afterwards, because there
+ * is nothing to tidy it to. `BreakComposer` says no first, naming the
+ * commitment, so in the app this is the belt to that pair of braces. It is not
+ * redundant: a log also arrives from an import, and from a version of Mono that
+ * had no such rule, and a replay has to land somewhere honest whichever order
+ * the events come in. It does, both ways round — pin first and the commitment
+ * clears it, commitment first and the pin is refused.
+ *
+ * Every commitment counts, the ones behind us included. A pin overlapping a
+ * finished meeting is drawn by nothing either way, so excluding them would buy
+ * no behaviour and cost the rule its one-sentence form.
+ */
+const clashesWithCommitment = (
+  pin: PlannedBreak,
+  commitments: readonly Commitment[],
+): boolean => commitments.some((c) => overlaps(breakSpan(pin), commitmentSpan(c)))
 
 /**
  * What survives taking a break: every pin with time left in it.

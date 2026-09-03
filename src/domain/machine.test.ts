@@ -367,27 +367,34 @@ describe('the event log', () => {
     expect(replay(events)).toEqual(session)
   })
 
-  it('clears future breaks when a commitment is added, but keeps history', () => {
+  it('clears the pinned break a new commitment covers, and leaves the others', () => {
+    // This used to assert that *every* future pin went. A five o'clock meeting
+    // has nothing to say about a break pinned for half past three.
     let session = initialState
     const events: MonoEvent[] = [
       {
         type: 'break/planned',
         at: at(14),
-        plannedBreak: { id: 'b1', startsAt: at(15, 30), durationMin: 15 },
+        plannedBreak: { id: 'clear', startsAt: at(15, 30), durationMin: 15 },
+      },
+      {
+        type: 'break/planned',
+        at: at(14),
+        plannedBreak: { id: 'covered', startsAt: at(17, 5), durationMin: 15 },
       },
       {
         type: 'commitment/added',
         at: at(14, 5),
-        commitment: { id: 'c1', title: 'Standup', startsAt: at(17), durationMin: 15 },
+        commitment: { id: 'c1', title: 'Standup', startsAt: at(17), durationMin: 30 },
       },
     ]
     for (const e of events) session = reduce(session, e)
 
-    expect(session.overrides).toHaveLength(0)
+    expect(session.overrides.map((b) => b.id)).toEqual(['clear'])
     expect(session.commitments).toHaveLength(1)
   })
 
-  it('leaves a break that has already begun alone', () => {
+  it('leaves a break under way alone when the commitment is nowhere near it', () => {
     let session = initialState
     session = reduce(session, {
       type: 'break/planned',
@@ -401,6 +408,25 @@ describe('the event log', () => {
     })
 
     expect(session.overrides).toHaveLength(1)
+  })
+
+  it('does not spare a break under way that the commitment covers', () => {
+    // Being in progress used to be the one thing that saved a pin from the
+    // clearing. What saves it now is not clashing: rest the planner would merge
+    // into a meeting is rest nobody gets, whatever its clock says.
+    let session = initialState
+    session = reduce(session, {
+      type: 'break/planned',
+      at: at(14),
+      plannedBreak: { id: 'b1', startsAt: at(14), durationMin: 30 },
+    })
+    session = reduce(session, {
+      type: 'commitment/added',
+      at: at(14, 5),
+      commitment: { id: 'c1', title: 'Standup', startsAt: at(14, 10), durationMin: 30 },
+    })
+
+    expect(session.overrides).toHaveLength(0)
   })
 
   it('keeps history across the midnight reset and drops the plan', () => {

@@ -36,6 +36,9 @@ const swim: Commitment = {
 
 const tea: PlannedBreak = { id: 'tea', startsAt: at(15), durationMin: 15 }
 
+/** Quarter past four: inside the hour the swim itself occupies. */
+const inPool: PlannedBreak = { id: 'inPool', startsAt: at(16, 15), durationMin: 20 }
+
 const added = (commitment: Commitment): MonoEvent => ({
   type: 'commitment/added',
   at: at(9),
@@ -82,7 +85,28 @@ describe('editing a commitment', () => {
     expect(session.commitments[0]!).toMatchObject({ prepMin: 0, recoverMin: 0 })
   })
 
-  it('clears pinned breaks, exactly as adding one does', () => {
+  it('drops a pin the moved commitment now covers, and only that one', () => {
+    // Swim moves to two o'clock, which with half an hour of getting ready puts
+    // its span over the three o'clock tea. The half past five walk is nowhere
+    // near it and is left alone — and was clear of the swim where it started
+    // too, since the twenty minutes of getting back run to twenty past.
+    const walk: PlannedBreak = { id: 'walk', startsAt: at(17, 30), durationMin: 30 }
+    const session = replay([
+      added(swim),
+      pinned(tea),
+      pinned(walk),
+      { type: 'commitment/updated', at: at(10), id: 'swim', patch: { startsAt: at(14) } },
+    ])
+
+    expect(session.overrides.map((b) => b.id)).toEqual(['walk'])
+  })
+
+  it('measures against where the meeting ends up, not where it was', () => {
+    // The tea is clear of the swim at four and squarely inside it at two, so
+    // the edit is decided by where the swim lands rather than by where it was.
+    // This is the only direction the question can be asked from now: a pin
+    // inside a commitment, waiting to be freed by one moving away, is a state
+    // `break/planned` refuses to create — see below.
     const session = replay([
       added(swim),
       pinned(tea),
@@ -92,13 +116,113 @@ describe('editing a commitment', () => {
     expect(session.overrides).toEqual([])
   })
 
-  it('ignores an id that is not there', () => {
+  it('ignores an id that is not there, pins included', () => {
     const session = replay([
       added(swim),
+      pinned(tea),
       { type: 'commitment/updated', at: at(10), id: 'gone', patch: { title: 'Nothing' } },
     ])
 
     expect(session.commitments).toEqual([swim])
+    expect(session.overrides).toEqual([tea])
+  })
+})
+
+describe('adding a commitment', () => {
+  it('clears the pins it would swallow', () => {
+    // A quarter past four is in the pool. The planner merges a pin overlapping
+    // a commitment into one busy interval, so this is rest that would be drawn
+    // as part of the swim and had by nobody.
+    const session = replay([pinned(inPool), added(swim)])
+
+    expect(session.overrides).toEqual([])
+  })
+
+  it('leaves the pins it does not touch', () => {
+    // The regression this whole filter exists to avoid over-correcting: adding
+    // a meeting used to delete every pin still to come, so a nine o'clock
+    // standup wiped the afternoon's rest. Where the day's shape changed under a
+    // pin that can still be kept, moving it is the user's call.
+    const standup: Commitment = {
+      id: 'standup',
+      title: 'Standup',
+      startsAt: at(9, 30),
+      durationMin: 15,
+    }
+    const session = replay([pinned(tea), added(standup)])
+
+    expect(session.overrides).toEqual([tea])
+  })
+
+  it('counts the time either side of the commitment as part of it', () => {
+    // 15:00 tea against a swim whose pool time starts at 16:00: nothing
+    // overlaps until the half hour of getting ready is counted, and then the
+    // 15:15 end of the tea is clear of the 15:30 start by fifteen minutes.
+    const early: PlannedBreak = { id: 'early', startsAt: at(15, 20), durationMin: 15 }
+    const session = replay([pinned(tea), pinned(early), added(swim)])
+
+    expect(session.overrides.map((b) => b.id)).toEqual(['tea'])
+  })
+
+  it('drops pins already spent, whether they clash or not', () => {
+    const morning: PlannedBreak = { id: 'morning', startsAt: at(9), durationMin: 15 }
+    const session = replay([
+      pinned(morning),
+      { type: 'commitment/added', at: at(11), commitment: swim },
+    ])
+
+    expect(session.overrides).toEqual([])
+  })
+})
+
+describe('a break where a commitment already is', () => {
+  it('is refused, rather than stored and cleared later', () => {
+    const session = replay([added(swim), pinned(inPool)])
+
+    expect(session.overrides).toEqual([])
+  })
+
+  it('counts the time either side, exactly as the clearing does', () => {
+    // Twenty past three is not in the pool. It is in the half hour of getting
+    // there, which is time the swim costs just as surely.
+    const early: PlannedBreak = { id: 'early', startsAt: at(15, 20), durationMin: 15 }
+    const session = replay([added(swim), pinned(early)])
+
+    expect(session.overrides).toEqual([])
+  })
+
+  it('allows one that begins exactly as the span ends', () => {
+    // Half-open, so a pin starting at twenty past five is clear of a span
+    // ending at twenty past five rather than touching it. Rest the moment you
+    // are back through the door is rest, and refusing it would be pedantry.
+    const after: PlannedBreak = { id: 'after', startsAt: at(17, 20), durationMin: 20 }
+    const session = replay([added(swim), pinned(after)])
+
+    expect(session.overrides).toEqual([after])
+  })
+
+  it('refuses a move onto one and leaves the break where it was', () => {
+    // Not deleted: the user tried to put it somewhere it cannot go, which is a
+    // reason to decline the move and no reason at all to lose the break.
+    const session = replay([
+      added(swim),
+      pinned(tea),
+      { type: 'break/updated', at: at(10), id: 'tea', patch: { startsAt: at(16, 15) } },
+    ])
+
+    expect(session.overrides).toEqual([tea])
+  })
+
+  it('lands in the same state whichever order the log is in', () => {
+    // The rule is enforced from both sides, which is what lets it be stated as
+    // a rule. An imported log — or one written by a version of Mono that had
+    // neither filter — replays to the same day either way round.
+    const pinFirst = replay([pinned(inPool), added(swim)])
+    const meetingFirst = replay([added(swim), pinned(inPool)])
+
+    expect(pinFirst.overrides).toEqual([])
+    expect(meetingFirst.overrides).toEqual(pinFirst.overrides)
+    expect(meetingFirst.commitments).toEqual(pinFirst.commitments)
   })
 })
 
