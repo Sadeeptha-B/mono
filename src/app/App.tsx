@@ -34,6 +34,7 @@ import {
   type SetupStageId,
 } from '@/components/stage/stages'
 import { DayCalendar } from '@/components/Timeline/DayCalendar'
+import { StorageWarning } from '@/components/StorageWarning'
 import {
   hoursToSave,
   resolveHours,
@@ -282,6 +283,9 @@ export function App() {
             </span>
           </div>
           <div className="flex items-center gap-2">
+            {/* Nothing at all unless the browser has started refusing to save,
+                which is the one failure worth a permanent place on screen. */}
+            <StorageWarning onOpenSettings={openSettings} />
             {/* A real link, so the guide can be opened in its own tab and
                 survives a reload like the document it is. */}
             <a href={GUIDE_HASH} className={headerControlClass}>

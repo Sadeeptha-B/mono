@@ -4,8 +4,8 @@ import { Dialog } from './prompts/Dialog'
 import { RegionShapeEditor } from './RegionShapeEditor'
 import { GhostButton, labelClass, MinutesInput } from './ui'
 import { parseBoundedMinutes } from './minutes'
-import { dayKey } from '@/domain/time'
-import { useSession } from '@/store/session'
+import { dayKey, formatClock } from '@/domain/time'
+import { useSession, useStorageHealth } from '@/store/session'
 import type { Settings } from '@/domain/types'
 
 export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -15,6 +15,9 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
   const importJSON = useSession((s) => s.importJSON)
   const fileInput = useRef<HTMLInputElement>(null)
   const [importError, setImportError] = useState<string | null>(null)
+  // The one failure Mono cannot recover from on its own, so it is explained
+  // here, against the button that rescues the day it is about to cost you.
+  const storageFailedAt = useStorageHealth((s) => s.failedAt)
 
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     updateSettings({ [key]: value } as Partial<Settings>)
@@ -99,6 +102,18 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
           can arrive late. Mono always reconciles when you come back.
         </p>
       </div>
+
+      {storageFailedAt !== null && (
+        <p
+          role="alert"
+          className="mt-5 rounded-lg border border-commit/60 bg-commit/10 px-3.5 py-3 text-xs leading-relaxed text-commit"
+        >
+          This browser stopped saving at {formatClock(storageFailedAt)} — usually because
+          its storage is full. Everything on screen is intact and Mono keeps working, but
+          nothing since then has been written down, and a reload would lose it.{' '}
+          <span className="text-bright">Export now</span>, then clear some space.
+        </p>
+      )}
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4">
         <div className="flex gap-2">

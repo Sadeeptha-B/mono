@@ -17,6 +17,35 @@ export type DayKey = string
 export const dayKey = (at: Ms): DayKey => format(at, 'yyyy-MM-dd')
 
 /**
+ * Whether two instants fall on the same local calendar day.
+ *
+ * One definition, because three things ask it and they have to agree: the
+ * planner about what to draw, the vitals about what the day has banked, and
+ * the store about when to roll over. Local rather than UTC throughout — a day
+ * in Mono is the one you are living in.
+ */
+export const onSameDay = (a: Ms, b: Ms): boolean => dayKey(a) === dayKey(b)
+
+/**
+ * Midnight either side of the day an instant falls in.
+ *
+ * `end` is the next day's midnight rather than 23:59:59.999, so the pair is a
+ * half-open interval and arithmetic across it does not lose a millisecond.
+ * Built by moving the date and re-flooring rather than by adding 24 hours,
+ * which is a different length twice a year.
+ */
+export function dayBounds(at: Ms): Interval {
+  const start = new Date(at)
+  start.setHours(0, 0, 0, 0)
+
+  const end = new Date(start)
+  end.setDate(end.getDate() + 1)
+  end.setHours(0, 0, 0, 0)
+
+  return { start: start.getTime(), end: end.getTime() }
+}
+
+/**
  * Resolve an "HH:mm" wall-clock time against the local calendar day
  * containing `at`. Returns `null` if the string is not a valid time.
  */

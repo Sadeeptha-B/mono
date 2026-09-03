@@ -451,6 +451,68 @@ describe('derivePlan', () => {
     expect(plannedBlocks(plan).every((b) => b.startsAt >= at(15))).toBe(true)
   })
 
+  it('draws one calendar day, whatever the log has kept', () => {
+    // Regression: `history` is the journal and survives the midnight reset by
+    // design, and every segment in it became a `past` entry. Open Mono on a
+    // Thursday and the axis reached back to the first block you ever ran —
+    // days of empty grid above today, with today somewhere off the bottom.
+    const yesterday = (hour: number, minute = 0): Ms =>
+      at(hour, minute) - 24 * 60 * 60 * 1000
+
+    const plan = derivePlan(
+      input({
+        now: at(15),
+        history: [
+          {
+            kind: 'block',
+            id: 'old',
+            blockKind: 'deep',
+            purpose: 'Yesterday',
+            startedAt: yesterday(10),
+            endedAt: yesterday(10, 45),
+            plannedEndsAt: yesterday(10, 45),
+            outcome: 'completed',
+          },
+          {
+            kind: 'block',
+            id: 'today',
+            blockKind: 'deep',
+            purpose: 'Today',
+            startedAt: at(14),
+            endedAt: at(14, 45),
+            plannedEndsAt: at(14, 45),
+            outcome: 'completed',
+          },
+        ],
+      }),
+    )
+
+    const past = plan.entries.filter((e) => e.kind === 'past')
+    expect(past).toHaveLength(1)
+    expect(past[0]!.startsAt).toBe(at(14))
+    // Nothing on the timeline reaches back past the start of today.
+    expect(plan.entries.every((e) => e.startsAt >= at(0))).toBe(true)
+  })
+
+  it('ignores a commitment and a pinned break left over from another day', () => {
+    // `day/reset` clears these, so this is the window before it runs: the first
+    // frame after a reload, and the stretch where a block left running across
+    // midnight defers the rollover. Drawing them there is what made the axis
+    // jump between the first paint and the second.
+    const DAY = 24 * 60 * 60 * 1000
+    const plan = derivePlan(
+      input({
+        now: at(15),
+        commitments: [commitment('stale', at(10) - DAY, 60)],
+        overrides: [{ id: 'stale-break', startsAt: at(11) - DAY, durationMin: 20 }],
+      }),
+    )
+
+    expect(plan.entries.filter((e) => e.kind === 'commitment')).toHaveLength(0)
+    expect(plan.entries.filter((e) => e.kind === 'planned-break')).toHaveLength(0)
+    expect(plan.entries.every((e) => e.startsAt >= at(0))).toBe(true)
+  })
+
   it('plans past commitments as though they were not there — but draws them', () => {
     // This used to assert that a finished commitment produced no entry at all,
     // which is what made a meeting vanish off the axis the moment it ended.

@@ -12,7 +12,7 @@
  */
 
 import { completeBlock } from './events'
-import { dayKey } from './time'
+import { onSameDay } from './time'
 import type { ActiveSegment, CompletedSegment, Ms } from './types'
 
 export type Vitals = {
@@ -46,10 +46,8 @@ const EMPTY: Vitals = { blocksToday: 0, focusMinutesToday: 0, streak: 0 }
  * so a block that began at 23:50 and ended at 00:35 belongs to the day it was
  * named in, which is also the day it is drawn on.
  */
-const today = (history: readonly CompletedSegment[], now: Ms): CompletedSegment[] => {
-  const key = dayKey(now)
-  return history.filter((segment) => dayKey(segment.startedAt) === key)
-}
+const today = (history: readonly CompletedSegment[], now: Ms): CompletedSegment[] =>
+  history.filter((segment) => onSameDay(segment.startedAt, now))
 
 const isBankedFocus = (segment: CompletedSegment): boolean =>
   segment.kind === 'block' && segment.outcome === 'completed' && segment.blockKind !== 'reflect'

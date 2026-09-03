@@ -364,6 +364,150 @@ test('the opening question lists commitments in the order the day happens', asyn
   await expect(rows.last()).toContainText('Swimming')
 })
 
+test('the axis starts where the day does, not where the hours do', async ({ page }) => {
+  // Regression: a work region held the top of the grid open even with nothing
+  // in it. Opening Mono at two against a nine-to-six day put five empty hours
+  // above everything worth looking at — beside the stage that is dead scroll
+  // the column skips past, but stacked under it on a phone it was the entire
+  // first screenful of calendar, and the day looked empty when it was full.
+  await openMono(page)
+  await shapeDay(page)
+
+  await expect(calendar(page).getByText('2 PM', { exact: true })).toBeVisible()
+  await expect(calendar(page).getByText('9 AM', { exact: true })).toHaveCount(0)
+  await expect(calendar(page).getByText('1 PM', { exact: true })).toHaveCount(0)
+
+  // Only *empty* hours go. Anything that happened up there still reaches back
+  // for them, because it is an entry rather than a region.
+  await goToStage(page, "What's already fixed")
+  await stage(page).getByLabel('Next commitment', { exact: true }).fill('Standup')
+  await stage(page).getByLabel('At', { exact: true }).fill('09:00')
+  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+
+  await expect(calendar(page).getByText('9 AM', { exact: true })).toBeVisible()
+  await expect(blocksOf(page, 'Standup')).toHaveCount(1)
+})
+
+test('the commitment form folds away once the day has something in it', async ({
+  page,
+}) => {
+  await openMono(page)
+
+  // Nothing fixed yet, so the form is the question and there is nothing to
+  // fold back to.
+  await expect(stage(page).getByLabel('Next commitment', { exact: true })).toBeVisible()
+  await expect(stage(page).getByRole('button', { name: 'Cancel' })).toHaveCount(0)
+
+  await stage(page).getByLabel('Next commitment', { exact: true }).fill('Daily standup')
+  await stage(page).getByLabel('At', { exact: true }).fill('17:00')
+  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+
+  // Still open straight after adding: the commonest next thing is another one.
+  await expect(stage(page).getByLabel('Next commitment', { exact: true })).toBeVisible()
+
+  await stage(page).getByRole('button', { name: 'Cancel' }).click()
+  await expect(stage(page).getByLabel('Next commitment', { exact: true })).toBeHidden()
+  await expect(
+    stage(page).getByRole('button', { name: '+ Another commitment' }),
+  ).toBeVisible()
+
+  // Coming back to the question shows the answer, not the next question.
+  await goToStage(page, "Today's hours")
+  await goToStage(page, "What's already fixed")
+  await expect(stage(page).getByLabel('Next commitment', { exact: true })).toBeHidden()
+  await expect(fixedList(page).getByRole('listitem')).toHaveCount(1)
+
+  // The ✎ opens it pointed at the row, whatever the fold was doing.
+  await stage(page).getByRole('button', { name: 'Edit Daily standup' }).click()
+  await expect(stage(page).getByLabel('This commitment', { exact: true })).toHaveValue(
+    'Daily standup',
+  )
+  await stage(page).getByRole('button', { name: 'Cancel' }).click()
+  await expect(
+    stage(page).getByRole('button', { name: '+ Another commitment' }),
+  ).toBeVisible()
+
+  // And with the list empty again the question needs the form back, without
+  // anything having to notice the removal.
+  await stage(page).getByRole('button', { name: 'Remove Daily standup' }).click()
+  await expect(stage(page).getByLabel('Next commitment', { exact: true })).toBeVisible()
+})
+
+test('arriving at the question folds away a form nobody was using', async ({
+  page,
+}) => {
+  // The fold resets on arrival, and an edit is part of what folds — but only
+  // one that is merely open. Losing what somebody typed because they glanced at
+  // the other question is the older and worse bug, so anything actually written
+  // survives the trip.
+  await openMono(page)
+  await stage(page).getByLabel('Next commitment', { exact: true }).fill('Daily standup')
+  await stage(page).getByLabel('At', { exact: true }).fill('17:00')
+  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Cancel' }).click()
+
+  // Opened and left alone: gone on return.
+  await stage(page).getByRole('button', { name: 'Edit Daily standup' }).click()
+  await expect(stage(page).getByLabel('This commitment', { exact: true })).toBeVisible()
+  await goToStage(page, "Today's hours")
+  await goToStage(page, "What's already fixed")
+  await expect(stage(page).getByLabel('This commitment', { exact: true })).toBeHidden()
+  await expect(
+    stage(page).getByRole('button', { name: '+ Another commitment' }),
+  ).toBeVisible()
+
+  // Opened and changed: still there, still pointed at the same row.
+  await stage(page).getByRole('button', { name: 'Edit Daily standup' }).click()
+  await stage(page).getByLabel('This commitment', { exact: true }).fill('Design review')
+  await goToStage(page, "Today's hours")
+  await goToStage(page, "What's already fixed")
+  await expect(stage(page).getByLabel('This commitment', { exact: true })).toHaveValue(
+    'Design review',
+  )
+  await stage(page).getByRole('button', { name: 'Cancel' }).click()
+
+  // And the same promise for a half-written *new* one: the fold closes over it
+  // on the way out, and reopening finds it rather than a fresh form.
+  await stage(page).getByRole('button', { name: '+ Another commitment' }).click()
+  await stage(page).getByLabel('Next commitment', { exact: true }).fill('Dentist')
+  await goToStage(page, "Today's hours")
+  await goToStage(page, "What's already fixed")
+  await stage(page).getByRole('button', { name: '+ Another commitment' }).click()
+  await expect(stage(page).getByLabel('Next commitment', { exact: true })).toHaveValue(
+    'Dentist',
+  )
+})
+
+test('a commitment just after midnight does not pull yesterday onto the axis', async ({
+  page,
+}) => {
+  // The planner scopes the day by when a thing starts, which leaves the two
+  // ways a *span* can reach out of it. Ten past midnight with half an hour of
+  // getting ready begins at twenty to twelve the night before, and that one
+  // entry used to drag the whole axis back across the night.
+  await openMono(page, new Date(2026, 7, 20, 8, 0, 0))
+
+  await stage(page).getByLabel('Next commitment', { exact: true }).fill('Night flight')
+  await stage(page).getByLabel('At', { exact: true }).fill('00:10')
+  await stage(page).getByLabel('For (minutes)', { exact: true }).fill('60')
+  await stage(page).getByRole('button', { name: '+ Time either side' }).click()
+  await stage(page).getByLabel('Getting ready', { exact: true }).fill('30')
+  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+  await startDay(page)
+
+  // The day starts at midnight and no earlier.
+  await expect(calendar(page).getByText('12 AM', { exact: true })).toBeVisible()
+  await expect(calendar(page).getByText('11 PM', { exact: true })).toHaveCount(0)
+
+  // Both are still drawn — the part of them that is today — and the block still
+  // says what the commitment really is.
+  await expect(blocksOf(page, 'Night flight')).toHaveCount(1)
+  await expect(blocksOf(page, 'Getting ready')).toHaveAttribute(
+    'title',
+    'Getting ready · 11:40 PM · 30m',
+  )
+})
+
 test('a commitment can be rewritten from the opening question', async ({ page }) => {
   // The same affordance the calendar block carries, on the row that names it —
   // and the same rule behind it: editing keeps the id, so the plan re-derives
@@ -980,6 +1124,30 @@ test('the calendar editors do not carry a draft into the next day', async ({ pag
   await expect(calendar(page).getByLabel("Today's hours 1 end")).toHaveValue('18:00')
 })
 
+test("yesterday stays in the journal and off today's axis", async ({ page }) => {
+  // Regression: history survives the midnight reset by design — it is the
+  // journal — and the planner drew every segment in it. So the axis reached
+  // back to the first block ever recorded: on a phone, where nothing scrolls
+  // itself to now, the calendar opened days before today.
+  await openMono(page)
+  await shapeDay(page)
+  await startBlock(page, 'Ship the thing')
+  await page.clock.fastForward('10:00')
+  await stage(page).getByRole('button', { name: 'End early' }).click()
+
+  // Drawn on the day it happened.
+  await expect(blocksOf(page, 'Deep (cut short)')).toHaveCount(1)
+
+  // Tomorrow morning, with the tab still open.
+  await page.clock.setSystemTime(new Date(2026, 7, 21, 9, 0, 0))
+  await page.clock.fastForward('00:02')
+
+  await expect(blocksOf(page, 'Deep (cut short)')).toHaveCount(0)
+  // And the axis does not span the night to reach it: 3 AM is only ever a row
+  // on a timeline that started yesterday.
+  await expect(calendar(page).getByText('3 AM', { exact: true })).toHaveCount(0)
+})
+
 test('an unanswered day left open overnight reopens on the first question', async ({
   page,
 }) => {
@@ -1156,7 +1324,11 @@ test('a narrow screen scrolls as one page rather than as four boxes', async ({
 test('a wide screen keeps the two columns and scrolls inside them', async ({ page }) => {
   // The other half of the rule. Beside the stage, the day scrolls in its own
   // column so the timer stays put while you look around it.
-  await openMono(page)
+  //
+  // Opened at nine, because the column only has something to scroll if the day
+  // is taller than it is — and the axis no longer pads itself out with hours
+  // that hold nothing.
+  await openMono(page, new Date(2026, 7, 20, 9, 0, 0))
   await shapeDay(page)
 
   const down = await page.evaluate(
@@ -1200,4 +1372,45 @@ test('a time field is never drawn narrower than it can render', async ({ page })
       needed - 1,
     )
   }
+})
+
+test('a browser that will not save says so, and keeps working', async ({ page }) => {
+  // The failure Mono cannot recover from on its own: the log is the one thing
+  // here that cannot be rebuilt from anything else, and a quota error is a
+  // silent way to lose a day. Uncaught it is worse than silent — zustand's
+  // persist throws it out of the store action, so the click that shaped the day
+  // would shape it and then not finish leaving the question.
+  await page.addInitScript(() => {
+    const original = Storage.prototype.setItem
+    let refusing = true
+    Object.assign(window, { __allowSaving: () => (refusing = false) })
+    Storage.prototype.setItem = function (key: string, value: string) {
+      if (refusing && key === 'mono.session') {
+        throw new DOMException('exceeded', 'QuotaExceededError')
+      }
+      return original.call(this, key, value)
+    }
+  })
+
+  // Mono records the day it woke up on, so the very first write is on load and
+  // the warning is up before anything has been asked of it.
+  await openMono(page)
+  await expect(page.getByRole('button', { name: 'Not saving' })).toBeVisible()
+
+  // The gesture still finishes: the day shapes and the stage moves on.
+  await startDay(page)
+  await expect(page.getByRole('button', { name: 'Start deep block' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Not saving' })).toBeVisible()
+
+  // And it leads to the one thing that can rescue the day.
+  await page.getByRole('button', { name: 'Not saving' }).click()
+  await expect(page.getByRole('alert')).toContainText('Export now')
+  await expect(page.getByRole('button', { name: 'Export' })).toBeVisible()
+  await page.keyboard.press('Escape')
+
+  // A write that lands carries the whole log, so it catches up on everything
+  // the refused ones missed — and there is nothing left to warn about.
+  await page.evaluate(() => (window as unknown as { __allowSaving: () => void }).__allowSaving())
+  await page.getByRole('button', { name: 'Start deep block' }).click()
+  await expect(page.getByRole('button', { name: 'Not saving' })).toHaveCount(0)
 })

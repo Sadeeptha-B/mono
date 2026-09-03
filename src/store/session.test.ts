@@ -53,13 +53,14 @@ function at(base: Date, hour: number, minute = 0): number {
 
 let useSession: SessionModule['useSession']
 let selectRegions: SessionModule['selectRegions']
+let useStorageHealth: SessionModule['useStorageHealth']
 
 describe('session import', () => {
   beforeEach(async () => {
     vi.useFakeTimers()
     vi.setSystemTime(TODAY)
     installStorageMock().clear()
-    ;({ useSession, selectRegions } = await import('./session'))
+    ;({ useSession, selectRegions, useStorageHealth } = await import('./session'))
     useSession.setState({ events: [], session: initialState, phase: initialPhase, dayKey: null })
   })
 
@@ -233,5 +234,60 @@ describe('session rehydration', () => {
 
     expect(state.phase).toEqual({ name: 'focusing' })
     expect(state.session.active?.id).toBe('block-1')
+  })
+})
+
+describe('a browser that refuses to save', () => {
+  beforeEach(async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(TODAY)
+    installStorageMock().clear()
+    vi.resetModules()
+    ;({ useSession, selectRegions, useStorageHealth } = await import('./session'))
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    installStorageMock().clear()
+  })
+
+  it('records the failure instead of throwing out of the action', () => {
+    // Zustand's persist wraps setState as `savedSetState(...); return setItem()`
+    // with nothing around it, so an uncaught throw from the write escapes the
+    // store action — the memory update has landed, and the rest of the click
+    // handler that dispatched it never runs.
+    const storage = installStorageMock()
+    vi.spyOn(storage, 'setItem').mockImplementation(() => {
+      throw new DOMException('exceeded', 'QuotaExceededError')
+    })
+
+    expect(() => useSession.getState().shapeDay()).not.toThrow()
+
+    // The session is complete in memory...
+    expect(useSession.getState().session.shapedAt).toBe(TODAY.getTime())
+    // ...and the app knows it is not being written down.
+    expect(useStorageHealth.getState().failedAt).toBe(TODAY.getTime())
+  })
+
+  it('clears the warning once a write lands again', () => {
+    // The whole log goes out on every save, so one that succeeds has caught up
+    // on everything the failed ones missed. There is nothing left to warn about.
+    const storage = installStorageMock()
+    const failing = vi.spyOn(storage, 'setItem').mockImplementation(() => {
+      throw new DOMException('exceeded', 'QuotaExceededError')
+    })
+
+    useSession.getState().shapeDay()
+    expect(useStorageHealth.getState().failedAt).not.toBeNull()
+
+    failing.mockRestore()
+    useSession.getState().addCommitment({
+      title: 'Standup',
+      startsAt: at(TODAY, 17),
+      durationMin: 15,
+    })
+
+    expect(useStorageHealth.getState().failedAt).toBeNull()
+    expect(storage.getItem('mono.session')).not.toBeNull()
   })
 })

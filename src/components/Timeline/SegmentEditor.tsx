@@ -145,8 +145,7 @@ export function CommitmentComposer({
 
         <p className="mt-3 text-xs leading-relaxed text-muted">
           {editing ? 'Changing' : 'Adding'} this re-derives the plan. Any break you
-          pinned inside it — the time either side included — is cleared, since it
-          would be rest nobody gets. The rest of the day's breaks stay where they are.
+          pinned inside it — the time either side included — is cleared.
         </p>
 
         <Actions>

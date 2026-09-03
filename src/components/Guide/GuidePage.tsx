@@ -27,6 +27,7 @@
 import { useMemo, type ReactNode } from 'react'
 
 import { PixelCat } from '../Companion/PixelCat'
+import { StorageWarning } from '../StorageWarning'
 import { EditGlyph, headerControlClass } from '../ui'
 import { formatTimer } from '@/domain/time'
 import { DAY_HASH } from '@/hooks/useRoute'
@@ -97,6 +98,7 @@ export function GuidePage({
           <div className="flex items-center gap-3">
             {/* A page invites you to stay, so whatever the timer would be
                 saying stays in sight — including when it is waiting on you. */}
+            <StorageWarning onOpenSettings={onOpenSettings} />
             <HeaderStatus active={active} now={now} phase={phase} />
             <button type="button" onClick={onOpenSettings} className={headerControlClass}>
               Settings
@@ -476,7 +478,10 @@ function sectionsFor(
           <P>
             <Em>Commitments</Em> are the things already fixed: a meeting, a call, the
             school run. After the opening question, use <Em>+ Commitment</Em> on the
-            calendar. Mono fills the runway up to one and resumes afterwards. The
+            calendar. Mono fills the runway up to one and resumes afterwards. Once the
+            day has something in it the question shows that rather than an empty form —{' '}
+            <Em>+ Another commitment</Em> opens one when you want it, and a day with
+            nothing fixed yet skips straight to the fields. The
             opening question lists the ones you have named in the order they happen
             rather than the order you remembered them in, and every row carries the two
             controls Mono uses everywhere for something you wrote:{' '}
@@ -513,6 +518,18 @@ function sectionsFor(
             now, and past entries are dimmed rather than cleared — a meeting stays where
             it was after you have sat through it, like the blocks and breaks around it,
             so the axis reads back as the day you actually had.
+          </P>
+          <P>
+            It draws one day, and it starts at the first thing there is to show. Open
+            Mono at two and the axis starts at two: the morning of a nine-to-six day you
+            were not using it in holds nothing, and drawing five empty hours above your
+            afternoon says less than showing none. Anything that did happen up there
+            keeps its place, because it is something rather than nothing.
+          </P>
+          <P>
+            Yesterday is not up there either. Mono keeps every block you have ever run —
+            that is what Export hands you — but the calendar is today, so the record of
+            older days lives in the file rather than on the axis.
           </P>
           <P>
             A break or a commitment still ahead of you carries the same{' '}
@@ -759,6 +776,9 @@ function sectionsFor(
           <Setting name="Export / Import">
             Your whole history as a JSON file. Everything lives in this browser and
             nothing is sent anywhere, so this is also how you move to another machine.
+            If Mono ever says <Em>Not saving</Em> in the header, this is the button it
+            is pointing at: the browser has refused to write anything down, and the file
+            is the only way out of that.
           </Setting>
         </div>
       ),

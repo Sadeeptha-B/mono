@@ -74,6 +74,21 @@ export const draftFromCommitment = (commitment: Commitment): CommitmentDraft => 
 })
 
 /**
+ * Whether two drafts say the same thing.
+ *
+ * Exists to tell an edit somebody has *changed* from one they merely opened.
+ * Those are different things to walk away from: the first is work, and losing
+ * it because you glanced at another question is the bug this whole component is
+ * arranged to avoid; the second is a form that happens to be showing.
+ */
+export const draftsMatch = (a: CommitmentDraft, b: CommitmentDraft): boolean =>
+  a.title === b.title &&
+  a.time === b.time &&
+  a.durationText === b.durationText &&
+  a.prepText === b.prepText &&
+  a.recoverText === b.recoverText
+
+/**
  * The draft as something the store will take, or null while it is not one yet.
  *
  * `now` is read here on every render and never written back into state, which
@@ -234,8 +249,7 @@ export function CommitmentFields({
           </div>
           <p className="mt-2 text-xs leading-relaxed text-muted">
             Minutes either side that the commitment really costs — changing,
-            travelling, settling back in. Mono keeps them clear too. Fold this
-            away again and they go back to nothing.
+            travelling, settling back in.
           </p>
         </div>
       )}

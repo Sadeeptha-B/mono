@@ -154,11 +154,31 @@ about how the day has gone.
   not extend the horizon. A commitment stops shaping the plan when its span
   ends and stays drawn, dimmed, where it was — the axis is the day as it
   happened as well as the day as planned.
+- **The timeline is one calendar day**, and midnight is the wall at both ends.
+  The planner scopes by when a thing *starts*; a span can still reach out of
+  that day — a 00:10 meeting with half an hour of getting ready begins at 23:40
+  the night before — so `layout` clamps its range to the day and clips each
+  entry to it, the same treatment the region bands get. The clip is on the
+  drawing, never on the entry: the block still reads back the real times.
+- **What the day holds is scoped in the domain.** `derivePlan` scopes `history`,
+  `commitments` and `overrides` to the day `now` falls in, using the same
+  predicate `vitals` uses, so the axis and the companion cannot disagree about
+  what today holds. The log itself keeps everything — it is the journal, and the
+  export — but a *drawing* of every block ever completed is not a day.
+- **The axis starts at the first thing there is to show** — `now`, or the
+  earliest entry, whichever is earlier. A work region does not hold it open, so
+  a day opened at two against nine-to-six hours starts at two rather than
+  padding itself with five empty hours; the region bands are clipped to what is
+  left. Stacked under the stage on a phone, that padding *was* the first
+  screenful of calendar.
 - **The two things you wrote can be rewritten.** A pinned break and a commitment
   each carry a `✎` on their block, which reopens the composer that made them,
   seeded from what they say now. The opening question's list carries the same
   pair on every row, and lists them in the order the day happens rather than the
-  order they were named. Editing keeps the id, so the plan re-derives
+  order they were named. That list is the answer to the question, so the form
+  under it folds away once there is one — `+ Another commitment` reopens it, and
+  a day with nothing fixed yet shows the form instead, there being nothing to
+  fold back to. Editing keeps the id, so the plan re-derives
   around the same thing moved rather than around a new one. Nothing else on the
   axis is editable: a focus block is output, and the way to move it is to change
   the hours or the commitments it was planned around.
@@ -199,6 +219,13 @@ npm run icons       # regenerate the favicon and PWA icons from those frames
 ```
 
 ## Limitations
+
+If the browser refuses to save — a full quota, or site data blocked — Mono says
+so in the header and keeps running on the session it has in memory. The log is
+the one thing here that cannot be rebuilt from anything else, so the warning
+leads to Export rather than to a retry. There is no cap on the log: a heavy day
+is a few kilobytes, and truncating the journal to make room would cost more than
+it saves.
 
 Background notifications are best-effort. Without a push server a notification
 fired from a frozen tab can be delayed or dropped; the guarantee is the

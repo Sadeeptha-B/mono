@@ -967,3 +967,212 @@ The regression test opens the form fresh over an existing commitment — a
 reload, which is the state that made the bug reachable — and was checked against
 the old code before being kept: it fails on the seeded version at the line the
 review pointed at.
+
+**2026-09-03 — A region no longer holds the axis open over an empty morning.**
+
+Reported as the timeline's entries not showing on a small screen, and they were
+all there — correctly sized, correctly placed, six of them. What was not there
+was any reason to scroll far enough to see them. `layout` took the top of the
+axis from the earliest of `now`, the entries *and the work regions*, so a
+nine-to-six day opened at two o'clock began the grid at nine: five hours of
+ruled, empty rows above everything worth looking at.
+
+Beside the stage that was invisible, because the column scrolls itself to `now`
+on mount and nobody ever saw the padding it was scrolling past. Stacked under
+the stage on a phone, where nothing scrolls itself and should not, it was the
+entire first screenful of calendar — a heading that says Today over an empty
+grid, for a day that is in fact full. The responsive change did not cause this;
+it removed the thing that was hiding it.
+
+So the range is held open by `now` and by entries, and not by regions. Only
+genuinely empty hours go: a block banked this morning, a meeting already sat
+through, a break taken, are all entries, and they reach back as far as they
+need to. The region *starts* were in that calculation for a reason — without
+them a morning band rendered at a negative offset — and that reason is now
+handled where it belongs, by clipping each band to the hours actually on the
+axis. Clipped rather than dropped, because the afternoon of a nine-to-six region
+is still the canvas the plan is painted on.
+
+One test moved with it. *A wide screen keeps the two columns and scrolls inside
+them* asserted the calendar column overflows, which a two o'clock day no longer
+does now that it is four hours instead of nine — the fix working, not the rule
+changing. It opens at nine now, so the day is taller than the column and the
+rule is what is being measured.
+
+**2026-09-03 — The commitment form folds away once the day has something in it.**
+
+The first question is a list with a form under it, and the form was always
+there. Once anything is fixed, the answer to *what's already fixed today?* is
+the list — four fields under it are the *next* answer, asked before the first
+one has been read, and on a phone they were most of the panel. So arriving at
+the question now shows what is there and offers `+ Another commitment`.
+
+Three ways it opens, and only the first is the flag: the user asked for it,
+something is being edited, or the list is empty. The last two are derived for
+the reason the margins fold was derived a few hours earlier — a form pointed at
+a commitment must be visible whatever the flag says, and a question whose list
+has just been emptied must not collapse to a lone button over the space where
+the answer was. Nothing has to notice the removal; `formOpen` simply reads
+`inOrder.length === 0`.
+
+Arriving is what resets it, not adding. Submitting leaves the form open and
+cleared — the commonest thing after writing one of these down is writing
+another, and folding it away under the hand that just used it charges a click
+for the second — while coming back to the question from the other one, or from
+the day, asks it fresh. (*Asks it fresh* was too broad as first written; the
+entry below draws the line it was missing.) Opening it also re-seeds the time, because the panel can
+sit on this question for hours and "the next round half hour" is a good default
+at the moment you ask and a puzzle two hours later.
+
+**2026-09-03 — The timeline is one calendar day; the log is still everything.**
+
+Reported as the calendar showing other days' commitments and breaks, and as the
+axis opening on an event from days ago — worse on a phone, where nothing scrolls
+itself to now. The cause is one line that was never there: `derivePlan` turned
+every segment in `history` into a `past` entry, and `history` is kept forever on
+purpose. `day/reset` says so in as many words — *history survives forever, it is
+the journal* — and that is right. The reset was not the bug. The drawing was.
+
+`vitals` had the correct rule the whole time, and its comment even asserted the
+half that was false: a segment belongs to the day it started, *"which is also
+the day it is drawn on"*. It was not. So the predicate is now shared —
+`onSameDay` in `time.ts`, one definition — and the cat and the calendar cannot
+disagree about what today holds.
+
+Commitments and pinned breaks are scoped by the same rule rather than a second
+one, though `day/reset` already clears them. That matters in the window where
+the reset has not run yet, and there are two: the first frame after a reload,
+because the rollover runs from an effect and the first paint happens before it;
+and the stretch where a block left running across midnight defers the rollover
+on purpose. Both used to paint a multi-day axis for a frame or a minute — which
+is exactly the reported "first load starts at the oldest event, a refresh scrolls
+to now": the mount scroll measured itself against a range that then changed
+under it. Scoped, the axis is right on the first paint and the scroll lands
+where it should.
+
+`active` is exempt and has to be: a block still running belongs on the axis
+whatever day it was named on, and it is the only reason the rollover ever waits.
+
+**On truncation, since it came up.** There is no cap on the event log and there
+should not be one yet. A heavy day is a few kilobytes of JSON, so the browser's
+usual five megabytes is years of daily use away, and the log is the one thing in
+Mono that cannot be rebuilt from anything else. The risk worth writing down is
+not the size, it is the failure mode — see the entry below, which corrects
+this paragraph as first written. It said persist *swallows* a
+`QuotaExceededError`. It does not.
+
+**2026-09-03 — A refused write is caught, recorded and said out loud.**
+
+The paragraph above, written earlier today, had the mechanism wrong, and the
+truth is worse than what it claimed. Zustand's persist wraps the store like
+this:
+
+```js
+api.setState = (state, replace) => { savedSetState(state, replace); return setItem() }
+```
+
+Nothing around the write. So a `QuotaExceededError` does not get swallowed — it
+is thrown out of the *store action*, which means out of the click handler that
+called it, with the memory update already applied. `finishSetup` would shape the
+day and then never run the three lines after it: pressing `Start the day` would
+answer the question and stay on it, with an error in the console and nothing on
+screen to explain any of it. Silent would have been kinder.
+
+`guardedStorage` now wraps all three storage calls. A refused write is caught,
+so the gesture completes on a session that is correct in memory, and the refusal
+is recorded in `useStorageHealth` — a store of its own, because recording a
+failed save in the session store would attempt another save to record it.
+Reading is wrapped too: a browser with site data blocked throws on `getItem`
+before it ever gets to a write, and Mono should start empty rather than not
+start.
+
+Being recorded is not the point, though. Being *said* is. This is the one
+failure in Mono worth interrupting for, because it is the only one that costs
+something you cannot see on the screen, so the warning has a permanent place in
+both headers until it clears, and it leads to Settings — where the explanation
+sits against the Export button, which is the only thing that can rescue the day.
+A success clears it: the whole log goes out on every save, so a write that lands
+has caught up on everything the refused ones missed.
+
+**2026-09-03 — The `.editorconfig` was inert, and it cost 700 lines of diff.**
+
+Worth writing down because the symptom looked like a code review problem and was
+not. `CommitmentFields.tsx` came back with 323 changed lines for a three-line
+edit, and `SegmentEditor.tsx` with 407 for another three: an editor had
+reindented both files from two spaces to four, in their entirety.
+
+The cause was a `.editorconfig` containing exactly one line — `indent_size = 2`
+— with no section header. EditorConfig properties belong to a section, and a
+property before the first `[…]` belongs to nothing, so every implementation
+ignores it. The file existed, said the right number, and had no effect at all;
+the editor fell back to its own default of four.
+
+Both files are restored from the committed version with the real edits
+reapplied, and the config now has `root = true` and a `[*]` section that
+actually applies. `end_of_line` is deliberately left out: the working copy is
+CRLF, the repo is LF, `core.autocrlf` is what crosses between them, and naming an
+ending here would fight it and churn every file on the next checkout.
+
+The general form of this, for next time: when a diff is mostly whitespace,
+`git diff -w --stat` beside `git diff --stat` says so immediately, and the gap
+between the two numbers is the size of the problem.
+
+**2026-09-03 — An edit nobody has changed is not an edit.**
+
+Review, on the fold that arrives closed: `editing` survived the trip to the
+other question, so coming back could reopen a form instead of showing the list.
+True, and the entry above did say the question is asked fresh on arrival.
+
+But the fix it suggested — clear `editing` on the way out — collides with this
+panel's oldest rule, the one its docblock opens with: nothing typed is lost by
+changing your mind about which question to answer first. Clearing an edit
+somebody had begun to write loses work, silently, for a fold. Both rules are
+right, and the line between them is not *whether* a form is open but whether
+anybody has written in it:
+
+- **Opened and left alone.** The ✎ seeds the form from the row. Walk away and
+  the draft still says exactly what the commitment says, so there is nothing in
+  it to lose and nothing to come back to. It folds away.
+- **Opened and changed.** Now the draft and the commitment disagree, and the
+  difference is the user's. It stays, on the row it belongs to, with the row
+  still lit and the button still reading *Save commitment*.
+
+`draftsMatch` is the whole of the distinction, and it lives beside
+`draftFromCommitment` because that is the function it is comparing against.
+
+The same reasoning found a second hole the review did not mention, in the
+opposite direction. The fold can now close over a half-written *new*
+commitment, and `openForm` re-seeded the draft on the way open — so typing
+`Dentist`, glancing at the hours and coming back lost it to a fresh form. The
+re-seed happens only over a draft with no title in it now. A stale default half
+hour is worth refreshing; a commitment somebody had started to describe is not
+worth overwriting to do it.
+
+**2026-09-03 — Midnight is the wall, at both ends of the axis.**
+
+The other half of the same review, and a real hole in *the timeline is one
+calendar day*. The planner scopes by when a thing **starts**, which is the right
+question to ask of a commitment and leaves the two ways a *span* can reach out
+of the day it started in. A meeting at ten past midnight with half an hour of
+getting ready begins at twenty to twelve the night before; `layout` takes the
+top of the axis from the earliest entry start, so that one margin dragged the
+whole grid back across the night. A late commitment with travel after it, or a
+break pinned at ten to midnight, reaches the other way.
+
+Neither is a thing to refuse. A flight at 00:10 really does need you moving at
+23:40, and Mono's job is to hold the time, not to have opinions about the hour.
+So the day simply stops where the day stops: `layout` clamps its range to
+`dayBounds(now)` and clips each entry to what is left, the same treatment the
+region bands already get.
+
+The clipping is on the drawing and not on the entry, which is the part worth
+keeping straight. `startsAt` and `endsAt` still say what the commitment really
+is — the block's own label reads *Getting ready · 11:40 PM · 30m* while being
+drawn from midnight — so the axis can be honest about the part it can show
+without the timeline lying about the part it cannot. An entry with nothing
+inside the day is not drawn at all, which is a box of no height rather than a
+fact being withheld.
+
+Lanes are still assigned on the real spans, before the clip. Two entries that
+overlap only outside the visible day still get a column each, because they do
+overlap; the alternative is a lane count that changes at midnight.

@@ -45,7 +45,7 @@ import {
   type EntryComposer,
 } from './SegmentEditor'
 import { EditGlyph } from '../ui'
-import { formatClock, formatDuration } from '@/domain/time'
+import { dayBounds, formatClock, formatDuration } from '@/domain/time'
 import {
   commitmentSpan,
   type Commitment,
@@ -111,7 +111,7 @@ export function DayCalendar({
   onSetRegions,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
-  const { rangeStart, hours, placed } = useMemo(
+  const { rangeStart, rangeEnd, hours, placed } = useMemo(
     () => layout(timeline, now),
     [timeline, now],
   )
@@ -132,7 +132,7 @@ export function DayCalendar({
   }, [])
 
   const nowOffset = TOP_PAD_PX + ((now - rangeStart) / HOUR_MS) * HOUR_PX
-  const nowVisible = now >= rangeStart && now <= rangeStart + hours.length * HOUR_MS
+  const nowVisible = now >= rangeStart && now <= rangeEnd
 
   const editing = composer === null ? null : editingId(composer)
   const editingBreak = byId(breaks, composer?.kind === 'break' ? composer.editing : null)
@@ -295,6 +295,7 @@ export function DayCalendar({
               key={region.start}
               region={region}
               rangeStart={rangeStart}
+              rangeEnd={rangeEnd}
             />
           ))}
 
@@ -376,9 +377,29 @@ function HeaderToggle({
 const byId = <T extends { id: string }>(items: readonly T[], id: string | null): T | null =>
   id === null ? null : (items.find((item) => item.id === id) ?? null)
 
-function RegionBand({ region, rangeStart }: { region: Interval; rangeStart: Ms }) {
-  const top = TOP_PAD_PX + ((region.start - rangeStart) / HOUR_MS) * HOUR_PX
-  const height = ((region.end - region.start) / HOUR_MS) * HOUR_PX
+/**
+ * A work region, clipped to the hours actually on the axis.
+ *
+ * The axis no longer reaches back to cover an empty morning — see `layout` —
+ * so a nine-to-six band on a day opened at two is drawn from two. Clipped
+ * rather than skipped: the afternoon of that region is still the canvas the
+ * plan is painted on, and it is the half you can see.
+ */
+function RegionBand({
+  region,
+  rangeStart,
+  rangeEnd,
+}: {
+  region: Interval
+  rangeStart: Ms
+  rangeEnd: Ms
+}) {
+  const start = Math.max(region.start, rangeStart)
+  const end = Math.min(region.end, rangeEnd)
+  if (end <= start) return null
+
+  const top = TOP_PAD_PX + ((start - rangeStart) / HOUR_MS) * HOUR_PX
+  const height = ((end - start) / HOUR_MS) * HOUR_PX
 
   return (
     <div
@@ -525,6 +546,7 @@ function editorFor(entry: TimelineEntry, now: Ms): EntryComposer | null {
 type Placed = {
   key: string
   entry: TimelineEntry
+  /** Clipped to the visible day — see `layout`. The entry keeps the truth. */
   top: number
   height: number
   lane: number
@@ -536,28 +558,78 @@ function layout(timeline: Timeline, now: Ms) {
   // and drawing a box labelled "nothing" only adds noise.
   const entries = timeline.entries.filter((e) => e.kind !== 'margin')
 
-  // Work regions bound the view alongside the entries. Without them a morning
-  // region would be positioned above the top of the grid once the day is under
-  // way, and its band would render at a negative offset.
-  const starts = [...entries.map((e) => e.startsAt), ...timeline.regions.map((r) => r.start)]
+  /**
+   * Where the axis starts, and the only judgement in this function.
+   *
+   * `now` and the entries hold it open; a work region does not. Open Mono at
+   * two o'clock against a nine-to-six day and the region alone used to drag the
+   * top of the grid back to nine, for five hours that hold nothing — you were
+   * not using Mono in them, so there is nothing to draw and nothing to read.
+   * Beside the stage that was merely dead scroll above the part you came to
+   * see, hidden by the column scrolling itself to `now` on mount. Stacked under
+   * the stage on a phone, where nothing scrolls itself, it was the entire first
+   * screenful of calendar: an empty grid, under a heading that says Today, for a
+   * day that is in fact full. The timeline looked broken.
+   *
+   * Only genuinely empty hours go. Anything that happened up there — a block
+   * banked this morning, a meeting already sat through, a break taken — is an
+   * entry, and entries still reach back as far as they need to. The region
+   * bands are clipped to what is left rather than positioned outside it, which
+   * is the job the region starts used to be doing here.
+   */
   const ends = [...entries.map((e) => e.endsAt), ...timeline.regions.map((r) => r.end)]
-  const earliest = Math.min(now, ...(starts.length ? starts : [now]))
+  const earliest = Math.min(now, ...entries.map((e) => e.startsAt))
   const latest = Math.max(timeline.horizon, now, ...(ends.length ? ends : [now]))
 
-  const rangeStart = floorToHour(earliest)
-  const hourCount = Math.max(1, Math.ceil((latest - rangeStart) / HOUR_MS))
+  /**
+   * Midnight is the wall, at both ends.
+   *
+   * The planner scopes the day by when a thing *starts*, which is the right
+   * question to ask of a commitment — and leaves the two ways a span can reach
+   * out of the day it started in. A one-minute-past-midnight meeting with half
+   * an hour of getting ready begins at twenty to twelve *yesterday*, and that
+   * one entry used to drag the whole axis back across the night; a late one
+   * with travel after it reaches the other way. Both are legitimate things to
+   * write down, so neither is refused — the day simply stops where the day
+   * stops, and what is left of the entry is drawn against the edge.
+   *
+   * The clipping is on the drawing, not on the entry. `startsAt` and `endsAt`
+   * keep saying what the commitment really is, which is what the block's own
+   * label reads back, so the axis can be honest about the part it can show
+   * without the timeline lying about the part it cannot.
+   */
+  const day = dayBounds(now)
+  const rangeStart = Math.max(floorToHour(earliest), day.start)
+  const hourCount = Math.max(
+    1,
+    Math.ceil((Math.min(latest, day.end) - rangeStart) / HOUR_MS),
+  )
   const hours = Array.from({ length: hourCount }, (_, i) => rangeStart + i * HOUR_MS)
+  const rangeEnd = rangeStart + hourCount * HOUR_MS
 
-  const placed = assignLanes(entries).map(({ entry, lane, lanes }, index) => ({
-    key: keyFor(entry, index),
-    entry,
-    top: TOP_PAD_PX + ((entry.startsAt - rangeStart) / HOUR_MS) * HOUR_PX,
-    height: ((entry.endsAt - entry.startsAt) / HOUR_MS) * HOUR_PX,
-    lane,
-    lanes,
-  }))
+  const placed = assignLanes(entries)
+    .map(({ entry, lane, lanes }, index) => {
+      // Lanes are assigned on the real spans above, so two entries that overlap
+      // only outside the visible day still get columns of their own. That is
+      // the honest answer: they do overlap.
+      const startsAt = Math.max(entry.startsAt, rangeStart)
+      const endsAt = Math.min(entry.endsAt, rangeEnd)
 
-  return { rangeStart, hours, placed }
+      return {
+        key: keyFor(entry, index),
+        entry,
+        top: TOP_PAD_PX + ((startsAt - rangeStart) / HOUR_MS) * HOUR_PX,
+        height: ((endsAt - startsAt) / HOUR_MS) * HOUR_PX,
+        lane,
+        lanes,
+        visible: endsAt > startsAt,
+      }
+    })
+    // Nothing of it falls inside today. The entry is still in the timeline —
+    // this is the drawing declining to draw a box of no height.
+    .filter((item) => item.visible)
+
+  return { rangeStart, rangeEnd, hours, placed }
 }
 
 /**

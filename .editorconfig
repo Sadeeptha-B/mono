@@ -1,1 +1,19 @@
+# The properties have to sit under a section header
+#
+# Mono is two-space, everywhere. 
+# `end_of_line` is deliberately absent. The working copy is CRLF and the repo
+# is LF, and git handles that crossing with `core.autocrlf`; naming an ending
+# here would fight it and churn every file on the next checkout.
+
+root = true
+
+[*]
+charset = utf-8
+indent_style = space
 indent_size = 2
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+# Two trailing spaces are a line break in Markdown.
+[*.md]
+trim_trailing_whitespace = false

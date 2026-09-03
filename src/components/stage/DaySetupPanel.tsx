@@ -25,6 +25,14 @@
  * complete answer, and before there was somewhere to put it a day with no
  * meetings could never get past the question at all.
  *
+ * The first question is a list with a form under it, and the form folds away.
+ * Once the day has anything fixed in it, the answer to "what's already fixed?"
+ * is the list — four fields under it are the *next* answer, asked before the
+ * first one has been read. So arriving at the question shows what is there and
+ * offers to add another, and a day with nothing fixed yet skips straight to the
+ * form, because a lone button over an empty space is a question with the answer
+ * hidden behind it.
+ *
  * The same panel comes back when the questions are re-opened from the strip
  * later in the day, which is what `revisiting` is for. Only the way out
  * differs: the day has already been shaped, so there is nothing to record and
@@ -40,6 +48,7 @@ import { EditGlyph, GhostButton, PrimaryButton, StagePrompt } from '../ui'
 import {
   CommitmentFields,
   draftFromCommitment,
+  draftsMatch,
   emptyDraft,
   readCommitment,
   readCommitmentEdit,
@@ -104,6 +113,14 @@ export function DaySetupPanel({
   // the list re-renders from the store every second, and a snapshot taken when
   // the ✎ was clicked would be a second, quietly diverging answer.
   const [editing, setEditing] = useState<string | null>(null)
+  // Whether the user asked for the form, which is not the same question as
+  // whether it is on screen — see `formOpen`. Derived rather than seeded, for
+  // the reason `CommitmentFields` folds its margins that way: a form that is
+  // pointed at something, or that is the only answer available, has to be
+  // visible however this flag happens to be sitting.
+  const [expanded, setExpanded] = useState(false)
+  // Which question was on screen last render, for the arrival rule below.
+  const [seenStage, setSeenStage] = useState(stage)
 
   const clearForm = () => {
     setEditing(null)
@@ -115,6 +132,43 @@ export function DaySetupPanel({
   const startEditing = (commitment: Commitment) => {
     setEditing(commitment.id)
     setDraft(draftFromCommitment(commitment))
+  }
+
+  /**
+   * Open the form to add another.
+   *
+   * Re-seeded on the way open rather than only at mount. The panel can sit here
+   * for hours — it is the stage between blocks — and "the next round half hour"
+   * is a good default at the moment you ask for the form and a puzzle two hours
+   * later.
+   *
+   * Only over a draft with nothing named in it, though. The fold now closes on
+   * arrival at this question, which means it can close over something
+   * half-written, and a default time is not worth overwriting a commitment
+   * somebody had begun to describe.
+   */
+  const openForm = () => {
+    setExpanded(true)
+    if (draft.title.trim() === '') setDraft(emptyDraft(format(nextHalfHour(now), 'HH:mm')))
+  }
+
+  // Coming back to the question asks it again, and the answer to it is the
+  // list. Adjusted during render rather than in an effect, so the form never
+  // paints open for a frame on the way in.
+  //
+  // An edit is folded away too, but only one nobody has touched: opening the ✎
+  // and wandering off to the other question leaves a form that is showing
+  // rather than work in progress, and it should not be waiting when you come
+  // back. A *changed* edit stays, because this panel's oldest rule is that
+  // nothing typed is lost by changing your mind about which question to answer
+  // first, and the row it belongs to says which one it is.
+  if (seenStage !== stage) {
+    setSeenStage(stage)
+    if (stage === 'commitments') {
+      setExpanded(false)
+      const subject = editing === null ? null : commitments.find((c) => c.id === editing)
+      if (subject && draftsMatch(draft, draftFromCommitment(subject))) clearForm()
+    }
   }
 
   // The commitment the form is pointed at can leave underneath it — removed on
@@ -130,6 +184,12 @@ export function DaySetupPanel({
   // standup added after a 4pm swim belongs above it — the same order the
   // calendar draws them in, and the same one the planner works through.
   const inOrder = [...commitments].sort((a, b) => a.startsAt - b.startsAt)
+
+  // Asked for, pointed at something, or the only thing there is to say. The
+  // last of those is why this is derived: removing the last commitment while
+  // the form is folded away has to leave the question answerable, and it does
+  // so without anything having to notice the removal.
+  const formOpen = expanded || editing !== null || inOrder.length === 0
 
   // Not the same read: an edit is merged onto what is already there, so it has
   // to say a margin is zero rather than leave it out. See `readCommitmentEdit`.
@@ -166,36 +226,55 @@ export function DaySetupPanel({
             </ul>
           )}
 
-          <form
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (!ready) return
-              if (editing) onUpdateCommitment(editing, ready)
-              else onAddCommitment(ready)
-              clearForm()
-            }}
-          >
-            <CommitmentFields
-              idPrefix="first-commitment"
-              // Named for what the form is doing, because with the list above
-              // it the fields are the only thing saying which of the two it is.
-              titleLabel={editing ? 'This commitment' : 'Next commitment'}
-              showTitleLabel={false}
-              draft={draft}
-              onDraft={setDraft}
-              large
-            />
-            <div className="mt-4 flex flex-wrap gap-2">
-              <GhostButton type="submit" disabled={!ready}>
-                {editing ? 'Save commitment' : 'Add commitment'}
-              </GhostButton>
-              {editing && (
-                <GhostButton type="button" onClick={clearForm}>
-                  Cancel
+          {formOpen ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault()
+                if (!ready) return
+                if (editing) onUpdateCommitment(editing, ready)
+                else onAddCommitment(ready)
+                clearForm()
+                // Left open, cleared, whichever it was: the commonest thing
+                // after writing one of these down is writing another, and
+                // folding the form away under the hand that just used it would
+                // charge a click for the second.
+                setExpanded(true)
+              }}
+            >
+              <CommitmentFields
+                idPrefix="first-commitment"
+                // Named for what the form is doing, because with the list above
+                // it the fields are the only thing saying which of the two it is.
+                titleLabel={editing ? 'This commitment' : 'Next commitment'}
+                showTitleLabel={false}
+                draft={draft}
+                onDraft={setDraft}
+                large
+              />
+              <div className="mt-4 flex flex-wrap gap-2">
+                <GhostButton type="submit" disabled={!ready}>
+                  {editing ? 'Save commitment' : 'Add commitment'}
                 </GhostButton>
-              )}
-            </div>
-          </form>
+                {/* No way out of a form that is the whole question: with
+                    nothing in the list there is nothing to fold back to. */}
+                {inOrder.length > 0 && (
+                  <GhostButton
+                    type="button"
+                    onClick={() => {
+                      clearForm()
+                      setExpanded(false)
+                    }}
+                  >
+                    Cancel
+                  </GhostButton>
+                )}
+              </div>
+            </form>
+          ) : (
+            <GhostButton type="button" onClick={openForm}>
+              + Another commitment
+            </GhostButton>
+          )}
         </>
       ) : (
         <>

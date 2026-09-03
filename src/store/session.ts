@@ -11,7 +11,7 @@
  */
 
 import { create } from 'zustand'
-import { persist, createJSONStorage } from 'zustand/middleware'
+import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware'
 
 import type { DerivePlanInput } from '@/domain/planner'
 import { initialState, reduce, replay, type MonoEvent, type SessionState } from '@/domain/events'
@@ -27,6 +27,77 @@ import {
 import type { Commitment, Ms, PlannedBreak, Settings, WorkRegion } from '@/domain/types'
 
 const STORAGE_KEY = 'mono.session'
+
+/**
+ * Whether the last save actually landed.
+ *
+ * A store of its own, and it has to be one: this is the only state in Mono that
+ * describes *storage*, so writing it into the session store would attempt
+ * another save in order to record that a save failed. Not persisted for the
+ * same reason — the fact it holds is about this browser right now, and a
+ * reload re-establishes it on the first write either way.
+ */
+export const useStorageHealth = create<{
+  /** When a write was last refused, or null while saving works. */
+  failedAt: Ms | null
+  noteFailure: (at: Ms) => void
+  noteSuccess: () => void
+}>()((set) => ({
+  failedAt: null,
+  // First failure wins: the interesting instant is when saving stopped, not
+  // the last time it was tried and still would not go.
+  noteFailure: (at) => set((s) => (s.failedAt === null ? { failedAt: at } : s)),
+  noteSuccess: () => set((s) => (s.failedAt === null ? s : { failedAt: null })),
+}))
+
+/**
+ * `localStorage`, with the two ways it can refuse caught.
+ *
+ * It can genuinely fail. Quota is the honest case — the log only grows, and it
+ * is the one thing here that cannot be rebuilt from anything else — and a
+ * browser set to block site data throws on the very first write.
+ *
+ * Uncaught, that lands somewhere surprising. Zustand's persist middleware wraps
+ * `setState` as `savedSetState(...); return setItem()` with nothing around it,
+ * so a throw from the write escapes the *store action* — the memory update has
+ * already happened, but everything after the dispatch in that click handler is
+ * skipped. Pressing `Start the day` would shape the day and then not leave the
+ * question, with an error in the console and nothing on screen to explain it.
+ *
+ * So the write is allowed to fail, and failing is recorded rather than thrown:
+ * the session in memory is complete and usable, and what the user needs is to
+ * be told that it is not being written down, next to the Export that rescues
+ * it. A later write that succeeds clears the flag, because the whole log goes
+ * out on every save — one that lands has caught up on everything the failed
+ * ones missed.
+ */
+const guardedStorage: StateStorage = {
+  getItem: (name) => {
+    try {
+      return localStorage.getItem(name)
+    } catch {
+      // Reading refused: there is nothing to rehydrate, and writing is going to
+      // refuse too. Start empty and say so rather than crash on boot.
+      useStorageHealth.getState().noteFailure(Date.now())
+      return null
+    }
+  },
+  setItem: (name, value) => {
+    try {
+      localStorage.setItem(name, value)
+      useStorageHealth.getState().noteSuccess()
+    } catch {
+      useStorageHealth.getState().noteFailure(Date.now())
+    }
+  },
+  removeItem: (name) => {
+    try {
+      localStorage.removeItem(name)
+    } catch {
+      useStorageHealth.getState().noteFailure(Date.now())
+    }
+  },
+}
 
 /**
  * How long a gap between ticks means we were genuinely gone rather than merely
@@ -217,7 +288,7 @@ export const useSession = create<SessionStore>()(
     {
       name: STORAGE_KEY,
       version: SCHEMA_VERSION,
-      storage: createJSONStorage(() => localStorage),
+      storage: createJSONStorage(() => guardedStorage),
       // The log is the truth; everything else is rebuilt from it on load.
       partialize: (state): PersistedShape => ({
         events: state.events,

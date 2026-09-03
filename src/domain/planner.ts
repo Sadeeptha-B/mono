@@ -10,6 +10,7 @@
  */
 
 
+import { onSameDay } from './time'
 import {
   breakSpan,
   commitmentEvent,
@@ -50,7 +51,38 @@ export type DerivePlanInput = {
 }
 
 export function derivePlan(input: DerivePlanInput): Timeline {
-  const { now, settings, regions, commitments, history, active, overrides } = input
+  const { now, settings, regions, active } = input
+
+  /**
+   * Everything below is scoped to the calendar day `now` falls in.
+   *
+   * The log is a journal and keeps everything — that is the point of it, and
+   * the export carries it — but a *timeline* is a drawing of one day. Without
+   * this, `history` put every block ever completed onto the axis: open Mono on
+   * Thursday and it reached back to the first thing you ever recorded, days of
+   * empty grid above today with the day itself somewhere off the bottom. The
+   * midnight reset never touched it, deliberately, because history survives the
+   * reset; it was the drawing that was wrong.
+   *
+   * Commitments and pinned breaks are scoped by the same rule rather than a
+   * second one. `day/reset` already drops the ones that have expired, so this
+   * matters only in the window where that reset has not run — the first frame
+   * after a reload, and the stretch where a block left running across midnight
+   * defers the rollover — but in that window it is the difference between an
+   * axis that is stable from the first paint and one that jumps.
+   *
+   * `active` is exempt, and has to be: a block still running is on the axis
+   * whatever day it was named on. It is also the only reason the rollover ever
+   * waits.
+   *
+   * The predicate is the one `vitals` uses, so the cat and the calendar cannot
+   * disagree about what today holds. A segment belongs to the day it *started*
+   * — the reset never fires mid-block, so one that ran from 23:50 to 00:35 is
+   * drawn on the day it was named in.
+   */
+  const history = input.history.filter((s) => onSameDay(s.startedAt, now))
+  const commitments = input.commitments.filter((c) => onSameDay(c.startsAt, now))
+  const overrides = input.overrides.filter((b) => onSameDay(b.startsAt, now))
 
   // Planning starts after whatever is already running. A block in flight is
   // never re-planned; it owns its slot until it completes or is abandoned.
