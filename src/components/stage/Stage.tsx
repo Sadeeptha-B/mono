@@ -27,6 +27,7 @@ import type {
   ActiveSegment,
   BlockKind,
   Commitment,
+  DefaultRegion,
   Ms,
   Settings,
   WorkRegion,
@@ -45,7 +46,11 @@ type Props = {
   setupStage: SetupStageId
   onSetupStage: (stage: SetupStageId) => void
   commitments: readonly Commitment[]
+  /** Today's hours as the day currently reads them, unsaved draft included. */
   regions: readonly WorkRegion[]
+  /** That same draft as wall clock, owned by `App` so the calendar follows it. */
+  hours: DefaultRegion[]
+  onHours: (draft: DefaultRegion[]) => void
   /** Whether `now` falls inside a work region. */
   withinHours: boolean
   hasRegions: boolean
@@ -53,8 +58,8 @@ type Props = {
   nextBlockKind: BlockKind | null
   costOf: (minutes: number) => { blocksLost: number; focusMinutesLost: number }
   onAddCommitment: (input: Omit<Commitment, 'id'>) => void
+  onUpdateCommitment: (id: string, patch: Partial<Commitment>) => void
   onRemoveCommitment: (id: string) => void
-  onSaveRegions: (regions: WorkRegion[]) => void
   onDayShaped: () => void
   onEditHours: () => void
   onStartBlock: (kind: BlockKind) => void
@@ -91,11 +96,13 @@ export function Stage(props: Props) {
             onStage={props.onSetupStage}
             revisiting={props.revisitingSetup}
             regions={props.regions}
+            hours={props.hours}
+            onHours={props.onHours}
             withinHours={props.withinHours}
             nextRegionStart={props.nextRegionStart}
             commitments={props.commitments}
-            onSaveRegions={props.onSaveRegions}
             onAddCommitment={props.onAddCommitment}
+            onUpdateCommitment={props.onUpdateCommitment}
             onRemoveCommitment={props.onRemoveCommitment}
             onDone={props.onDayShaped}
           />

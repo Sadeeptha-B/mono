@@ -255,13 +255,23 @@ export function selectRegions(state: SessionStore, now: Ms): WorkRegion[] {
  * Everything the planner needs, gathered from the store. The timeline itself
  * is derived in the view from this plus `now`, so it is always consistent with
  * the timer rather than a stored schedule that can drift away from it.
+ *
+ * `regions` can be overridden with hours that have not been saved yet, which is
+ * the one input the user edits while watching the plan it produces. Nothing is
+ * written for it — the whole future is a pure function of these arguments, so
+ * answering "what would this day look like?" is a call rather than a commit,
+ * and the answer is discarded by not asking again. See `hoursPreview` in `App`.
  */
-export function toPlanInput(state: SessionStore, now: Ms): DerivePlanInput {
+export function toPlanInput(
+  state: SessionStore,
+  now: Ms,
+  regions: readonly WorkRegion[] = selectRegions(state, now),
+): DerivePlanInput {
   const { session } = state
   return {
     now,
     settings: session.settings,
-    regions: selectRegions(state, now),
+    regions,
     commitments: session.commitments,
     history: session.history,
     active: session.active,

@@ -24,6 +24,12 @@
  * stays put and the body scrolls. Settings is long enough to overflow a laptop
  * in landscape, and a dialog that runs off the bottom of the screen hides its
  * own Done button.
+ *
+ * The padding steps down on a narrow screen for the same reason the page's
+ * does. Sixteen pixels rather than twenty is not much until you are holding a
+ * pair of `time` inputs that clip their own text below a fixed width — see
+ * `RegionShapeEditor` — and then it is the difference between `06:00 PM` and
+ * `06:00 PI`.
  */
 
 import * as RadixDialog from '@radix-ui/react-dialog'
@@ -65,7 +71,7 @@ export function Dialog({ open, title, description, children, onDismiss }: Props)
           onInteractOutside={(e) => e.preventDefault()}
           className="fixed top-1/2 left-1/2 z-50 flex max-h-[calc(100dvh-2rem)] w-[min(30rem,calc(100vw-1.5rem))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-2xl border border-line bg-surface shadow-2xl"
         >
-          <div className="shrink-0 px-5 pt-5 sm:px-6 sm:pt-6">
+          <div className="shrink-0 px-4 pt-5 sm:px-6 sm:pt-6">
             <div className="flex items-start justify-between gap-4">
               <RadixDialog.Title className="text-lg font-medium text-bright">
                 {title}
@@ -151,7 +157,7 @@ function DialogBody({ children }: { children: ReactNode }) {
       <div
         ref={viewport}
         onScroll={measure}
-        className="mono-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-5 pt-5 pb-5 sm:px-6 sm:pb-6"
+        className="mono-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pt-5 pb-5 sm:px-6 sm:pb-6"
       >
         <div ref={content}>{children}</div>
       </div>

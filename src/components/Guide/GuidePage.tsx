@@ -15,6 +15,13 @@
  * section below explains what each one does using its current value, so the
  * page you are reading is the natural place to change one, and reading it used
  * to mean going back to the day first.
+ *
+ * The two-minute version is not a section. It sits above the contents, because
+ * a reader who stops after it has still been told how to use Mono, and because
+ * the sections are a reference — ten of them, one subject each. That is the
+ * shape the page settled into after one of them grew to a third of the whole:
+ * everything about the day's opening questions *and* everything about reading
+ * the calendar, under a heading that promised the first.
  */
 
 import { useMemo, type ReactNode } from 'react'
@@ -62,8 +69,13 @@ export function GuidePage({
   }
 
   return (
-    <div className="flex h-dvh flex-col bg-ink">
-      <header className="shrink-0 border-b border-line px-4 py-3 sm:px-6">
+    <div className="flex min-h-dvh flex-col bg-ink lg:h-dvh">
+      {/* The same split as the day view: pinned and scrolling inside itself on
+          a wide screen, an ordinary page on a narrow one. The header stays in
+          sight either way — pinned it never moves, and stacked it sticks —
+          because it carries the timer, and reading about focus should not
+          quietly cost you the block you are in. */}
+      <header className="sticky top-0 z-20 shrink-0 border-b border-line bg-ink px-4 py-3 sm:px-6 lg:static">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
             {/* The live phase, not a fixed idle one. The header already keeps
@@ -96,7 +108,7 @@ export function GuidePage({
         </div>
       </header>
 
-      <div className="mono-scroll min-h-0 flex-1 overflow-y-auto">
+      <div className="mono-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
           <h1 className="text-3xl font-light text-bright sm:text-4xl">How Mono works</h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
@@ -104,13 +116,27 @@ export function GuidePage({
             you sleep through a block.
           </p>
 
+          {/* The two-minute version sits above the contents rather than inside
+              the first section. It is the most useful paragraph on the page for
+              someone arriving cold, and a reader who stops after it has still
+              been told how to use Mono. */}
+          <div className="max-w-2xl">
+            <Note>
+              <Em>The two-minute version.</Em> Declare your working hours. Name what is
+              already fixed today. Mono fills the gaps with {deep}-minute deep blocks and{' '}
+              {short}-minute short ones. Press start, name the one thing the block is for,
+              work until the timer ends, then decide between a break and the next block.
+              Everything after this is detail.
+            </Note>
+          </div>
+
           <div className="mt-8 flex flex-col gap-8 lg:grid lg:grid-cols-[1fr_13rem] lg:gap-12">
             <article className="max-w-2xl">
               {sections.map((section) => (
                 <section
                   key={section.id}
                   id={section.id}
-                  className="scroll-mt-6 border-t border-line pt-6 first:border-t-0 first:pt-0 [&:not(:first-child)]:mt-8"
+                  className="scroll-mt-20 border-t border-line pt-6 first:border-t-0 first:pt-0 lg:scroll-mt-6 [&:not(:first-child)]:mt-8"
                 >
                   <h2 className="mb-3 text-xs font-medium tracking-widest text-muted uppercase">
                     {section.title}
@@ -379,13 +405,29 @@ function sectionsFor(
             It plans nowhere except inside the hours you declare, it never starts a
             block without a purpose, and it never records time you did not spend.
           </P>
-          <Note>
-            <Em>The two-minute version.</Em> Declare your working hours. Name what is
-            already fixed today. Mono fills the gaps with {deep}-minute deep blocks and{' '}
-            {short}-minute short ones. Press start, name the one thing the block is for,
-            work until the timer ends, then decide between a break and the next block.
-            Everything after this is detail.
-          </Note>
+        </>
+      ),
+    },
+    {
+      id: 'panels',
+      title: 'Two panels, one day',
+      body: (
+        <>
+          <P>
+            Mono is two panels showing the same day. The <Em>timer</Em> is where every
+            question happens — what is fixed today, what this block is for, whether you
+            want a break — one at a time, in the space the countdown occupies. The{' '}
+            <Em>calendar</Em> beside it draws the whole day against real hours, so you
+            can see what an answer costs before you give it. Nothing opens a window over
+            the top of either, because a decision about the day is unanswerable with the
+            day covered up. Settings is the one exception, and the only thing here you
+            are not answering in the middle of something.
+          </P>
+          <P>
+            The row of dots under the timer is where in the day you are — hover one to
+            see what it is. On a narrow screen the calendar sits under the timer rather
+            than beside it, and the page scrolls as one.
+          </P>
         </>
       ),
     },
@@ -402,17 +444,15 @@ function sectionsFor(
             glance on an ordinary morning.
           </P>
           <P>
-            Neither one gates the other. The dots under the timer move between them in
-            either order, nothing you have typed is lost by switching, and{' '}
-            <Em>Start the day</Em> finishes from whichever you are looking at. With
-            nothing fixed today, that is the whole of it: press it and Mono plans your
-            hours end to end. Those same dots keep working afterwards, in both of their
-            jobs: they are a map of where in the day you are — hover one to see what it
-            is — and between blocks they go back to either question, because a meeting
-            that appears at four is no different from one you knew about at nine.{' '}
-            <Em>Back to the day</Em> returns. They never skip ahead, though: naming a
-            block is not something you can click past, and while one is running the
-            questions are the calendar's to answer.
+            Neither one gates the other. The dots move between them in either order,
+            nothing you have typed is lost by switching, and <Em>Start the day</Em>{' '}
+            finishes from whichever you are looking at. With nothing fixed today, that
+            is the whole of it: press it and Mono plans your hours end to end. The
+            questions stay answerable afterwards — between blocks the dots go back to
+            either one, because a meeting that appears at four is no different from one
+            you knew about at nine, and <Em>Back to the day</Em> returns. They never
+            skip ahead, though: naming a block is not something you can click past, and
+            while one is running the questions are the calendar's to answer.
           </P>
           <P>
             <Em>Working hours</Em> are the only time Mono is allowed to plan in.
@@ -420,6 +460,12 @@ function sectionsFor(
             unless you change it. The opening question and <Em>Hours</Em> on the
             calendar both change today only; tomorrow starts from the default again,
             and confirming the shape unchanged leaves today following it.
+          </P>
+          <P>
+            The calendar follows the question as you type it. Add an evening stretch and
+            the evening fills in beside you, before you have pressed anything — the plan
+            is worked out from scratch every time, so showing you what an answer would
+            mean costs nothing. Nothing is written down until you finish the question.
           </P>
           <P>
             Hours are a list of stretches rather than a single end time, so an
@@ -430,7 +476,15 @@ function sectionsFor(
           <P>
             <Em>Commitments</Em> are the things already fixed: a meeting, a call, the
             school run. After the opening question, use <Em>+ Commitment</Em> on the
-            calendar. Mono fills the runway up to one and resumes afterwards.
+            calendar. Mono fills the runway up to one and resumes afterwards. The
+            opening question lists the ones you have named in the order they happen
+            rather than the order you remembered them in, and every row carries the two
+            controls Mono uses everywhere for something you wrote:{' '}
+            <Em>
+              <EditGlyph />
+            </Em>{' '}
+            reopens the form that made it, seeded with what it says now, and <Em>×</Em>{' '}
+            removes it.
           </P>
           <P>
             A commitment can also cost time either side of itself, under{' '}
@@ -440,39 +494,41 @@ function sectionsFor(
             offered at twenty to four is a block you were never going to be at your desk
             for. Mono keeps that whole span clear and draws the travel beside the
             commitment rather than inside it, so the calendar still says how long you
-            were actually swimming.
+            were actually swimming. Folding <Em>Time either side</Em> away again sets
+            both back to nothing: they are minutes Mono holds clear for you, and it
+            will not go on holding them out of sight.
           </P>
+        </>
+      ),
+    },
+    {
+      id: 'calendar',
+      title: 'Reading the calendar',
+      body: (
+        <>
           <P>
-            <Em>Hours</Em>, <Em>+ Break</Em> and <Em>+ Commitment</Em> open in place,
-            just under the calendar's heading, rather than in a window over the top of
-            it. Every one of them asks a question about the day — when, and what does it
-            displace — and the day is drawn directly below the answer.
-          </P>
-          <Note>
-            A pinned break and a meeting never share a minute, and Mono keeps that from
-            both ends. Adding a commitment — or moving one — clears any break you had
-            pinned inside it, counting the time either side, because that is rest that
-            would be drawn as part of the meeting and had by nobody. Every other break
-            stays put: the shape of the day around them has changed, and whether that
-            is still where you want to stop is yours to decide, not Mono's to assume.
-            Going the other way, <Em>+ Break</Em> will not pin one across a meeting in
-            the first place — it names the one in the way instead.
-          </Note>
-          <P>
-            On the calendar, lit bands are your working hours and everything outside them
-            is time Mono will not touch. Blocks are drawn at their real length, so
-            forty-five minutes looks like forty-five minutes and a gap reads as a gap.
-            The bright line is now and past entries are dimmed — a meeting stays where
+            Lit bands are your working hours; everything outside them is time Mono will
+            not touch. Blocks are drawn at their real length, so forty-five minutes
+            looks like forty-five minutes and a gap reads as a gap. The bright line is
+            now, and past entries are dimmed rather than cleared — a meeting stays where
             it was after you have sat through it, like the blocks and breaks around it,
-            so the axis reads back as the day you actually had. A break or a commitment
-            still ahead of you carries two controls:{' '}
+            so the axis reads back as the day you actually had.
+          </P>
+          <P>
+            A break or a commitment still ahead of you carries the same{' '}
             <Em>
               <EditGlyph />
             </Em>{' '}
-            reopens the form that made it, seeded with what it says now, and{' '}
-            <Em>×</Em> removes it. Focus blocks carry neither, because they are worked out
-            from your hours and your commitments — change one of those and the blocks
-            follow.
+            and <Em>×</Em> as the list on the opening question, because they are the same
+            two things: what you wrote down. Focus blocks carry neither. They are worked
+            out from your hours and your commitments, so the way to move one is to change
+            what it was worked out from.
+          </P>
+          <P>
+            <Em>Hours</Em>, <Em>+ Break</Em> and <Em>+ Commitment</Em> in the calendar's
+            heading open in place, just below it. Every one of them asks a question
+            about the day — when, and what does it displace — and the day is drawn
+            directly below the answer.
           </P>
         </>
       ),
@@ -502,11 +558,6 @@ function sectionsFor(
             Leftovers always round <Em>down</Em>. A fifty-minute gap holds one{' '}
             {deep}-minute block and some dead minutes; Mono will not stretch a block to
             fill a space.
-          </P>
-          <P>
-            <Em>Breaks are never planned for you.</Em> The timeline always shows the most
-            focus the day could hold, which is what makes taking a break a visible trade
-            rather than a hidden one.
           </P>
           <Note>
             None of this is a stored schedule. The entire future is recomputed from your
@@ -608,6 +659,11 @@ function sectionsFor(
       body: (
         <>
           <P>
+            <Em>Breaks are never planned for you.</Em> The timeline always shows the most
+            focus the day could hold, which is what makes taking one a visible trade
+            rather than a hidden one.
+          </P>
+          <P>
             When you take a break, Mono prices it first: it re-derives the rest of the
             day with the break in place and tells you what disappeared. "Costs you 1
             block and 15 focus minutes" is a statement about your afternoon, not a
@@ -622,19 +678,20 @@ function sectionsFor(
             You can also pin a break in advance with <Em>+ Break</Em> on the calendar,
             for rest you already know you will need. The plan works around it exactly
             like a commitment, and like a commitment you can move it or change its
-            length afterwards with the{' '}
-            <Em>
-              <EditGlyph />
-            </Em>{' '}
-            on the block.
+            length afterwards.
           </P>
-          <P>
-            The one answer it refuses is a time already spoken for. A break pinned
-            across a meeting is rest nobody gets — the plan would draw it as part of the
-            meeting — so the form names the commitment in the way and waits for a
-            different hour. Moving an existing break onto one is declined the same way,
-            and leaves it where it was rather than losing it.
-          </P>
+          <Note>
+            A pinned break and a meeting never share a minute, and Mono keeps that from
+            both ends. A break will not be pinned across a meeting in the first place —
+            the form names the commitment in the way and waits for a different hour, and
+            moving an existing break onto one is declined the same way rather than
+            losing it. Coming the other way, adding or moving a commitment clears any
+            break pinned inside it, counting the time either side, because that is rest
+            that would be drawn as part of the meeting and had by nobody. Every other
+            break stays put: the shape of the day around them has changed, and whether
+            that is still where you want to stop is yours to decide, not Mono's to
+            assume.
+          </Note>
         </>
       ),
     },

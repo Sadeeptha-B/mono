@@ -106,16 +106,30 @@ export function hoursToSave(
  * from that point it is theirs to keep — including across a settings change,
  * because clearing what someone is in the middle of typing is its own bug.
  *
- * A draft that *has* been typed into is cleared by the session generation,
- * which remounts this hook. That is the other half of the rule, and it lives in
- * `App`.
+ * A draft that *has* been typed into is cleared by the session generation. For
+ * the calendar's composer that happens by remounting this hook; the copy `App`
+ * holds for the opening question outlives every remount there is, so it says so
+ * itself through `reset`. Both halves of that rule live in `App`.
+ *
+ * `edited` is the same state the draft is built from, handed back raw. Callers
+ * that only fill in fields want `draft`; the one that has to know whether the
+ * user has said anything yet — because it feeds the answer to the planner
+ * before it is saved — cannot tell from a draft that is equal to the day by
+ * construction until it isn't.
  */
 export function useHoursDraft(regions: readonly WorkRegion[]): {
   draft: DefaultRegion[]
   onDraft: (regions: DefaultRegion[]) => void
+  edited: DefaultRegion[] | null
+  reset: () => void
 } {
   const [edited, setEdited] = useState<DefaultRegion[] | null>(null)
-  return { draft: edited ?? regions.map(toWallClock), onDraft: setEdited }
+  return {
+    draft: edited ?? regions.map(toWallClock),
+    onDraft: setEdited,
+    edited,
+    reset: () => setEdited(null),
+  }
 }
 
 export function TodayHoursFields({

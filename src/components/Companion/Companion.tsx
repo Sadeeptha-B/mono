@@ -67,7 +67,7 @@ export function Companion({ now, phase, active, history }: Props) {
         note={note}
         tier={markTierFor(vitals.blocksToday)}
         interactive
-        className="h-20 w-36 sm:h-24 sm:w-44"
+        className="h-16 w-28 sm:h-24 sm:w-44"
       />
 
       {/* Reserved whether or not there is anything to say, so the cat does not

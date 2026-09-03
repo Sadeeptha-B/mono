@@ -8,9 +8,17 @@
  *
  * Neither question gates the other. The carousel under the stage moves between
  * them in either direction, and `Start the day` finishes from whichever one you
- * are looking at — so the drafts live here, in a component that stays mounted
- * across the switch, rather than in the panels themselves. Nothing typed is
- * lost by changing your mind about which question to answer first.
+ * are looking at — so the commitment draft lives here, in a component that
+ * stays mounted across the switch, rather than in the panels themselves.
+ * Nothing typed is lost by changing your mind about which question to answer
+ * first.
+ *
+ * The hours draft used to live here too, and now lives in `App`, one level up.
+ * Not for the switch — this component survives that — but because the calendar
+ * beside it draws the plan those hours produce, and a draft nobody outside this
+ * panel can see is a day being described to an app that cannot hear it. The
+ * timeline re-derives from the draft as it is typed; see the note on
+ * `hoursPreview` in `App`.
  *
  * Finishing appends `day/shaped`. That is a record of having been asked, not of
  * what was said: starting the day with nothing fixed and the usual hours is a
@@ -28,20 +36,23 @@
 import { useState } from 'react'
 import { format } from 'date-fns'
 
-import { GhostButton, PrimaryButton, StagePrompt } from '../ui'
+import { EditGlyph, GhostButton, PrimaryButton, StagePrompt } from '../ui'
 import {
   CommitmentFields,
+  draftFromCommitment,
   emptyDraft,
   readCommitment,
+  readCommitmentEdit,
   type CommitmentDraft,
 } from '../CommitmentFields'
-import { hoursToSave, resolveHours, TodayHoursFields, useHoursDraft } from '../TodayHours'
+import { resolveHours, TodayHoursFields } from '../TodayHours'
 import { otherSetupStage, type SetupStageId } from './stages'
 import { formatClock, formatDuration, nextHalfHour } from '@/domain/time'
 import {
   commitmentSpan,
   minutesToMs,
   type Commitment,
+  type DefaultRegion,
   type Ms,
   type WorkRegion,
 } from '@/domain/types'
@@ -52,12 +63,14 @@ export function DaySetupPanel({
   onStage,
   revisiting,
   regions,
+  hours,
+  onHours,
   withinHours,
   nextRegionStart,
   commitments,
   onAddCommitment,
+  onUpdateCommitment,
   onRemoveCommitment,
-  onSaveRegions,
   onDone,
 }: {
   now: Ms
@@ -65,19 +78,20 @@ export function DaySetupPanel({
   onStage: (stage: SetupStageId) => void
   /** Re-opened after the day was already shaped, rather than the first ask. */
   revisiting: boolean
+  /** The day as it currently reads, draft included — what the calendar draws. */
   regions: readonly WorkRegion[]
+  /** Today's hours as wall clock, owned by `App` so the calendar can follow. */
+  hours: DefaultRegion[]
+  onHours: (draft: DefaultRegion[]) => void
   /** Whether `now` falls inside one of them. */
   withinHours: boolean
   nextRegionStart: Ms | null
   commitments: readonly Commitment[]
   onAddCommitment: (input: Omit<Commitment, 'id'>) => void
+  onUpdateCommitment: (id: string, patch: Partial<Commitment>) => void
   onRemoveCommitment: (id: string) => void
-  onSaveRegions: (regions: WorkRegion[]) => void
   onDone: () => void
 }) {
-  // The hours draft follows the day until it is typed into — see `useHoursDraft`.
-  const { draft: hours, onDraft: setHours } = useHoursDraft(regions)
-
   // The commitment draft has nothing in the store to follow, so it is seeded
   // once from a lazy initialiser. `now` ticks every second, and a seed that
   // depends on it reads — while you are typing — as the field clearing itself
@@ -85,17 +99,41 @@ export function DaySetupPanel({
   const [draft, setDraft] = useState<CommitmentDraft>(() =>
     emptyDraft(format(nextHalfHour(now), 'HH:mm')),
   )
+  // The one below being changed, if the form is pointed at one at all. An id
+  // rather than a copy, for the same reason the calendar's composer holds one:
+  // the list re-renders from the store every second, and a snapshot taken when
+  // the ✎ was clicked would be a second, quietly diverging answer.
+  const [editing, setEditing] = useState<string | null>(null)
 
-  const finish = () => {
-    // An untouched draft is left alone rather than written back — see
-    // `hoursToSave`. Saving it would stamp an override on every single day, and
-    // today's regions are meant to stay *derived* from the recurring shape.
-    const next = hoursToSave(now, hours, regions)
-    if (next) onSaveRegions(next)
-    onDone()
+  const clearForm = () => {
+    setEditing(null)
+    // Cleared rather than kept: the commonest thing after adding one is adding
+    // another, and the second is never the first again.
+    setDraft(emptyDraft(format(nextHalfHour(now), 'HH:mm')))
   }
 
-  const ready = readCommitment(now, draft)
+  const startEditing = (commitment: Commitment) => {
+    setEditing(commitment.id)
+    setDraft(draftFromCommitment(commitment))
+  }
+
+  // The commitment the form is pointed at can leave underneath it — removed on
+  // the row below, removed from the calendar, or dropped by the midnight
+  // filter. Asked of the state rather than of each gesture that produces it,
+  // the same rule `DayCalendar` keeps for its own composers, and adjusted
+  // during render rather than in an effect so the form never paints a Save
+  // aimed at nothing.
+  if (editing !== null && !commitments.some((c) => c.id === editing)) clearForm()
+
+  // In the order the day happens, whatever order they were named in. The list
+  // is a reading of the day rather than a list of what you typed, and a 9am
+  // standup added after a 4pm swim belongs above it — the same order the
+  // calendar draws them in, and the same one the planner works through.
+  const inOrder = [...commitments].sort((a, b) => a.startsAt - b.startsAt)
+
+  // Not the same read: an edit is merged onto what is already there, so it has
+  // to say a margin is zero rather than leave it out. See `readCommitmentEdit`.
+  const ready = editing ? readCommitmentEdit(now, draft) : readCommitment(now, draft)
   // Mono plans inside working hours and nowhere else, so a day with none of
   // them is a day it can do nothing with. The button says no; the line under it
   // has to say why, and where to fix it.
@@ -112,12 +150,16 @@ export function DaySetupPanel({
             detail="Anything you can't move. These come first because they decide how much of the day is yours to spend."
           />
 
-          {commitments.length > 0 && (
-            <ul className="mb-4 flex flex-col gap-1.5">
-              {commitments.map((commitment) => (
+          {/* Named, because the stage strip below is a list too, and "the
+              commitments" has to be reachable as one thing. */}
+          {inOrder.length > 0 && (
+            <ul aria-label="Fixed today" className="mb-4 flex flex-col gap-1.5">
+              {inOrder.map((commitment) => (
                 <CommitmentRow
                   key={commitment.id}
                   commitment={commitment}
+                  editing={commitment.id === editing}
+                  onEdit={() => startEditing(commitment)}
                   onRemove={() => onRemoveCommitment(commitment.id)}
                 />
               ))}
@@ -128,24 +170,30 @@ export function DaySetupPanel({
             onSubmit={(e) => {
               e.preventDefault()
               if (!ready) return
-              onAddCommitment(ready)
-              // Cleared rather than kept: the commonest thing after adding one
-              // is adding another, and the second is never the first again.
-              setDraft(emptyDraft(format(nextHalfHour(now), 'HH:mm')))
+              if (editing) onUpdateCommitment(editing, ready)
+              else onAddCommitment(ready)
+              clearForm()
             }}
           >
             <CommitmentFields
               idPrefix="first-commitment"
-              titleLabel="Next commitment"
+              // Named for what the form is doing, because with the list above
+              // it the fields are the only thing saying which of the two it is.
+              titleLabel={editing ? 'This commitment' : 'Next commitment'}
               showTitleLabel={false}
               draft={draft}
               onDraft={setDraft}
               large
             />
-            <div className="mt-4">
+            <div className="mt-4 flex flex-wrap gap-2">
               <GhostButton type="submit" disabled={!ready}>
-                Add commitment
+                {editing ? 'Save commitment' : 'Add commitment'}
               </GhostButton>
+              {editing && (
+                <GhostButton type="button" onClick={clearForm}>
+                  Cancel
+                </GhostButton>
+              )}
             </div>
           </form>
         </>
@@ -156,14 +204,14 @@ export function DaySetupPanel({
             title="Are these your hours today?"
             detail={hoursDetail(now, regions.length > 0, withinHours, nextRegionStart)}
           />
-          <TodayHoursFields draft={hours} onDraft={setHours} now={now} />
+          <TodayHoursFields draft={hours} onDraft={onHours} now={now} />
         </>
       )}
 
       {/* Outside the form above, so that Enter in a field adds a commitment
           rather than ending the setup. */}
       <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-4">
-        <PrimaryButton type="button" onClick={finish} disabled={!revisiting && noHours}>
+        <PrimaryButton type="button" onClick={onDone} disabled={!revisiting && noHours}>
           {revisiting ? 'Back to the day' : 'Start the day'}
         </PrimaryButton>
         <GhostButton type="button" onClick={() => onStage(otherSetupStage(stage))}>
@@ -185,12 +233,29 @@ export function DaySetupPanel({
   )
 }
 
-/** One commitment already named, with what it really costs the day. */
+/**
+ * One commitment already named, with what it really costs the day.
+ *
+ * Both controls are always visible, unlike the pair on a calendar block. Those
+ * hide until the pointer arrives because the axis is a picture of the day and
+ * ✎ glyphs all over it would be noise; this is a list inside a form, where
+ * anything you can do to a row should be on the row.
+ *
+ * The cost sits under the title rather than beside it. On one line the two
+ * compete for the same pixels and the title is the one that loses — a phone
+ * showed `4:00 PM  S…  1h 00m + 50m around`, which names the wrong half of the
+ * row. Stacked, the title has the width to itself at every size.
+ */
 function CommitmentRow({
   commitment,
+  editing,
+  onEdit,
   onRemove,
 }: {
   commitment: Commitment
+  /** True while the form below is pointed at this one. */
+  editing: boolean
+  onEdit: () => void
   onRemove: () => void
 }) {
   const span = commitmentSpan(commitment)
@@ -198,15 +263,29 @@ function CommitmentRow({
   const around = span.end - span.start - event
 
   return (
-    <li className="flex items-baseline gap-3 rounded-lg border border-line px-3 py-2">
+    <li
+      className={`flex items-baseline gap-3 rounded-lg border px-3 py-2 ${
+        editing ? 'border-bright/60' : 'border-line'
+      }`}
+    >
       <span className="tnum shrink-0 text-xs text-commit">
         {formatClock(commitment.startsAt)}
       </span>
-      <span className="min-w-0 flex-1 truncate text-sm text-bright">{commitment.title}</span>
-      <span className="tnum shrink-0 text-xs text-muted">
-        {formatDuration(event)}
-        {around > 0 && ` + ${formatDuration(around)} around`}
-      </span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm text-bright">{commitment.title}</div>
+        <div className="tnum text-xs text-muted">
+          {formatDuration(event)}
+          {around > 0 && ` + ${formatDuration(around)} around`}
+        </div>
+      </div>
+      <button
+        type="button"
+        onClick={onEdit}
+        aria-label={`Edit ${commitment.title}`}
+        className="shrink-0 text-muted transition hover:text-bright"
+      >
+        <EditGlyph />
+      </button>
       <button
         type="button"
         onClick={onRemove}

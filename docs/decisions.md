@@ -779,3 +779,191 @@ closes nothing itself now. `useLayoutEffect` rather than `useEffect`: the
 composers are keyed on what they are editing, so a passive effect lets through
 one painted frame of the form remounted empty as an *add*, which is precisely
 the thing being prevented.
+
+**2026-09-03 — The opening question stops talking to itself.**
+
+Three complaints, one shape between them: the day's first questions held
+answers the rest of the app could not see.
+
+*Today's hours are previewed rather than hidden.* The hours draft lived in
+`DaySetupPanel`, and the calendar — eighteen inches of the screen given over to
+drawing exactly what those hours mean — heard nothing about it until `Start the
+day`. You declared an evening stretch and the evening stayed empty. The draft
+now lives in `App` and is passed to `derivePlan` as the day's regions, so the
+timeline is redrawn from it on the keystroke. That is not a special case bolted
+on: the plan is a pure function of its input, so asking what an unsaved answer
+would mean is a *call*, and the answer is discarded by not calling again. There
+is still exactly one write, at `finishSetup`, still through `hoursToSave`, so an
+untouched draft still never stamps a per-day override.
+
+Lifting it out of the panel cost three resets, and each one is a bug that would
+otherwise be reported later. The session `generation` no longer clears it by
+remounting — the panel is keyed on it, `App` is not — so it is cleared by hand
+beside the other discontinuity state; hours typed at 23:59 must not preview onto
+the new day. Opening the calendar's `Hours` composer clears it too, and now does
+so whichever question is on screen. That last one is a race that predates the
+preview: the panel kept its hours draft while sitting on the *commitments*
+question, so the composer could save four o'clock and a later `Start the day`
+would write ten o'clock over it. It was invisible before and would have been
+lurid afterwards, with the timeline drawing the loser.
+
+*The fold on the time either side goes both ways, and closing it clears the
+numbers.* One-way was an oversight, but hiding-without-clearing would have been
+worse than the oversight. A margin shapes the plan whether or not its field is
+on screen: a fold that merely hid half an hour of travel would leave Mono
+holding 3:30 to 4:00 clear with nothing on the form to say why. So folding it
+away *means* "this costs nothing either side" — which is also the only reading
+under which the row's `1h 00m + 50m around` stays true. The same rule the other
+way round is why `readCommitmentEdit` exists.
+
+*The commitment list is sorted by time and carries a `✎`.* It was in insertion
+order, which is the order you happened to remember things in — a 9am standup
+named after a 4pm swim sat below it. Sorting is done in the view, not in the
+log: the order commitments were written down in is a fact about the log and
+nothing to do with how the day reads. The row's `✎` seeds the panel's own form
+from the commitment and turns `Add` into `Save`, holding an id rather than a
+copy for the reason the calendar's composers do — the list re-renders every
+second — and clearing itself during render when that id stops resolving, which
+is `DayCalendar`'s `orphaned` rule at a smaller scale. Reordering by hand was
+considered and rejected: these things are pinned to a clock, so a list order the
+user could drag would be a second, disagreeing answer to when the day happens.
+
+**2026-09-03 — One breakpoint decides who scrolls.**
+
+The two panels were both pinned to the viewport with a scroller inside them.
+That is right beside each other and wrong stacked: on a phone the stage and the
+calendar became two short boxes, each with its own scrollbar, inside a page that
+did not move — three scroll surfaces where a phone offers one gesture, and the
+calendar's share of the screen was a few hours of a nine hour day.
+
+So the pinning is now a `lg:` decision and nothing else is. Above the
+breakpoint — where the columns are side by side, which is the same breakpoint
+the grid already used — everything is exactly as it was: `h-dvh`, `min-h-0`,
+`overflow-y-auto`, the timer staying put while the day scrolls beside it. Below
+it, none of those apply: both panels are as tall as what they hold and the
+document scrolls. `App`, `DayCalendar` and `GuidePage` each carry the same
+split, and that is the whole of the change — there is no mobile layout, only the
+absence of a pin.
+
+Two things fell out of it worth naming. The calendar's scroll-to-now on mount
+needed no branch: an element that does not overflow ignores `scrollTop`, and
+opening at the top of the page — where the stage is — is the right answer on a
+phone anyway. The guide's header did need one: pinned it never moved, and
+stacked it would have scrolled away with the timer it carries, so it is
+`sticky top-0` below `lg` and static above, with the sections' `scroll-mt`
+raised to clear it when the contents list jumps to one.
+
+The clock and the companion were within a few pixels of not fitting on a 360px
+line, and both give ground rather than one of them wrapping under the other.
+The commitment row gave up trying to fit on one line at all: the cost moved
+under the title, because on one line they compete for the same pixels and the
+title is the half that was losing — `4:00 PM  S…  1h 00m + 50m around` names the
+wrong thing about a commitment.
+
+Not done, and deliberately. `HOUR_PX` stays at 96 on every screen: a shorter
+hour would fit more of the day on a phone, but a 45-minute block looking like 45
+minutes is the reason the calendar is drawn against an axis at all, and the
+empty morning above `now` is the day, not padding. The settings dialog keeps its
+own scroller, because a dialog sized to the viewport is what a dialog is.
+
+**2026-09-03 — The hours row asks its container, not the viewport.**
+
+Settings on a 360px phone read `09:00 A` / `06:00 PI`. A `time` input draws its
+own text and its own icon, so below about 123px at this padding Chrome clips it
+— no wrap, no ellipsis, nothing in the DOM to notice. The fields were shrinking
+past that because the row hands them `flex-1 min-w-0`, which is what stops the
+fieldset overflowing its column and is therefore not the thing to remove.
+
+The fix is a container query rather than a breakpoint, and that is the whole
+point of the entry. `RegionShapeEditor` appears on three surfaces that are
+different widths at the *same* viewport: a 30rem dialog capped by the screen, a
+22rem calendar column, and whatever the stage leaves. A `sm:` rule would tighten
+the row on a phone and leave the dialog on a desktop — one of the two that
+actually overflows — untouched. What matters is how much room this fieldset has,
+so `@container` is what it asks.
+
+Two steps. Below `@xs` the row trims: the word "to" goes (both fields carry
+their own label, and two clock fields side by side already read as a range), the
+gaps and the × close up, and the fields' own padding comes in — which lowers the
+clipping floor as well as raising the room. That is enough at 360. Below `@2xs`
+— settings on a 320px screen — trimming has run out, so the pair stops being a
+row: the two fields stack and the × stays beside them, centred on the pair. The
+wrapper div that makes that possible is the only markup this cost.
+
+The dialog's own padding steps down on a narrow screen too, for the same reason
+the page's does, and it is worth eight of the pixels above.
+
+The regression test is arithmetic, because there is nothing else to assert on: it
+measures what a `time` input needs at this font, then checks what settings and
+the opening question actually give one, at 320, 360 and 768.
+
+**2026-09-03 — The guide is ten sections, and the two-minute version is not one
+of them.**
+
+Nothing was wrong with the prose. The shape was wrong. *Give the day a shape*
+had grown to 826 words — a third of the page, four times the next longest
+section — because everything that arrived over six months arrived there: the
+opening questions, working hours, commitments, margins, how to read the axis,
+how to edit what is on it, and a digression about breaks the reader had not been
+introduced to yet. A heading that promises one subject and delivers seven is not
+a long section, it is two sections that never separated.
+
+So it split. *Give the day a shape* keeps the day's own questions and what they
+mean; *Reading the calendar* takes the axis, its two controls and its three
+in-place editors. And a new *Two panels, one day* goes in front of both, because
+the guide talked about "the timer" and "the calendar" for two thousand words
+without ever saying that Mono is two panels — obvious from the app, invisible
+from the page, and the sort of thing only a first-time reader notices.
+
+The two-minute version moved out of section one and above the contents list. The
+code comment beside it already said it was the most important paragraph for
+someone arriving cold, which was an argument against it being four paragraphs
+down. A reader who stops there has still been told how to use Mono; the sections
+under it are a reference, one subject each.
+
+Four facts were being told twice, and each is now told where it is needed:
+
+- Editing hours changes today only, which was the last sentence of two adjacent
+  paragraphs. The live-preview paragraph — added the same day and the cause of
+  it — no longer restates it.
+- The ✎ and × convention, explained three times. It is defined once, on the
+  commitment list, which is where a reader meets it first, and the calendar
+  section refers back to it — *the same pair, because they are the same two
+  things: what you wrote down*.
+- The rule that a pinned break and a meeting never share a minute, told at
+  length under *Give the day a shape* and again under *Breaks*. It lives with
+  breaks now, where a reader who is choosing an hour actually is.
+- *Breaks are never planned for you*, which was a paragraph in *How the plan
+  gets made* and the unstated premise of the section that prices them. It is now
+  the first line of that section, where it does some work.
+
+The page is about the same length. That was never the complaint.
+
+**2026-09-03 — The fold is derived from the draft, not seeded from it.**
+
+Review caught the `✎` on the opening question's commitment list carrying the bug
+the two-way fold was built to prevent. `CommitmentFields` seeded "are the
+margins showing?" from the draft once, with `useState`, and a seed runs once per
+*mount*. The calendar's composer mounts per commitment — it is keyed on what it
+is editing, which is what makes seeding safe there. The opening question's
+fieldset does not, deliberately: its draft lives in the panel above so that it
+survives the switch between the day's two questions.
+
+So a form first opened on a new commitment sat collapsed, and pointing it at a
+4pm swim with half an hour of travel kept that half hour hidden — inside a fold
+whose whole meaning is "this costs nothing either side", with the thirty minutes
+still keeping 3:30 clear on the calendar beside it. You could then rename the
+swim and save, having been shown a form that disagreed with the plan.
+
+Whether the pair is on screen is now a function of the draft: shown if either
+margin is non-zero, or if the user asked for them over a draft that has none.
+The `useState` that is left holds only that second case. It makes the rule
+symmetrical with the one that was already there — closing the fold clears the
+numbers, and a margin that exists opens it — and the two together say the thing
+worth saying: *the fold and the plan can never disagree.* That is a property of
+the state now rather than of who remembers to remount what.
+
+The regression test opens the form fresh over an existing commitment — a
+reload, which is the state that made the bug reachable — and was checked against
+the old code before being kept: it fails on the seeded version at the line the
+review pointed at.

@@ -26,9 +26,15 @@ import type { DefaultRegion } from '@/domain/types'
  * order the classes appear in the string, so overriding one padding utility
  * with another silently does nothing. Two of these plus a "to" and a remove
  * button have to fit in a 22rem column, and the padding is where the room is.
+ *
+ * There is a hard floor under this. A `time` input renders its own text and its
+ * own icon, so below about 123px at this padding Chrome simply clips `09:00 AM`
+ * to `09:00 A` — no wrap, no ellipsis, no warning. That is what the `@max-xs`
+ * variants below are for, and why they trim the padding as well as the room
+ * around it: two pixels off each side is two pixels off the floor too.
  */
 const timeFieldClass =
-  'tnum min-w-0 flex-1 rounded-lg border border-line bg-ink px-2 py-2.5 text-bright focus:border-deep focus:outline-none'
+  'tnum min-w-0 flex-1 rounded-lg border border-line bg-ink px-2 py-2.5 text-bright focus:border-deep focus:outline-none @max-xs:px-1.5'
 
 type Props = {
   regions: DefaultRegion[]
@@ -70,11 +76,21 @@ export function RegionShapeEditor({
   // `min-inline-size` is `min-content`, so without it the element refuses to
   // shrink below its widest row and quietly overflows its container. In the
   // calendar's 22rem column that put the remove buttons past the panel edge.
+  //
+  // `@container` because the three surfaces this appears on are different
+  // widths at the *same* viewport: settings is a 30rem dialog capped by the
+  // screen, the calendar's composer is a 22rem column, the opening question is
+  // whatever the stage leaves. A viewport breakpoint would tighten the row on a
+  // phone and leave the dialog on a desktop — which is the one that overflows —
+  // alone. What matters here is how much room this fieldset has, so that is
+  // what it asks.
   return (
-    <fieldset className="min-w-0">
+    <fieldset className="@container min-w-0">
       <legend className={hideLegend ? 'sr-only' : labelClass}>{label}</legend>
 
-      <div className="space-y-2">
+      {/* More air between stretches where each one is two lines, so the pairs
+          still read as pairs rather than as four fields in a column. */}
+      <div className="space-y-2 @max-2xs:space-y-4">
         {regions.length === 0 && (
           <p className="rounded-lg border border-dashed border-line px-3.5 py-3 text-xs leading-relaxed text-muted">
             No working hours. Mono won't plan anything until you add at least one
@@ -83,27 +99,39 @@ export function RegionShapeEditor({
         )}
 
         {regions.map((region, index) => (
-          <div key={keys.at(index)} className="flex items-center gap-2">
-            <input
-              type="time"
-              aria-label={`${label} ${index + 1} start`}
-              value={region.start}
-              onChange={(e) => update(index, { start: e.target.value })}
-              className={timeFieldClass}
-            />
-            <span className="text-xs text-muted">to</span>
-            <input
-              type="time"
-              aria-label={`${label} ${index + 1} end`}
-              value={region.end}
-              onChange={(e) => update(index, { end: e.target.value })}
-              className={timeFieldClass}
-            />
+          <div key={keys.at(index)} className="flex items-center gap-2 @max-xs:gap-1.5">
+            {/* The pair is wrapped so that it can stack without taking the ×
+                with it. Trimming pixels runs out below about 18rem — settings
+                on a 320px phone — and two clipped fields side by side are worse
+                than one under the other, so at that width they stop being a
+                row. The × stays beside them, centred on the pair. */}
+            <div className="flex min-w-0 flex-1 items-center gap-2 @max-xs:gap-1.5 @max-2xs:flex-col @max-2xs:items-stretch">
+              <input
+                type="time"
+                aria-label={`${label} ${index + 1} start`}
+                value={region.start}
+                onChange={(e) => update(index, { start: e.target.value })}
+                className={timeFieldClass}
+              />
+              {/* Twenty pixels the fields need in a dialog on a phone, spent on
+                  a word that is decoration: both inputs carry their own label,
+                  and two clock fields side by side already read as a range. */}
+              <span aria-hidden className="text-xs text-muted @max-xs:hidden">
+                to
+              </span>
+              <input
+                type="time"
+                aria-label={`${label} ${index + 1} end`}
+                value={region.end}
+                onChange={(e) => update(index, { end: e.target.value })}
+                className={timeFieldClass}
+              />
+            </div>
             <button
               type="button"
               onClick={() => remove(index)}
               aria-label={`Remove ${label.toLowerCase()} ${index + 1}`}
-              className="shrink-0 rounded px-2 py-1 text-muted transition hover:text-commit"
+              className="shrink-0 rounded px-2 py-1 text-muted transition hover:text-commit @max-xs:px-1"
             >
               ×
             </button>

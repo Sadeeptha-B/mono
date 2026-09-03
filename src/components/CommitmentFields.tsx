@@ -13,6 +13,20 @@
  * 4pm swim really does cost the afternoon either side of itself, and until
  * there was somewhere to say so Mono kept offering a block at 3:40.
  *
+ * The fold goes both ways, and closing it clears the two numbers rather than
+ * hiding them. A margin still shapes the plan whether or not its field is on
+ * screen, so a fold that merely hid a half hour of travel would leave the
+ * calendar keeping time clear with nothing on the form to say why — the same
+ * invisible-state trap `readCommitmentEdit` exists to avoid at the other end.
+ * Folding it away therefore *means* "this costs nothing either side", which is
+ * also the only reading under which the summary line above stays true.
+ *
+ * Which is one half of a rule with two. The other is that the fold is never
+ * closed over a margin that exists, whoever put it there — so whether it is
+ * open is *derived* from the draft rather than seeded from it. See the note by
+ * `expanded`: seeding is right for a form that mounts per commitment, like the
+ * calendar's composer, and quietly wrong for one that does not.
+ *
  * The parent owns the state. What counts as ready differs by caller only in
  * where the submit button sits, but the resolve from wall clock to epoch
  * milliseconds happens here, at the edge, exactly once.
@@ -142,11 +156,21 @@ export function CommitmentFields({
   /** The opening question gives the title field more presence than a composer does. */
   large?: boolean
 }) {
-  // Opened by the user, or already open because the draft arrived carrying
-  // margins — editing a commitment that has them must not hide them.
-  const [showMargins, setShowMargins] = useState(
-    () => draft.prepText !== '0' || draft.recoverText !== '0',
-  )
+  // What the user asked for, which is not the same question as what is on
+  // screen. A draft carrying margins shows them whoever put them there, so the
+  // state below is only ever the *extra* case: opened over a draft that has
+  // none yet.
+  //
+  // Derived rather than seeded, and that is the whole of the fix it came from.
+  // A seed runs once per mount, and the opening question does not remount this
+  // fieldset between commitments — its draft lives in the panel above, and
+  // surviving the switch is the point of putting it there. So a form first
+  // opened on a new commitment sat collapsed, and pointing it at a 4pm swim
+  // with half an hour of travel left that half hour hidden, in a fold whose
+  // whole meaning is "this costs nothing either side", still shaping the plan.
+  // Exactly the invisible state the fold was made two-way to prevent.
+  const [expanded, setExpanded] = useState(false)
+  const showMargins = expanded || draft.prepText !== '0' || draft.recoverText !== '0'
 
   const patch = (part: Partial<CommitmentDraft>) => onDraft({ ...draft, ...part })
 
@@ -190,7 +214,7 @@ export function CommitmentFields({
         />
       </div>
 
-      {showMargins ? (
+      {showMargins && (
         <div className="mt-3">
           <div className="grid max-w-xs grid-cols-2 gap-3">
             <MinutesInput
@@ -210,18 +234,33 @@ export function CommitmentFields({
           </div>
           <p className="mt-2 text-xs leading-relaxed text-muted">
             Minutes either side that the commitment really costs — changing,
-            travelling, settling back in. Mono keeps them clear too.
+            travelling, settling back in. Mono keeps them clear too. Fold this
+            away again and they go back to nothing.
           </p>
         </div>
-      ) : (
-        <button
-          type="button"
-          onClick={() => setShowMargins(true)}
-          className="mt-3 text-sm text-muted underline underline-offset-4 transition hover:text-bright"
-        >
-          + Time either side
-        </button>
       )}
+
+      {/* One control both ways round. `aria-expanded` is what says it reveals
+          the fields below rather than adding a second commitment, and the sign
+          is what says it at a glance. */}
+      <button
+        type="button"
+        aria-expanded={showMargins}
+        onClick={() => {
+          // Closing has to clear as well as fold, and now it has to do both for
+          // a second reason: with the fields derived, a margin left in the
+          // draft would simply open them again on the next render.
+          if (showMargins) {
+            patch({ prepText: '0', recoverText: '0' })
+            setExpanded(false)
+          } else {
+            setExpanded(true)
+          }
+        }}
+        className="mt-3 text-sm text-muted underline underline-offset-4 transition hover:text-bright"
+      >
+        {showMargins ? '−' : '+'} Time either side
+      </button>
     </>
   )
 }

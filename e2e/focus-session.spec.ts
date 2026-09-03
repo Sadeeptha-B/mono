@@ -1,4 +1,4 @@
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 
 /**
  * End-to-end coverage for the things unit tests cannot reach: that the derived
@@ -44,6 +44,13 @@ const calendar = (page: Page) => page.getByRole('complementary')
  */
 const blocksOf = (page: Page, label: string) =>
   calendar(page).locator(`[title^="${label} ·"]`)
+
+/** How much of an element is hidden inside its own scrollbar. Zero if none is. */
+const overflowOf = (locator: Locator) =>
+  locator.evaluate((el) => el.scrollHeight - el.clientHeight)
+
+/** The commitments already named, listed under the day's first question. */
+const fixedList = (page: Page) => stage(page).getByRole('list', { name: 'Fixed today' })
 
 /** The strip of stage dots under the stage. */
 const carousel = (page: Page) => page.getByRole('navigation', { name: 'Stages of the day' })
@@ -276,6 +283,137 @@ test('a commitment can carry the time it costs either side of itself', async ({ 
   expect(titles.some((t) => t.includes('3:30 PM'))).toBe(false)
   expect(titles.some((t) => t.includes('4:00 PM'))).toBe(false)
   expect(titles.some((t) => t.includes('5:00 PM'))).toBe(false)
+})
+
+test('the time either side folds away again, and folding it clears it', async ({
+  page,
+}) => {
+  // The fold used to be one-way. A margin still shapes the plan whether or not
+  // its field is on screen, so closing it has to mean "this costs nothing
+  // either side" rather than "stop showing me what it costs".
+  await openMono(page)
+
+  await stage(page).getByLabel('Next commitment', { exact: true }).fill('Swimming')
+  await stage(page).getByLabel('At', { exact: true }).fill('16:00')
+  await stage(page).getByLabel('For (minutes)', { exact: true }).fill('60')
+  await stage(page).getByRole('button', { name: '+ Time either side' }).click()
+  await stage(page).getByLabel('Getting ready', { exact: true }).fill('30')
+
+  await stage(page).getByRole('button', { name: '− Time either side' }).click()
+  await expect(stage(page).getByLabel('Getting ready', { exact: true })).toBeHidden()
+
+  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+  await expect(stage(page).getByText(/1h 00m$/)).toBeVisible()
+
+  await startDay(page)
+  await expect(blocksOf(page, 'Getting ready')).toHaveCount(0)
+  await expect(blocksOf(page, 'Swimming')).toHaveCount(1)
+})
+
+test('editing a commitment cannot hide what it costs either side', async ({ page }) => {
+  // Regression: the fold seeded its state once, at mount, and the opening
+  // question's fieldset does not remount between commitments — its draft lives
+  // in the panel above it. So a form opened on a new commitment stayed
+  // collapsed when it was pointed at one carrying half an hour of travel, and
+  // the fold whose whole meaning is "this costs nothing either side" was
+  // sitting on thirty minutes that were still shaping the plan.
+  await openMono(page)
+
+  await stage(page).getByLabel('Next commitment', { exact: true }).fill('Swimming')
+  await stage(page).getByLabel('At', { exact: true }).fill('16:00')
+  await stage(page).getByLabel('For (minutes)', { exact: true }).fill('60')
+  await stage(page).getByRole('button', { name: '+ Time either side' }).click()
+  await stage(page).getByLabel('Getting ready', { exact: true }).fill('30')
+  await stage(page).getByLabel('Getting back', { exact: true }).fill('20')
+  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+
+  // A fresh form over a day that already has one: the fold starts closed,
+  // which is the state the bug needed.
+  await page.reload()
+  await expect(stage(page).getByText(/1h 00m \+ 50m around/)).toBeVisible()
+  await expect(stage(page).getByLabel('Getting ready', { exact: true })).toBeHidden()
+
+  await stage(page).getByRole('button', { name: 'Edit Swimming' }).click()
+  await expect(stage(page).getByLabel('Getting ready', { exact: true })).toHaveValue('30')
+  await expect(stage(page).getByLabel('Getting back', { exact: true })).toHaveValue('20')
+
+  // And it closes again once the form is back to adding, because what is on
+  // screen follows the draft rather than the last thing that was clicked.
+  await stage(page).getByRole('button', { name: 'Save commitment' }).click()
+  await expect(stage(page).getByLabel('Getting ready', { exact: true })).toBeHidden()
+  await expect(stage(page).getByText(/1h 00m \+ 50m around/)).toBeVisible()
+})
+
+test('the opening question lists commitments in the order the day happens', async ({
+  page,
+}) => {
+  // Insertion order is the order you remembered them in, which is no order at
+  // all. The list is a reading of the day, so it reads like the day.
+  await openMono(page)
+
+  await stage(page).getByLabel('Next commitment', { exact: true }).fill('Swimming')
+  await stage(page).getByLabel('At', { exact: true }).fill('16:00')
+  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+
+  await stage(page).getByLabel('Next commitment', { exact: true }).fill('Daily standup')
+  await stage(page).getByLabel('At', { exact: true }).fill('09:00')
+  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+
+  const rows = fixedList(page).getByRole('listitem')
+  await expect(rows.first()).toContainText('Daily standup')
+  await expect(rows.last()).toContainText('Swimming')
+})
+
+test('a commitment can be rewritten from the opening question', async ({ page }) => {
+  // The same affordance the calendar block carries, on the row that names it —
+  // and the same rule behind it: editing keeps the id, so the plan re-derives
+  // around the same thing moved rather than around a second one.
+  await openMono(page)
+
+  await stage(page).getByLabel('Next commitment', { exact: true }).fill('Daily standup')
+  await stage(page).getByLabel('At', { exact: true }).fill('17:00')
+  await stage(page).getByLabel('For (minutes)', { exact: true }).fill('15')
+  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+
+  await stage(page).getByRole('button', { name: 'Edit Daily standup' }).click()
+  const what = stage(page).getByLabel('This commitment', { exact: true })
+  await expect(what).toHaveValue('Daily standup')
+  await expect(stage(page).getByLabel('At', { exact: true })).toHaveValue('17:00')
+
+  await what.fill('Design review')
+  await stage(page).getByLabel('At', { exact: true }).fill('16:00')
+  await stage(page).getByRole('button', { name: 'Save commitment' }).click()
+
+  // Moved and renamed, not duplicated, and the form is back to adding.
+  await expect(fixedList(page).getByRole('listitem')).toHaveCount(1)
+  await expect(stage(page).getByLabel('Next commitment', { exact: true })).toHaveValue('')
+
+  await startDay(page)
+  await expect(blocksOf(page, 'Daily standup')).toHaveCount(0)
+  await expect(blocksOf(page, 'Design review')).toHaveAttribute(
+    'title',
+    'Design review · 4:00 PM · 15m',
+  )
+})
+
+test('the calendar follows the hours question as it is typed', async ({ page }) => {
+  // Regression: the hours draft lived in the panel, so the day drawn beside it
+  // went on showing the old shape until "Start the day". The plan is a pure
+  // function, so the draft is simply fed to it — nothing is written until the
+  // question is finished.
+  await openMono(page)
+  await expect(page.getByText(/Working until 6:00 PM/)).toBeVisible()
+
+  await goToStage(page, "Today's hours")
+  await stage(page).getByLabel("Today's hours 1 end").fill('20:00')
+
+  await expect(page.getByText(/Working until 8:00 PM/)).toBeVisible()
+  await expect(calendar(page).getByText('7 PM', { exact: true })).toBeVisible()
+
+  // Still a draft: the composer, which edits the saved thing, is unchanged.
+  await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
+  await expect(calendar(page).getByLabel("Today's hours 1 end")).toHaveValue('18:00')
+  await expect(page.getByText(/Working until 6:00 PM/)).toBeVisible()
 })
 
 test('plans the runway on a time axis and charges a break against the plan', async ({
@@ -981,4 +1119,85 @@ test('plans nothing once the working day is over', async ({ page }) => {
   await expect(stage(page).getByRole('heading', { name: 'Day done' })).toBeVisible()
   await expect(blocksOf(page, 'Deep')).toHaveCount(0)
   await expect(page.getByText('0 blocks ahead · 0m of focus')).toBeVisible()
+})
+
+test('a narrow screen scrolls as one page rather than as four boxes', async ({
+  page,
+}) => {
+  // Both panels used to be fixed to the viewport with their own scrollbars,
+  // which is right beside each other on a desktop and wrong stacked on a
+  // phone: two short boxes scrolling inside a page that does not move.
+  await page.setViewportSize({ width: 360, height: 740 })
+  await openMono(page)
+  await shapeDay(page)
+
+  // Nothing runs off the side of a 360px screen.
+  const sideways = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )
+  expect(sideways).toBeLessThanOrEqual(0)
+
+  // Neither panel keeps a scrollbar of its own...
+  expect(await overflowOf(stage(page))).toBe(0)
+  expect(await overflowOf(calendar(page).locator('.mono-scroll'))).toBe(0)
+
+  // ...and the document is what moves instead.
+  const down = await page.evaluate(
+    () => document.documentElement.scrollHeight - window.innerHeight,
+  )
+  expect(down).toBeGreaterThan(0)
+
+  // So the far end of the day is reached by scrolling the page.
+  const footer = page.getByText(/Working until 6:00 PM/)
+  await footer.scrollIntoViewIfNeeded()
+  await expect(footer).toBeInViewport()
+})
+
+test('a wide screen keeps the two columns and scrolls inside them', async ({ page }) => {
+  // The other half of the rule. Beside the stage, the day scrolls in its own
+  // column so the timer stays put while you look around it.
+  await openMono(page)
+  await shapeDay(page)
+
+  const down = await page.evaluate(
+    () => document.documentElement.scrollHeight - window.innerHeight,
+  )
+  expect(down).toBeLessThanOrEqual(0)
+  expect(await overflowOf(calendar(page).locator('.mono-scroll'))).toBeGreaterThan(0)
+})
+
+test('a time field is never drawn narrower than it can render', async ({ page }) => {
+  // Chrome renders a `time` input's own text and icon, and below a fixed width
+  // it clips `09:00 AM` to `09:00 A` — no wrap, no ellipsis, nothing in the
+  // DOM to assert on. So the guard is arithmetic: measure what one of these
+  // needs, then check what each surface actually gives it. Settings on a phone
+  // is the tightest of the three, being a dialog inside a screen.
+  for (const width of [320, 360, 768]) {
+    await page.setViewportSize({ width, height: 740 })
+    await openMono(page)
+
+    const needed = await page.evaluate(() => {
+      const probe = document.createElement('input')
+      probe.type = 'time'
+      probe.value = '09:00'
+      probe.style.cssText =
+        'position:absolute;left:-9999px;width:auto;padding:10px 8px;border:1px solid;font:inherit'
+      document.body.appendChild(probe)
+      const natural = probe.getBoundingClientRect().width
+      probe.remove()
+      return natural
+    })
+
+    await page.getByRole('button', { name: 'Settings', exact: true }).click()
+    const field = await page.getByLabel('Working hours 1 start').boundingBox()
+    expect(field, `settings at ${width}`).not.toBeNull()
+    expect(field!.width, `settings at ${width}`).toBeGreaterThanOrEqual(needed - 1)
+    await page.keyboard.press('Escape')
+
+    await goToStage(page, "Today's hours")
+    const stageField = await stage(page).getByLabel("Today's hours 1 start").boundingBox()
+    expect(stageField!.width, `the hours question at ${width}`).toBeGreaterThanOrEqual(
+      needed - 1,
+    )
+  }
 })

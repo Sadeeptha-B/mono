@@ -21,6 +21,14 @@
  * pinned and a commitment you named are the two things on this axis that you
  * wrote, so they are the two that carry one. Everything else here is derived,
  * and the way to change a derived block is to change what it was derived from.
+ *
+ * Who scrolls depends on the width, and every `lg:` below is that one decision.
+ * Beside the stage this column is a fixed-height box with the axis scrolling
+ * inside it, so the day can be however long it likes without pushing the page
+ * around. Stacked under the stage on a phone that arrangement is a trap: a nine
+ * hour day inside a box a few hundred pixels tall, scrolled by a gesture the
+ * page is also listening for. So below `lg` the column is simply as tall as the
+ * day it draws, and the document scrolls.
  */
 
 import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
@@ -110,6 +118,11 @@ export function DayCalendar({
 
   // Bring the current hour into view once, on mount. Doing this on every tick
   // would yank the view back while the user is scrolling around their day.
+  //
+  // A no-op when the column is not its own scroller, which is exactly right on
+  // a narrow screen: the page opens at the top, where the stage is, and the day
+  // is what you scroll down to. Nothing to branch on — an element that does not
+  // overflow ignores `scrollTop`.
   useEffect(() => {
     const el = scroller.current
     if (!el) return
@@ -166,7 +179,7 @@ export function DayCalendar({
   }, [orphaned])
 
   return (
-    <aside className="flex h-full min-h-0 flex-col rounded-2xl border border-line bg-surface">
+    <aside className="flex flex-col rounded-2xl border border-line bg-surface lg:h-full lg:min-h-0">
       <header className="flex flex-wrap items-center justify-between gap-y-1 border-b border-line px-4 py-3">
         <h2 className="text-xs font-medium tracking-widest text-muted uppercase">Today</h2>
         {/* Toggles, not launchers: the panel they open is right below them and
@@ -248,7 +261,7 @@ export function DayCalendar({
         />
       )}
 
-      <div ref={scroller} className="mono-scroll min-h-0 flex-1 overflow-y-auto">
+      <div ref={scroller} className="mono-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         <div
           className="relative"
           style={{ height: hours.length * HOUR_PX + TOP_PAD_PX * 2, paddingLeft: GUTTER_PX }}

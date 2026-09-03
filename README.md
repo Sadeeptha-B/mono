@@ -62,6 +62,14 @@ it is the only genuine aside. It is sized to the viewport rather than to its
 content — the title stays put and the body scrolls — and it closes three ways:
 the ×, escape, or a click on the backdrop.
 
+One breakpoint decides who scrolls. From `lg` up the app owns the viewport: the
+two columns sit side by side and each scrolls inside itself, so the timer stays
+put while you move around the day beside it. Below it the columns stack, and
+pinning the height there would mean two short boxes with their own scrollbars
+inside a page that does not move — so nothing is pinned, both panels are as tall
+as what they hold, and the document scrolls. Every `lg:` in `App`, `DayCalendar`
+and `GuidePage` is that one decision.
+
 The **guide** is the exception that proves the rule: it is read rather than
 answered, so it is a page at `#/guide` rather than a dialog. `App` swaps the
 view without unmounting anything, so a block keeps running while you read it,
@@ -116,6 +124,12 @@ about how the day has gone.
   Finishing appends `day/shaped`, a record of having been *asked*: an empty day
   is a real answer, and confirming an unedited shape deliberately writes no
   region override, so the day stays derived from the default.
+- **The calendar follows the hours question as it is typed.** The draft is fed
+  straight to `derivePlan` rather than stored anywhere, so adding an evening
+  stretch redraws the evening beside you; nothing is written until the question
+  is finished, and an untouched draft is never written at all. Opening the
+  calendar's own `Hours` drops the draft, because that editor now owns the
+  answer.
 - **Both questions stay reachable between blocks.** The strip goes back to them
   whenever nothing is running, and `Back to the day` returns; `day/shaped` is
   not appended a second time, because coming back to change an answer is not
@@ -129,7 +143,10 @@ about how the day has gone.
   is an hour long and occupies 3:30 to 5:20. The planner keeps the whole span
   clear; the calendar draws the travel as its own entries so the commitment
   still shows its real length. Both are optional, so logs written before they
-  existed replay unchanged. Read them through `commitmentSpan`.
+  existed replay unchanged. Read them through `commitmentSpan`. The fold that
+  hides the pair goes both ways, and closing it zeroes them: a margin shapes the
+  plan whether or not its field is on screen, so hiding one would be keeping
+  time clear with nothing on the form to say why.
 - **Commitments** after the opening question are added from the calendar header
   (`+ Commitment`). Both surfaces resolve a wall-clock time against today's
   calendar at the edge; the domain only ever sees epoch milliseconds. A
@@ -139,7 +156,9 @@ about how the day has gone.
   happened as well as the day as planned.
 - **The two things you wrote can be rewritten.** A pinned break and a commitment
   each carry a `✎` on their block, which reopens the composer that made them,
-  seeded from what they say now. Editing keeps the id, so the plan re-derives
+  seeded from what they say now. The opening question's list carries the same
+  pair on every row, and lists them in the order the day happens rather than the
+  order they were named. Editing keeps the id, so the plan re-derives
   around the same thing moved rather than around a new one. Nothing else on the
   axis is editable: a focus block is output, and the way to move it is to change
   the hours or the commitments it was planned around.
