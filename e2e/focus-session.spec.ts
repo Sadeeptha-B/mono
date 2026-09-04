@@ -699,16 +699,24 @@ test('settings open from the guide, which quotes them', async ({ page }) => {
 
   await page.getByRole('link', { name: 'Guide', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'How Mono works' })).toBeVisible()
+  await expect(
+    page.getByText(/The two block lengths, currently 45 and 20 minutes/),
+  ).toBeVisible()
 
   const deep = page.getByLabel('Deep block', { exact: true })
   // Exact again: the guide's own contents list has a "Settings, one by one".
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await expect(deep).toBeVisible()
+  await deep.fill('30')
+  await deep.blur()
 
   await page.keyboard.press('Escape')
   await expect(deep).toBeHidden()
   // Closing settings leaves the guide where it was, not back on the day.
   await expect(page.getByRole('heading', { name: 'How Mono works' })).toBeVisible()
+  await expect(
+    page.getByText(/The two block lengths, currently 30 and 20 minutes/),
+  ).toBeVisible()
 })
 
 test('reopening the app long after a block ended still asks what happened', async ({
@@ -1285,6 +1293,8 @@ test('plans nothing once the working day is over', async ({ page }) => {
   await shapeDay(page)
 
   await expect(stage(page).getByRole('heading', { name: 'Day done' })).toBeVisible()
+  await expect(stage(page).getByText('Nothing banked today', { exact: true })).toBeVisible()
+  await expect(stage(page).getByText(/0 blocks.*0 deep.*0 short/)).toHaveCount(0)
   await expect(blocksOf(page, 'Deep')).toHaveCount(0)
   await expect(page.getByText('0 blocks ahead · 0m of focus')).toBeVisible()
 })
@@ -1646,4 +1656,179 @@ test('the priorities timer brings the pop-out with it too', async ({ page }) => 
   await page.getByRole('button', { name: "I can't pick one" }).click()
 
   await expect(page.frameLocator(MINI).getByText('Priorities')).toBeVisible()
+})
+
+test('a focus room persists and dresses the pop-out document', async ({ page }) => {
+  await stubMiniWindow(page)
+  await openMono(page)
+
+  await page.getByRole('button', { name: /^Room/ }).click()
+  const roomMenu = page.getByRole('dialog', { name: 'Room and ambient sound' })
+  await expect(roomMenu.locator('[data-room-swatch]')).toHaveCount(4)
+  await roomMenu.getByText('Tide', { exact: true }).click()
+  await expect(page.locator('html')).toHaveAttribute('data-room', 'tide')
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#061014')
+  await page.keyboard.press('Escape')
+
+  await page.reload()
+  await expect(page.locator('html')).toHaveAttribute('data-room', 'tide')
+  await page.getByRole('button', { name: 'Pop out' }).click()
+  await expect(page.frameLocator(MINI).locator('html')).toHaveAttribute('data-room', 'tide')
+})
+
+test('ambience is silent by default and the mini control shares its mute', async ({ page }) => {
+  await stubMiniWindow(page)
+  await openMono(page)
+  await shapeDay(page)
+
+  await page.getByRole('button', { name: /^Room/ }).click()
+  const roomMenu = page.getByRole('dialog', { name: 'Room and ambient sound' })
+  await expect(roomMenu.getByRole('radio', { name: 'Off', exact: true })).toBeChecked()
+  await roomMenu.getByText('Brown noise', { exact: true }).click()
+  await page.keyboard.press('Escape')
+
+  await startBlock(page, 'Quiet work')
+  const mini = page.frameLocator(MINI)
+  await expect(stage(page).getByRole('button', { name: 'Mute ambience' })).toBeVisible()
+  await mini.getByRole('button', { name: 'Mute ambience' }).click()
+  await expect(stage(page).getByRole('button', { name: 'Resume ambience' })).toBeVisible()
+})
+
+test('volume keeps drag steps local and journals only the committed value', async ({ page }) => {
+  await openMono(page)
+  await page.getByRole('button', { name: /^Room/ }).click()
+  const roomMenu = page.getByRole('dialog', { name: 'Room and ambient sound' })
+  await roomMenu.getByText('Brown noise', { exact: true }).click()
+
+  const volume = roomMenu.getByRole('slider', { name: 'Volume', exact: true })
+  await volume.evaluate((input) => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!
+    for (const value of ['40', '50', '60', '70', '80']) {
+      setValue.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+    }
+  })
+  await expect(roomMenu.getByText('80%', { exact: true })).toBeVisible()
+
+  const beforeCommit = await page.evaluate(() => {
+    const stored = JSON.parse(localStorage.getItem('mono.session')!)
+    return stored.state.events.filter((event: { type: string }) => event.type === 'settings/changed').length
+  })
+  expect(beforeCommit).toBe(1)
+
+  await volume.dispatchEvent('pointerup')
+  await expect(volume).toHaveValue('80')
+  const afterCommit = await page.evaluate(() => {
+    const stored = JSON.parse(localStorage.getItem('mono.session')!)
+    return stored.state.events.filter((event: { type: string }) => event.type === 'settings/changed').length
+  })
+  expect(afterCommit).toBe(2)
+
+  // Keyboard changes have no pointer release. Clicking outside removes the
+  // menu before the browser can blur the range, so teardown is the commit
+  // boundary for this path.
+  await volume.focus()
+  await volume.press('ArrowRight')
+  await expect(volume).toHaveValue('81')
+  await stage(page).getByRole('heading', { name: "What's already fixed today?" }).click()
+  await expect(roomMenu).toBeHidden()
+  await expect.poll(async () => page.evaluate(() => {
+    const stored = JSON.parse(localStorage.getItem('mono.session')!)
+    return stored.state.events.filter((event: { type: string }) => event.type === 'settings/changed').length
+  })).toBe(3)
+
+  await page.getByRole('button', { name: /^Room/ }).click()
+  await expect(page.getByRole('slider', { name: 'Volume', exact: true })).toHaveValue('81')
+})
+
+test('the larger focus companion previews its room and markings across taps', async ({ page }) => {
+  await openMono(page)
+  await shapeDay(page)
+  await startBlock(page, 'Stay with the work')
+
+  const companion = stage(page).getByRole('button', {
+    name: /Encourage Mono and preview the room/,
+  })
+  await expect(companion).toHaveAttribute('data-scene-tier', '0')
+  expect((await companion.boundingBox())?.width).toBeGreaterThanOrEqual(220)
+
+  await companion.click()
+  await expect(companion).toHaveAttribute('data-scene-tier', '1')
+  await expect(companion).toHaveAttribute('data-mark-tier', '0')
+  await companion.click()
+  await expect(companion).toHaveAttribute('data-scene-tier', '2')
+  await expect(companion).toHaveAttribute('data-mark-tier', '1')
+  await companion.click()
+  await expect(companion).toHaveAttribute('data-scene-tier', '3')
+  await expect(companion).toHaveAttribute('data-mark-tier', '2')
+
+  await page.clock.fastForward('00:02')
+  await expect(companion).toHaveAttribute('data-scene-tier', '0')
+  await expect(companion).toHaveAttribute('data-mark-tier', '0')
+})
+
+test('a fully earned focus scene deliberately previews from the first tier again', async ({ page }) => {
+  const nine = new Date(2026, 7, 20, 9, 0, 0).getTime()
+  const events = [
+    { type: 'day/shaped', at: nine },
+    ...Array.from({ length: 6 }, (_, index) => {
+      const startedAt = nine + index * 20 * 60_000
+      return [
+        {
+          type: 'block/started', at: startedAt, id: `earned-${index}`,
+          blockKind: 'short', endsAt: startedAt + 10 * 60_000, purpose: `Block ${index + 1}`,
+        },
+        { type: 'block/completed', at: startedAt + 10 * 60_000 },
+      ]
+    }).flat(),
+  ]
+  await openMono(page)
+  await importSession(page, { version: 2, dayKey: '2026-08-20', events })
+  await startBlock(page, 'Keep the room company')
+
+  const companion = stage(page).getByRole('button', {
+    name: /Encourage Mono and preview the room/,
+  })
+  await expect(companion).toHaveAttribute('data-scene-tier', '3')
+  await expect(companion).toHaveAttribute('data-mark-tier', '2')
+  await companion.click()
+  await expect(companion).toHaveAttribute('data-scene-tier', '1')
+  await expect(companion).toHaveAttribute('data-mark-tier', '0')
+
+  await page.clock.fastForward('00:02')
+  await expect(companion).toHaveAttribute('data-scene-tier', '3')
+  await expect(companion).toHaveAttribute('data-mark-tier', '2')
+})
+
+test('the finished day reads back as a postcard', async ({ page }) => {
+  const night = new Date(2026, 7, 20, 21, 0, 0)
+  const ten = new Date(2026, 7, 20, 10, 0, 0).getTime()
+  await openMono(page, night)
+  await importSession(page, {
+    version: 2,
+    dayKey: '2026-08-20',
+    events: [
+      { type: 'day/shaped', at: new Date(2026, 7, 20, 9, 0, 0).getTime() },
+      {
+        type: 'block/started', at: ten, id: 'finished', blockKind: 'deep',
+        endsAt: ten + 45 * 60_000, purpose: 'Write the ambient room',
+      },
+      { type: 'block/completed', at: ten + 45 * 60_000 },
+    ],
+  })
+
+  await expect(stage(page).getByRole('heading', { name: 'Day done' })).toBeVisible()
+  await expect(stage(page).getByText('45m focused')).toBeVisible()
+  await expect(stage(page).getByText(/Longest block:/)).toContainText('Write the ambient room · 45m')
+  await expect(stage(page).getByRole('img', { name: /1 focus block and 45 focus minutes/ })).toHaveCount(1)
+  await expect(stage(page).getByRole('button', { name: /Pet Mono/ })).toHaveCount(0)
+
+  // Setup outranks the postcard. The ordinary companion must return with the
+  // setup panel instead of leaving the stage with neither scene.
+  await goToStage(page, "What's already fixed")
+  await expect(
+    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+  ).toBeVisible()
+  await expect(stage(page).getByRole('heading', { name: 'Day done' })).toHaveCount(0)
+  await expect(stage(page).getByRole('button', { name: /Pet Mono/ })).toBeVisible()
 })

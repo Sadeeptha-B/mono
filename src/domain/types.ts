@@ -32,6 +32,16 @@ export type BlockKind = 'deep' | 'short' | 'reflect'
  */
 export type PlannerPolicy = 'prefer-deep' | 'maximise-focus'
 
+/** A curated visual environment. Rooms keep colour, sound and scenery coherent. */
+export type RoomId = 'mono' | 'ember' | 'tide' | 'moss'
+
+/**
+ * `room` follows the selected room's suggestion; the named sounds deliberately
+ * remain available as overrides. `off` is the default so an update never starts
+ * making noise in a session that used to be silent.
+ */
+export type AmbienceSelection = 'off' | 'room' | 'brown' | 'pink' | 'rain'
+
 /**
  * A recurring stretch of the day the user is willing to work in, as local wall
  * clock ("09:00"). Stored as strings rather than minutes-from-midnight so they
@@ -62,6 +72,10 @@ export type Settings = {
   plannerPolicy: PlannerPolicy
   notificationsEnabled: boolean
   soundEnabled: boolean
+  roomId: RoomId
+  ambience: AmbienceSelection
+  /** Linear UI value. The audio engine squares it before applying gain. */
+  ambienceVolume: number
   /**
    * Open the always-on-top window by itself when a block begins running.
    *
@@ -86,6 +100,9 @@ export const DEFAULT_SETTINGS: Settings = {
   plannerPolicy: 'prefer-deep',
   notificationsEnabled: false,
   soundEnabled: true,
+  roomId: 'mono',
+  ambience: 'off',
+  ambienceVolume: 0.35,
   popOutOnStart: true,
 }
 

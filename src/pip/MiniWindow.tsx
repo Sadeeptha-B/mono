@@ -32,8 +32,11 @@ import {
 } from './MiniPanels'
 import { miniViewFor, type MiniFacts } from './view'
 import { GhostButton } from '@/components/ui'
+import { AmbienceButton } from '@/ambient/AmbienceButton'
 import { formatClock, formatDuration } from '@/domain/time'
 import type { Phase } from '@/domain/machine'
+import type { DayProgress } from '@/domain/dayProgress'
+import type { AmbienceControls } from '@/ambient/useAmbience'
 import type {
   ActiveSegment,
   BlockKind,
@@ -48,6 +51,8 @@ type Props = {
   active: ActiveSegment | null
   history: readonly CompletedSegment[]
   settings: Settings
+  dayProgress: DayProgress
+  ambience: AmbienceControls
   facts: MiniFacts
   /** Blocks and minutes still ahead of you today — the stage's own footer. */
   planned: { blocks: number; minutes: number }
@@ -80,7 +85,9 @@ export function MiniWindow(props: Props) {
           phase={phase}
           active={active}
           history={props.history}
-          className="h-12 w-[5.5rem]"
+          roomId={props.settings.roomId}
+          dayProgress={props.dayProgress}
+          className="h-16 w-28"
         />
       </div>
 
@@ -112,7 +119,13 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
       return <MiniUnshaped onOpenTab={() => window.focus()} />
 
     case 'outsideHours':
-      return <MiniOutsideHours now={now} nextStart={view.nextStart} />
+      return (
+        <MiniOutsideHours
+          now={now}
+          nextStart={view.nextStart}
+          progress={props.dayProgress}
+        />
+      )
 
     case 'nothingFits':
       return <MiniNothingFits />
@@ -143,7 +156,7 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
       return (
         <div>
           <MiniTimer now={now} active={active} />
-          <div className="mt-3">
+          <div className="mt-3 flex flex-wrap gap-2">
             {view.segment === 'break' ? (
               <GhostButton type="button" onClick={props.onEndBreak}>
                 Back to work
@@ -153,6 +166,7 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
                 End early
               </GhostButton>
             )}
+            {view.segment === 'block' && <AmbienceButton ambience={props.ambience} />}
           </div>
         </div>
       )

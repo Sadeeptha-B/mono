@@ -17,6 +17,11 @@ here look odd on purpose.
 
 `docs/requirements.md` is the original brief, kept as history.
 
+For work on rooms, procedural ambience, companion progression, day trails or
+the postcard, read `docs/ambient-interactivity-context.md` before editing. It
+records the cross-surface ownership, browser constraints, test gaps and safe
+extension paths for that track.
+
 ## The two invariants
 
 Both are explained in `docs/decisions.md`. Neither is negotiable.
@@ -34,9 +39,10 @@ Both are explained in `docs/decisions.md`. Neither is negotiable.
 src/domain/      pure. no clock, no storage, no React. the interesting logic.
 src/store/       the only place that reads the clock, makes ids, or persists.
 src/hooks/       the shared ticker, reconciliation, notifications.
+src/ambient/     rooms, procedural audio, theme, controls, shared scene geometry.
 src/components/  the two panels, the stage prompts, the guide, the companion.
 src/pip/         the always-on-top mini window: lifecycle, styles, its panels.
-scripts/         generators: app icons, and a contact sheet of companion frames.
+scripts/         generators: app icons, and visual QA for the companion environment.
 e2e/             Playwright.
 ```
 
@@ -49,7 +55,7 @@ npm run test:e2e   # playwright; builds and previews first
 npm run typecheck
 npm run build
 npm run icons      # regenerate favicon + PWA icons from the companion's frames
-npm run companion  # contact sheet of every companion frame, as a PNG
+npm run companion  # room, progression, interaction and companion visual QA sheet
 ```
 
 ## Working here
@@ -64,11 +70,17 @@ npm run companion  # contact sheet of every companion frame, as a PNG
 - **Tailwind v4 with no config file.** The theme is an `@theme` block in
   `src/index.css`.
 - **The user guide quotes live settings**, so it can never disagree with the
-  app. Keep it that way when you change a duration or a behaviour, and update
-  it when behaviour changes — but leave the companion's small delights
-  undocumented on purpose.
-- **Companion art is text**, one character per pixel. Run `npm run companion`
-  and look at the PNG; pixel art is unreadable as source.
+  app. Build its section tree from one `Settings` snapshot rather than a second
+  list of individual fields. Update it when behaviour changes — but leave the
+  companion's small delights undocumented on purpose.
+- **Companion sprite art is text**, one character per pixel. Room and trail
+  geometry is shared DOM-free data in `src/ambient/scene.ts`, rendered as SVG
+  by the app and directly by the contact-sheet generator. Keep scene/trail
+  types in their owning modules, and keep the floor aligned with the authored
+  sprite: `scene.test.ts` enforces `GROUND_Y = SPRITE_TOP + SPRITE_H` without
+  coupling the DOM-free module to the component. Run `npm run companion` and
+  inspect the PNG across every room and growth tier; pixel art and scene
+  layering are unreadable as source.
 - **Before finishing:** `npm run typecheck`, `npm test`, and `npm run test:e2e`
   if anything user-facing moved. Add a dated entry to the log at the bottom of
   `docs/decisions.md` for anything a future reader would be puzzled by.

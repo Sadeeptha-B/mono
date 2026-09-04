@@ -1,18 +1,19 @@
 /**
- * Contact sheet for the companion's frames.
+ * Visual QA sheet for Mono's complete companion environment.
  *
- *   npm run companion   →  companion-preview.png
+ *   npm run companion   ->  companion-preview.png + companion-preview.svg
  *
- * Pixel art authored as text is unreadable as text. Every pose in
- * `src/components/Companion/frames.ts` was drawn against this: write the rows,
- * run this, look at the cat, fix the rows. Anything added to the frame set
- * should go through the same loop, so the table at the bottom is the only
- * thing that needs extending.
+ * The companion is no longer only a collection of cat frames. This sheet
+ * covers the full 48x24 scene: every room at every earned tier, the important
+ * phase poses, focus-tap previews, trail semantics, milestone sparkle and the
+ * header crops. That makes it possible to review palette contrast, occlusion
+ * and pixel alignment without manufacturing a day in the browser.
  *
- * It renders one rectangle per pixel and does its own compositing, which the
- * app does not — `sprite.ts` collapses spans and is covered by its own tests.
- * A dev script that reached into the app's module graph would need the Vite
- * aliases; keeping it standalone means it is one `node` away at any time.
+ * It remains a plain Node script. Importing the frame text and room metadata is
+ * safe, but importing the React renderer would pull in Vite aliases, Motion and
+ * a browser DOM. Room and trail coordinates therefore live in a shared pure
+ * module which this script paints with literal palette values. `sprite.test.ts`
+ * remains the exact test for cat anchors.
  */
 
 import { writeFileSync } from 'node:fs'
@@ -28,11 +29,28 @@ import {
   SPRITE_W,
   type FaceName,
 } from '../src/components/Companion/frames.ts'
+import { ROOM_IDS, ROOMS, type RoomPalette } from '../src/ambient/rooms.ts'
+import {
+  GROUND_H,
+  GROUND_Y,
+  MILESTONE_SHAPES,
+  ROOM_SCENERY,
+  ROOM_SHELL,
+  SCENE_H,
+  SCENE_W,
+  SPRITE_TOP,
+  trailShapes,
+  type PixelShape,
+  type SceneTier,
+} from '../src/ambient/scene.ts'
+import type { TrailKind } from '../src/domain/dayProgress.ts'
 
 type Grid = readonly string[]
+type RoomId = (typeof ROOM_IDS)[number]
+type MarkTier = 0 | 1 | 2
 
 const stamp = (base: Grid, layer: Grid, x: number, y: number): string[] => {
-  const rows = base.map((r) => [...r])
+  const rows = base.map((row) => [...row])
   layer.forEach((row, dy) => {
     const target = rows[y + dy]
     if (!target) return
@@ -41,12 +59,8 @@ const stamp = (base: Grid, layer: Grid, x: number, y: number): string[] => {
       if (ch !== '.' && x + dx < target.length) target[x + dx] = ch
     }
   })
-  return rows.map((r) => r.join(''))
+  return rows.map((row) => row.join(''))
 }
-
-const INK = '#08080b'
-const LINE = '#24242e'
-const MUTED = '#6e6e80'
 
 const paint = (accent: string): Record<string, string> => ({
   f: '#e6e1d6',
@@ -59,20 +73,8 @@ const paint = (accent: string): Record<string, string> => ({
   w: '#faf7ef',
 })
 
-const SCENE_W = 36
-const SCENE_H = 20
-const SPRITE_TOP = 2
-const GROUND_Y = SPRITE_TOP + SPRITE_H
 const TRAVEL = SCENE_W - SPRITE_W
 
-/**
- * The mood table, minus the timings, with the CSS custom properties resolved.
- *
- * Copied from `cat.ts` and kept in step by hand: that file imports
- * React-adjacent types, and this stays a plain node script you can run at any
- * moment without a build step. Drift here costs a misleading picture and
- * nothing else — `sprite.test.ts` is what actually holds the anchors to the fur.
- */
 type MoodName =
   | 'idle'
   | 'defining'
@@ -89,60 +91,42 @@ type Mood = {
   spark: Anchor
   marks: Anchor
   note?: Anchor
-  accent: string
+  accent: keyof RoomPalette
 }
 
+/**
+ * The static anchors from `cat.ts`, with semantic accents resolved per room.
+ * Timings are intentionally absent: a contact sheet captures key frames, not
+ * animation cadence.
+ */
 const MOODS: Record<MoodName, Mood> = {
   idle: {
-    body: 'sit',
-    face: { x: 5, y: 5 },
-    spark: { x: 19, y: 0 },
-    marks: { x: 4, y: 10 },
-    accent: MUTED,
+    body: 'sit', face: { x: 5, y: 5 }, spark: { x: 19, y: 0 },
+    marks: { x: 4, y: 10 }, accent: 'muted',
   },
   defining: {
-    body: 'lean',
-    face: { x: 5, y: 6 },
-    spark: { x: 19, y: 0 },
-    marks: { x: 4, y: 8 },
-    accent: '#7fa8d9',
+    body: 'lean', face: { x: 5, y: 6 }, spark: { x: 19, y: 0 },
+    marks: { x: 4, y: 8 }, accent: 'short',
   },
   focusing: {
-    body: 'loaf',
-    face: { x: 5, y: 5 },
-    spark: { x: 19, y: 0 },
-    marks: { x: 4, y: 10 },
-    note: { x: 9, y: 11 },
-    accent: '#e8a33d',
+    body: 'loaf', face: { x: 5, y: 5 }, spark: { x: 19, y: 0 },
+    marks: { x: 4, y: 10 }, note: { x: 9, y: 11 }, accent: 'deep',
   },
   reflecting: {
-    body: 'curl',
-    face: { x: 5, y: 5 },
-    spark: { x: 19, y: 0 },
-    marks: { x: 4, y: 10 },
-    note: { x: 9, y: 11 },
-    accent: '#b088d9',
+    body: 'curl', face: { x: 5, y: 5 }, spark: { x: 19, y: 0 },
+    marks: { x: 4, y: 10 }, note: { x: 9, y: 11 }, accent: 'reflect',
   },
   complete: {
-    body: 'perk',
-    face: { x: 5, y: 5 },
-    spark: { x: 19, y: 0 },
-    marks: { x: 5, y: 10 },
-    accent: '#5cae8f',
+    body: 'perk', face: { x: 5, y: 5 }, spark: { x: 19, y: 0 },
+    marks: { x: 5, y: 10 }, accent: 'rest',
   },
   resting: {
-    body: 'sprawl',
-    face: { x: 5, y: 8 },
-    spark: { x: 19, y: 2 },
-    marks: { x: 3, y: 12 },
-    accent: '#5cae8f',
+    body: 'sprawl', face: { x: 5, y: 8 }, spark: { x: 19, y: 2 },
+    marks: { x: 3, y: 12 }, accent: 'rest',
   },
   away: {
-    body: 'ball',
-    face: { x: 5, y: 8 },
-    spark: { x: 19, y: 4 },
-    marks: { x: 4, y: 9 },
-    accent: MUTED,
+    body: 'ball', face: { x: 5, y: 8 }, spark: { x: 19, y: 4 },
+    marks: { x: 4, y: 9 }, accent: 'muted',
   },
 }
 
@@ -150,132 +134,302 @@ type Shot = {
   label: string
   mood: MoodName
   face: FaceName
-  /** null parks the cat mid-strip, as it is when no block is running. */
+  room?: RoomId
+  sceneTier?: SceneTier
+  markTier?: MarkTier
+  /** null parks the cat mid-room, as it is when no block is running. */
   progress: number | null
   lift?: number
   spark?: boolean
+  milestone?: boolean
   note?: boolean
-  tier?: 0 | 1 | 2
+  trail?: readonly TrailKind[]
 }
 
-/**
- * One row per mood, in the order a day meets them, plus the frames worth
- * seeing on their own: part-way through a block, holding a note, being petted,
- * and wearing what a long day earns it.
- */
-const SHEET: Shot[] = [
+const ROOM_SHEET: Shot[] = ([0, 1, 2, 3] as const).flatMap((sceneTier) =>
+  ROOM_IDS.map((room) => ({
+    label: `${ROOMS[room].label} - tier ${sceneTier}`,
+    mood: 'idle' as const,
+    face: 'open' as const,
+    room,
+    sceneTier,
+    markTier: sceneTier === 3 ? 2 : sceneTier === 2 ? 1 : 0,
+    progress: null,
+  })),
+)
+
+const STATE_SHEET: Shot[] = [
   { label: 'idle', mood: 'idle', face: 'open', progress: null },
   {
-    label: 'idle · petted',
-    mood: 'idle',
-    face: 'happy',
-    progress: null,
-    lift: 2,
-    spark: true,
+    label: 'idle - petted', mood: 'idle', face: 'happy', progress: null,
+    lift: 2, spark: true,
   },
-  { label: 'defining', mood: 'defining', face: 'wide', progress: null },
+  { label: 'defining purpose', mood: 'defining', face: 'wide', progress: null },
   {
-    label: 'reflecting · holding it',
-    mood: 'reflecting',
-    face: 'aside',
-    progress: 0.4,
-    note: true,
+    label: 'reflecting - holding note', mood: 'reflecting', face: 'aside',
+    progress: 0.4, note: true,
   },
-  { label: 'focusing · 8%', mood: 'focusing', face: 'squint', progress: 0.08, note: true },
-  { label: 'focusing · 78%', mood: 'focusing', face: 'squint', progress: 0.78, note: true },
-  { label: 'complete · mid-hop', mood: 'complete', face: 'happy', progress: null, lift: 2 },
-  { label: 'resting', mood: 'resting', face: 'blink', progress: null },
-  { label: 'away', mood: 'away', face: 'squint', progress: null },
-  { label: 'away · petted', mood: 'away', face: 'shut', progress: null },
-  { label: 'idle · 3 blocks in', mood: 'idle', face: 'open', progress: null, tier: 1 },
-  { label: 'idle · 6 blocks in', mood: 'idle', face: 'open', progress: null, tier: 2 },
   {
-    label: 'focusing · 6 blocks in',
-    mood: 'focusing',
-    face: 'squint',
-    progress: 0.5,
-    note: true,
-    tier: 2,
+    label: 'focusing - 8%', mood: 'focusing', face: 'squint',
+    progress: 0.08, note: true,
   },
-  { label: 'resting · 6 blocks in', mood: 'resting', face: 'blink', progress: null, tier: 2 },
+  {
+    label: 'focusing - 78%', mood: 'focusing', face: 'squint',
+    progress: 0.78, note: true,
+  },
+  {
+    label: 'complete - milestone', mood: 'complete', face: 'happy',
+    sceneTier: 3, markTier: 2, progress: null, lift: 2, milestone: true,
+  },
+  {
+    label: 'resting - evolved', mood: 'resting', face: 'blink',
+    sceneTier: 3, markTier: 2, progress: null,
+  },
+  {
+    label: 'away - honest gap', mood: 'away', face: 'squint',
+    sceneTier: 3, markTier: 2, progress: null, trail: ['deep', 'break', 'gap'],
+  },
+  { label: 'away - tapped', mood: 'away', face: 'shut', progress: null },
+  {
+    label: 'Tide focus - note', mood: 'focusing', face: 'squint', room: 'tide',
+    sceneTier: 2, markTier: 1, progress: 0.5, note: true,
+  },
+  {
+    label: 'Moss rest - complete', mood: 'resting', face: 'blink', room: 'moss',
+    sceneTier: 3, markTier: 2, progress: null,
+  },
 ]
 
-const SCALE = 9
+/** The three consecutive focus taps, exactly as `PixelCat` previews them. */
+const INTERACTION_SHEET: Shot[] = [
+  {
+    label: 'focus tap 1 - room tier 1', mood: 'focusing', face: 'happy',
+    room: 'ember', sceneTier: 1, markTier: 0, progress: 0.5, note: true,
+  },
+  {
+    label: 'focus tap 2 - room + mark', mood: 'focusing', face: 'happy',
+    room: 'ember', sceneTier: 2, markTier: 1, progress: 0.5, note: true,
+  },
+  {
+    label: 'focus tap 3 - full preview', mood: 'focusing', face: 'happy',
+    room: 'ember', sceneTier: 3, markTier: 2, progress: 0.5, note: true,
+  },
+  {
+    label: 'earned state - full trail', mood: 'idle', face: 'open', room: 'ember',
+    sceneTier: 3, markTier: 2, progress: null,
+    trail: ['deep', 'short', 'reflect', 'break', 'gap', 'deep'],
+  },
+  {
+    label: 'trail - deep + short', mood: 'idle', face: 'open',
+    sceneTier: 1, progress: null, trail: ['deep', 'short'],
+  },
+  {
+    label: 'trail - lantern + rest', mood: 'idle', face: 'open',
+    sceneTier: 1, progress: null, trail: ['reflect', 'break'],
+  },
+  {
+    label: 'trail - gaps stay unlit', mood: 'idle', face: 'open',
+    sceneTier: 2, markTier: 1, progress: null,
+    trail: ['deep', 'gap', 'short', 'gap'],
+  },
+  {
+    label: 'trail - earlier entries folded', mood: 'idle', face: 'open',
+    sceneTier: 3, markTier: 2, progress: null,
+    trail: ['aggregate', 'deep', 'short', 'break', 'deep'],
+  },
+  {
+    label: 'trail - 32 entry cap', mood: 'idle', face: 'open',
+    sceneTier: 3, markTier: 2, progress: null,
+    trail: Array.from(
+      { length: 32 },
+      (_, index): TrailKind => ['deep', 'short', 'reflect', 'break', 'gap'][index % 5]!,
+    ),
+  },
+]
+
+const SCALE = 6
 const PAD = 14
+const PAGE_PAD = 20
 const CELL_W = SCENE_W * SCALE + PAD * 2
-const CELL_H = SCENE_H * SCALE + PAD + 22
-const COLS = 2
-const ROWS = Math.ceil(SHEET.length / COLS)
-const MARK_TOP = CELL_H * ROWS + 12
+const CELL_H = SCENE_H * SCALE + PAD + 23
+const COLS = 4
+const PAGE_W = CELL_W * COLS
 
 const parts: string[] = []
-const rect = (x: number, y: number, w: number, h: number, fill: string) =>
-  parts.push(`<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"/>`)
-const label = (x: number, y: number, text: string) =>
+
+const escapeXml = (value: string): string =>
+  value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;')
+
+const attrs = (values: Record<string, string | number | undefined>): string =>
+  Object.entries(values)
+    .filter((entry): entry is [string, string | number] => entry[1] !== undefined)
+    .map(([name, value]) => `${name}="${value}"`)
+    .join(' ')
+
+const rect = (
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  fill: string,
+  extra: Record<string, string | number | undefined> = {},
+) => parts.push(`<rect ${attrs({ x, y, width, height, fill, ...extra })}/>`)
+
+const path = (d: string, extra: Record<string, string | number | undefined>) =>
+  parts.push(`<path ${attrs({ d, ...extra })}/>`)
+
+const label = (
+  x: number,
+  y: number,
+  text: string,
+  fill = ROOMS.mono.palette.muted,
+  size = 12,
+  weight?: number,
+) =>
   parts.push(
-    `<text x="${x}" y="${y}" fill="${MUTED}" font-family="monospace" font-size="12">${text}</text>`,
+    `<text ${attrs({ x, y, fill, 'font-family': 'monospace', 'font-size': size, 'font-weight': weight })}>${escapeXml(text)}</text>`,
   )
 
-SHEET.forEach((shot, i) => {
+const beginScene = (x: number, y: number) =>
+  parts.push(`<g transform="translate(${x} ${y}) scale(${SCALE})">`)
+const endScene = () => parts.push('</g>')
+
+const drawShape = (shape: PixelShape, palette: RoomPalette) => {
+  const extra = {
+    ...(shape.stroke ? { stroke: palette[shape.stroke] } : {}),
+    ...(shape.strokeWidth !== undefined ? { 'stroke-width': shape.strokeWidth } : {}),
+    ...(shape.opacity !== undefined ? { opacity: shape.opacity } : {}),
+  }
+  if (shape.kind === 'rect') {
+    rect(shape.x, shape.y, shape.width, shape.height, palette[shape.fill], extra)
+  } else {
+    path(shape.d, {
+      fill: shape.fill ? palette[shape.fill] : 'none',
+      ...extra,
+    })
+  }
+}
+
+const drawRoom = (roomId: RoomId, tier: SceneTier, milestone: boolean) => {
+  const palette = ROOMS[roomId].palette
+  rect(0, 0, SCENE_W, SCENE_H, palette.ink)
+  ROOM_SHELL.forEach((shape) => drawShape(shape, palette))
+  ROOM_SCENERY[roomId]
+    .filter((shape) => shape.tier <= tier)
+    .forEach((shape) => drawShape(shape, palette))
+  if (milestone) MILESTONE_SHAPES.forEach((shape) => drawShape(shape, palette))
+}
+
+const drawTrail = (entries: readonly TrailKind[], palette: RoomPalette) => {
+  trailShapes(entries.map((kind) => ({ kind }))).forEach((shape) => drawShape(shape, palette))
+}
+
+const drawPixels = (
+  grid: Grid,
+  dx: number,
+  dy: number,
+  colours: Record<string, string>,
+) => {
+  grid.forEach((row, y) =>
+    [...row].forEach((ch, x) => {
+      if (ch !== '.') rect(x + dx, y + dy, 1, 1, colours[ch]!)
+    }),
+  )
+}
+
+const drawShot = (shot: Shot, index: number, top: number) => {
+  const roomId = shot.room ?? 'mono'
+  const palette = ROOMS[roomId].palette
   const mood = MOODS[shot.mood]
-  const ox = (i % COLS) * CELL_W + PAD
-  const oy = Math.floor(i / COLS) * CELL_H + PAD
+  const ox = (index % COLS) * CELL_W + PAD
+  const oy = top + Math.floor(index / COLS) * CELL_H + PAD
   const walked = shot.progress === null ? TRAVEL / 2 : shot.progress * TRAVEL
-  const colours = paint(mood.accent)
+  const accent = palette[mood.accent]
+  const colours = paint(accent)
   const lift = shot.lift ?? 0
 
-  rect(ox, oy + GROUND_Y * SCALE, SCENE_W * SCALE, 0.9 * SCALE, LINE)
-  if (shot.progress !== null) {
-    rect(ox, oy + GROUND_Y * SCALE, (walked + SPRITE_W / 2) * SCALE, 0.9 * SCALE, mood.accent)
-  }
+  beginScene(ox, oy)
+  drawRoom(roomId, shot.sceneTier ?? 0, shot.milestone ?? false)
+  rect(0, GROUND_Y, SCENE_W, GROUND_H, palette.line)
+  if (shot.progress !== null) rect(0, GROUND_Y, walked + SPRITE_W / 2, GROUND_H, accent)
+  drawTrail(shot.trail ?? [], palette)
 
-  const draw = (grid: Grid, dx: number, dy: number) =>
-    grid.forEach((row, y) =>
-      [...row].forEach((ch, x) => {
-        if (ch === '.') return
-        const px = x + dx + walked
-        const py = y + dy + SPRITE_TOP - lift
-        rect(ox + px * SCALE, oy + py * SCALE, SCALE, SCALE, colours[ch]!)
-      }),
-    )
-
-  // Same order as the renderer: body, then the day's markings, then whatever
-  // it is holding, then the face last so nothing lands over the eyes.
   let frame: Grid = BODIES[mood.body]
-  const markings = MARKINGS[(shot.tier ?? 0) - 1]
+  const markings = MARKINGS[(shot.markTier ?? 0) - 1]
   if (markings) frame = stamp(frame, markings, mood.marks.x, mood.marks.y)
   if (shot.note && mood.note) frame = stamp(frame, NOTE, mood.note.x, mood.note.y)
   frame = stamp(frame, FACES[shot.face], mood.face.x, mood.face.y)
 
-  draw(frame, 0, 0)
-  if (shot.spark) draw(SPARK, mood.spark.x, mood.spark.y)
+  drawPixels(frame, walked, SPRITE_TOP - lift, colours)
+  if (shot.spark) {
+    drawPixels(SPARK, mood.spark.x + walked, mood.spark.y + SPRITE_TOP - lift, colours)
+  }
+  endScene()
+  label(ox, oy + SCENE_H * SCALE + 16, shot.label, palette.body)
+}
 
-  label(ox, oy + SCENE_H * SCALE + 15, shot.label)
-})
+const drawSection = (
+  title: string,
+  description: string,
+  shots: readonly Shot[],
+  top: number,
+) => {
+  label(PAGE_PAD, top + 16, title, ROOMS.mono.palette.bright, 15, 700)
+  label(PAGE_PAD, top + 34, description, ROOMS.mono.palette.muted, 11)
+  const gridTop = top + 44
+  shots.forEach((shot, index) => drawShot(shot, index, gridTop))
+  return gridTop + Math.ceil(shots.length / COLS) * CELL_H + 14
+}
 
-/**
- * The header crop, once per pose.
- *
- * The header shows the head alone, and the top of that crop follows the pose's
- * face anchor rather than sitting at row zero — a sprawled cat's eyes are
- * three rows lower than a sitting one's, and a fixed crop gave the header an
- * empty box with a sliver of ear in it. This row is how you check that a new
- * pose crops to a face. Same derivation as `markCropTop` in `cat.ts`, copied
- * here for the same reason the mood table is.
- */
+label(PAGE_PAD, 28, 'MONO COMPANION - VISUAL QA', ROOMS.mono.palette.bright, 18, 700)
+label(
+  PAGE_PAD,
+  48,
+  'Rooms, earned growth, interaction previews, trail marks and header crops',
+  ROOMS.mono.palette.muted,
+  11,
+)
+
+let cursor = 66
+cursor = drawSection(
+  'ROOM EVOLUTION',
+  'Columns are rooms; rows are tiers 0, 1, 2 and 3. Cat markings preview the corresponding long-day state.',
+  ROOM_SHEET,
+  cursor,
+)
+cursor = drawSection(
+  'PHASE AND POSE COVERAGE',
+  'Key frames from the day, including notes, progress, milestone sparkle, rest and away states.',
+  STATE_SHEET,
+  cursor,
+)
+cursor = drawSection(
+  'FOCUS TAPS AND TRAIL LANGUAGE',
+  'The three temporary tap previews, followed by earned and compressed trail examples.',
+  INTERACTION_SHEET,
+  cursor,
+)
+
+/** The header crop follows the face anchor, exactly as `markCropTop` does. */
 const MARK_CROP = { x: 2, w: 16, h: 10 }
 const HEAD_ABOVE_EYES = 6
 const markCropTop = (mood: Mood): number =>
   Math.max(0, Math.min(mood.face.y - HEAD_ABOVE_EYES, SPRITE_H - MARK_CROP.h))
 
-/** Whatever face that mood wears in the sheet above, so the two agree. */
 const faceFor = (name: MoodName): FaceName =>
-  SHEET.find((shot) => shot.mood === name)?.face ?? 'open'
+  STATE_SHEET.find((shot) => shot.mood === name)?.face ?? 'open'
 
-const drawMark = (name: MoodName, ox: number, oy: number, scale: number) => {
+const drawMark = (
+  name: MoodName,
+  ox: number,
+  oy: number,
+  scale: number,
+  roomId: RoomId = 'mono',
+) => {
   const mood = MOODS[name]
+  const palette = ROOMS[roomId].palette
   const frame = stamp(BODIES[mood.body], FACES[faceFor(name)], mood.face.x, mood.face.y)
-  const colours = paint(mood.accent)
+  const colours = paint(palette[mood.accent])
   const top = markCropTop(mood)
 
   for (let y = top; y < top + MARK_CROP.h; y += 1) {
@@ -289,24 +443,34 @@ const drawMark = (name: MoodName, ox: number, oy: number, scale: number) => {
   }
 }
 
+label(PAGE_PAD, cursor + 16, 'HEADER CROPS', ROOMS.mono.palette.bright, 15, 700)
+label(
+  PAGE_PAD,
+  cursor + 34,
+  'Every pose at header scale, plus one large crop for checking face and ear alignment.',
+  ROOMS.mono.palette.muted,
+  11,
+)
+
+const MARK_TOP = cursor + 50
 const MARK_SCALE = 4
 const moodNames = Object.keys(MOODS) as MoodName[]
-
-moodNames.forEach((name, i) => {
-  const ox = PAD + i * (MARK_CROP.w * MARK_SCALE + 14)
+moodNames.forEach((name, index) => {
+  const ox = PAGE_PAD + index * (MARK_CROP.w * MARK_SCALE + 16)
   drawMark(name, ox, MARK_TOP, MARK_SCALE)
-  label(ox, MARK_TOP + MARK_CROP.h * MARK_SCALE + 14, name)
+  label(ox, MARK_TOP + MARK_CROP.h * MARK_SCALE + 15, name)
 })
 
-// And one at a size you can actually inspect.
-const BIG_TOP = MARK_TOP + 74
-drawMark('idle', PAD, BIG_TOP, 10)
-label(PAD, BIG_TOP + MARK_CROP.h * 10 + 16, 'header crop @10x')
+const BIG_X = PAGE_W - MARK_CROP.w * 9 - PAGE_PAD
+drawMark('idle', BIG_X, MARK_TOP - 4, 9)
+label(BIG_X, MARK_TOP + MARK_CROP.h * 9 + 12, 'header crop @9x')
 
-const width = CELL_W * COLS
-const height = BIG_TOP + MARK_CROP.h * 10 + 30
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><rect width="100%" height="100%" fill="${INK}"/>${parts.join('')}</svg>`
+const height = MARK_TOP + MARK_CROP.h * 9 + 34
+const pagePalette = ROOMS.mono.palette
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${PAGE_W}" height="${height}" viewBox="0 0 ${PAGE_W} ${height}"><rect width="100%" height="100%" fill="${pagePalette.ink}"/>${parts.join('')}</svg>`
 
 writeFileSync('companion-preview.svg', svg)
 await sharp(Buffer.from(svg)).png().toFile('companion-preview.png')
-console.log(`wrote companion-preview.png (${SPRITE_W}x${SPRITE_H} sprites, ${SHEET.length} frames)`)
+console.log(
+  `wrote companion-preview.png (${SCENE_W}x${SCENE_H} scenes, ${ROOM_SHEET.length + STATE_SHEET.length + INTERACTION_SHEET.length} full-scene checks, ${moodNames.length} header crops)`,
+)

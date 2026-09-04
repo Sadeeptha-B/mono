@@ -1,10 +1,11 @@
 /**
- * Notifications and the end-of-block chime.
+ * Notifications and the shared audio gesture boundary.
  *
  * Both are gated behind a user gesture, and for the same reason: browsers
  * refuse to grant notification permission or start an AudioContext without
  * one. `unlockOnGesture` is called from the first "start block" click, so the
- * chime is guaranteed to work by the time a block can possibly end.
+ * chime is ready by the time a block can end and any already-declared ambient
+ * playback intent is reconciled at the same boundary.
  *
  * An honest limitation: without a push server, a notification fired from a
  * frozen tab can be delayed or dropped. This is best-effort. The guarantee is
@@ -14,42 +15,14 @@
 import { useCallback, useEffect, useRef } from 'react'
 
 import { useSession } from '@/store/session'
-
-let audioContext: AudioContext | null = null
+import { playChime, unlockAudio } from '@/ambient/audio'
 
 /** Called from a real click, so the browser will honour both requests. */
 export async function unlockOnGesture(wantsNotifications: boolean): Promise<void> {
-  if (!audioContext) {
-    const Ctor = window.AudioContext ?? (window as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
-    if (Ctor) audioContext = new Ctor()
-  }
-  if (audioContext?.state === 'suspended') await audioContext.resume()
+  await unlockAudio()
 
   if (wantsNotifications && 'Notification' in window && Notification.permission === 'default') {
     await Notification.requestPermission()
-  }
-}
-
-/** A short two-tone chime. Synthesised so there is no audio asset to ship. */
-export function playChime(): void {
-  if (!audioContext || audioContext.state !== 'running') return
-
-  const now = audioContext.currentTime
-  for (const [index, frequency] of [660, 880].entries()) {
-    const osc = audioContext.createOscillator()
-    const gain = audioContext.createGain()
-
-    osc.type = 'sine'
-    osc.frequency.value = frequency
-
-    const start = now + index * 0.18
-    gain.gain.setValueAtTime(0, start)
-    gain.gain.linearRampToValueAtTime(0.18, start + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.5)
-
-    osc.connect(gain).connect(audioContext.destination)
-    osc.start(start)
-    osc.stop(start + 0.5)
   }
 }
 

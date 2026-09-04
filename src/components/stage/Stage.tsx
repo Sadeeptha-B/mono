@@ -20,6 +20,7 @@ import { OutsideHoursPanel, ReadyPanel } from './IdlePanel'
 import { PurposePanel } from './PurposePanel'
 import { ReconcilePanel } from './ReconcilePanel'
 import { GhostButton } from '../ui'
+import { AmbienceButton } from '@/ambient/AmbienceButton'
 
 import type { SetupStageId } from './stages'
 import type { Phase } from '@/domain/machine'
@@ -32,12 +33,18 @@ import type {
   Settings,
   WorkRegion,
 } from '@/domain/types'
+import type { DayProgress } from '@/domain/dayProgress'
+import type { AmbienceControls } from '@/ambient/useAmbience'
 
 type Props = {
   now: Ms
   phase: Phase
   active: ActiveSegment | null
   settings: Settings
+  dayProgress: DayProgress
+  /** The one App-owned answer for postcard and companion visibility. */
+  dayDone: boolean
+  ambience: AmbienceControls
   /** Whether the day's opening questions are the thing being asked. */
   setupOpen: boolean
   /** True when they are open again *after* the day was shaped, not for the first time. */
@@ -116,7 +123,10 @@ export function Stage(props: Props) {
             now={now}
             nextStart={props.nextRegionStart}
             hasRegions={props.hasRegions}
+            dayDone={props.dayDone}
             onEditHours={props.onEditHours}
+            progress={props.dayProgress}
+            roomId={settings.roomId}
           />
         )
       }
@@ -150,10 +160,11 @@ export function Stage(props: Props) {
       return (
         <div>
           <FocusTimer now={now} active={active} phase={phase} />
-          <div className="mt-6">
+          <div className="mt-6 flex flex-wrap gap-2">
             <GhostButton type="button" onClick={props.onAbandon}>
               End early
             </GhostButton>
+            <AmbienceButton ambience={props.ambience} />
           </div>
         </div>
       )

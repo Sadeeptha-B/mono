@@ -17,7 +17,7 @@
  * frame first.
  */
 
-import { useMemo, useState } from 'react'
+import { useLayoutEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { Clock } from '@/components/Clock'
@@ -29,6 +29,7 @@ import { Stage } from '@/components/stage/Stage'
 import { StageCarousel } from '@/components/stage/StageCarousel'
 import {
   FIRST_SETUP_STAGE,
+  dayDoneFor,
   otherSetupStage,
   setupReachable,
   stageFor,
@@ -53,8 +54,13 @@ import { useNow } from '@/hooks/useNow'
 import { useRoute, GUIDE_HASH } from '@/hooks/useRoute'
 import { useReconciliation } from '@/hooks/useReconciliation'
 import { useBlockEndAlerts, useUnlock } from '@/hooks/useNotifications'
+import { useAmbience } from '@/ambient/useAmbience'
+import { applyRoomTheme } from '@/ambient/theme'
+import { RoomMenu } from '@/ambient/RoomMenu'
+import { paint } from '@/pip/styles'
 import { breakCost, countPlannedFocus, derivePlan } from '@/domain/planner'
-import { formatDuration, isWithinRegions, nextRegionStart } from '@/domain/time'
+import { dayProgressFor } from '@/domain/dayProgress'
+import { dayKey, formatDuration, isWithinRegions, nextRegionStart } from '@/domain/time'
 import { useSession, toPlanInput, selectRegions } from '@/store/session'
 import type { BlockKind } from '@/domain/types'
 
@@ -79,6 +85,33 @@ export function App() {
   const [seenGeneration, setSeenGeneration] = useState(() => store.generation)
 
   const { phase, session } = store
+  const today = dayKey(now)
+  const ambience = useAmbience({
+    selection: session.settings.ambience,
+    roomId: session.settings.roomId,
+    volume: session.settings.ambienceVolume,
+    phase,
+    active: session.active,
+  })
+  // Keyed on the day rather than the one-second `now`. The projection only
+  // reads the clock to choose today's segments, so refolding the permanent
+  // history sixty times a minute would produce the same answer. `today`
+  // changes at the midnight boundary where that answer can change.
+  const dayProgress = useMemo(
+    () =>
+      dayProgressFor(
+        session.history,
+        now,
+        phase.name === 'blockComplete' ? session.active : null,
+      ),
+    [session.history, session.active, phase.name, today],
+  )
+
+  useLayoutEffect(() => {
+    applyRoomTheme(document, session.settings.roomId)
+    const pip = window.documentPictureInPicture?.window
+    if (pip) paint(pip.document, session.settings.roomId)
+  }, [session.settings.roomId])
   const [seenPhase, setSeenPhase] = useState(phase.name)
   const regions = selectRegions(store, now)
 
@@ -126,6 +159,17 @@ export function App() {
   const withinHours = isWithinRegions(now, timeline.regions)
   const upNext = nextRegionStart(now, timeline.regions)
   const dayShaped = session.shapedAt !== null
+  // The stage shows the opening questions while they are unanswered, and again
+  // whenever the user goes back to them. This has to be known before day-done:
+  // an open question remains the stage even if its work region ends underneath it.
+  const setupOpen = !dayShaped || revisitingSetup
+  const dayDone = dayDoneFor({
+    phase,
+    setupOpen,
+    withinHours,
+    nextRegionStart: upNext,
+    hasRegions: timeline.regions.length > 0,
+  })
 
   // The session was replaced under us — midnight came round with the tab open,
   // or a file was imported. The store resets its own state; this is the rest of
@@ -163,9 +207,6 @@ export function App() {
     if (phase.name === 'reconciling') setComposer(null)
   }
 
-  // The stage shows the opening questions while they are unanswered, and again
-  // whenever the user goes back to them.
-  const setupOpen = !dayShaped || revisitingSetup
   const stage = stageFor(phase, setupOpen, setupStage)
   /**
    * Move the stage to one of the opening questions.
@@ -310,6 +351,8 @@ export function App() {
         active={session.active}
         history={session.history}
         settings={session.settings}
+        dayProgress={dayProgress}
+        ambience={ambience}
         facts={{
           // `dayShaped`, not `setupOpen`: going back to re-read the opening
           // questions is where the user is looking, and the mini window should
@@ -373,7 +416,7 @@ export function App() {
         does well.
       */}
       <div className="mx-auto flex max-w-6xl flex-col p-4 sm:p-6 lg:h-dvh">
-        <header className="mb-5 flex items-center justify-between">
+        <header className="mb-5 flex items-start justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <PixelCat
               phase={phase}
@@ -386,10 +429,11 @@ export function App() {
               Mono
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-2">
             {/* Nothing at all unless the browser has started refusing to save,
                 which is the one failure worth a permanent place on screen. */}
             <StorageWarning onOpenSettings={openSettings} />
+            <RoomMenu idPrefix="day-header" />
             <PopOutButton mini={mini} />
             {/* A real link, so the guide can be opened in its own tab and
                 survives a reload like the document it is. */}
@@ -409,12 +453,16 @@ export function App() {
                 rather than one of them wrapping under the other. */}
             <div className="flex items-start justify-between gap-3 sm:gap-6">
               <Clock now={now} />
-              <Companion
-                now={now}
-                phase={phase}
-                active={session.active}
-                history={session.history}
-              />
+              {!dayDone && (
+                <Companion
+                  now={now}
+                  phase={phase}
+                  active={session.active}
+                  history={session.history}
+                  roomId={session.settings.roomId}
+                  dayProgress={dayProgress}
+                />
+              )}
             </div>
 
             {/* The stage: every prompt Mono makes happens here, in place. */}
@@ -439,6 +487,9 @@ export function App() {
                 phase={phase}
                 active={session.active}
                 settings={session.settings}
+                dayProgress={dayProgress}
+                dayDone={dayDone}
+                ambience={ambience}
                 setupOpen={setupOpen}
                 revisitingSetup={setupOpen && dayShaped}
                 setupStage={setupStage}

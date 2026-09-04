@@ -19,10 +19,15 @@
 import { formatDuration } from '@/domain/time'
 import type { Vitals } from '@/domain/vitals'
 import type { MoodName } from './cat'
+import { MILESTONE_REMARKS, type DayMilestone } from '@/domain/dayProgress'
 
 const plural = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`
 
-export function utteranceFor(mood: MoodName, vitals: Vitals): string | null {
+export function utteranceFor(
+  mood: MoodName,
+  vitals: Vitals,
+  milestone: DayMilestone | null = null,
+): string | null {
   const { blocksToday, focusMinutesToday, streak } = vitals
 
   switch (mood) {
@@ -31,6 +36,7 @@ export function utteranceFor(mood: MoodName, vitals: Vitals): string | null {
       return `${plural(blocksToday, 'block')} banked · ${formatDuration(focusMinutesToday * 60_000)}`
 
     case 'complete':
+      if (milestone) return MILESTONE_REMARKS[milestone]
       // The block just landed, so it is already in the history these numbers
       // come from. A run is the more interesting fact when there is one.
       if (streak >= 2) return `${streak} in a row.`

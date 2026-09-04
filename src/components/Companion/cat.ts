@@ -9,11 +9,12 @@
  * Every mood also carries a `pet` — the one-shot it plays when you click it.
  * The rule that shapes both lists is that the companion is allowed to be
  * lively at the *seams* of a block, and is deliberately dull in the middle of
- * one. So `focusing` holds a single frame for thirteen seconds, and petting it
- * buys you one blink and nothing else. Whatever the character grows into
- * later, that is the rule it has to keep: this app exists to protect the
- * middle of the block, and a companion that begs for attention during one is
- * the problem wearing a costume.
+ * one. So `focusing` holds a single frame for thirteen seconds. An explicit
+ * tap gets a short smile while the room previews its growth, but never a hop,
+ * heart, prompt or lasting reward. Whatever the character grows into later,
+ * that is the rule it has to keep: this app exists to protect the middle of
+ * the block, and a companion that begs for attention during one is the problem
+ * wearing a costume.
  */
 
 import { SPRITE_H, type BodyName, type FaceName } from './frames'
@@ -82,6 +83,12 @@ const DELIGHTED: readonly Step[] = [
  */
 const BARELY: readonly Step[] = [{ face: 'shut', ms: 280 }]
 
+/** A quiet acknowledgement for the explicitly requested focus-room preview. */
+const FOCUS_PREVIEW: readonly Step[] = [
+  { face: 'happy', ms: 420 },
+  { face: 'squint', ms: 220 },
+]
+
 const SIT_SPARK = { x: 19, y: 0 }
 
 export const MOODS: Record<MoodName, MoodSpec> = {
@@ -139,7 +146,7 @@ export const MOODS: Record<MoodName, MoodSpec> = {
       { face: 'squint', ms: 13_000 },
       { face: 'shut', ms: 150 },
     ],
-    pet: BARELY,
+    pet: FOCUS_PREVIEW,
     gazes: false,
     accent: 'var(--color-deep)',
     label: 'focusing',

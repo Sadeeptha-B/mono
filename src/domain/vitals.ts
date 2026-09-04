@@ -49,7 +49,7 @@ const EMPTY: Vitals = { blocksToday: 0, focusMinutesToday: 0, streak: 0 }
 const today = (history: readonly CompletedSegment[], now: Ms): CompletedSegment[] =>
   history.filter((segment) => onSameDay(segment.startedAt, now))
 
-const isBankedFocus = (segment: CompletedSegment): boolean =>
+export const isBankedFocus = (segment: CompletedSegment): boolean =>
   segment.kind === 'block' && segment.outcome === 'completed' && segment.blockKind !== 'reflect'
 
 /**

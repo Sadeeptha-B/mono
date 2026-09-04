@@ -159,6 +159,22 @@ describe('session import', () => {
     expect(useSession.getState().session.settings.popOutOnStart).toBe(false)
   })
 
+  it('imports ambient settings and leaves older logs silent', () => {
+    const file = (patch: Record<string, unknown>) => JSON.stringify({
+      version: 2,
+      dayKey: dayKey(TODAY.getTime()),
+      events: [{ type: 'settings/changed', at: at(TODAY, 10), patch }],
+    })
+
+    useSession.getState().importJSON(file({ roomId: 'tide', ambience: 'room', ambienceVolume: 0.6 }))
+    expect(useSession.getState().session.settings).toMatchObject({
+      roomId: 'tide', ambience: 'room', ambienceVolume: 0.6,
+    })
+
+    useSession.getState().importJSON(file({ shortMinutes: 25 }))
+    expect(useSession.getState().session.settings.ambience).toBe('off')
+  })
+
   it('drops malformed imported payloads before replay', () => {
     expect(() =>
       useSession.getState().importJSON(

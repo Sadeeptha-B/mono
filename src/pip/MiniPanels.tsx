@@ -33,6 +33,7 @@ import {
 import { fieldClass, GhostButton, PrimaryButton } from '@/components/ui'
 import { formatClock, formatDuration, formatTimer } from '@/domain/time'
 import type { ActiveSegment, BlockKind, Ms } from '@/domain/types'
+import type { DayProgress } from '@/domain/dayProgress'
 
 /** The heading above a question, sized for a window this small. */
 export function MiniPrompt({
@@ -141,14 +142,24 @@ export function MiniUnshaped({ onOpenTab }: { onOpenTab: () => void }) {
   )
 }
 
-export function MiniOutsideHours({ now, nextStart }: { now: Ms; nextStart: Ms | null }) {
+export function MiniOutsideHours({
+  now,
+  nextStart,
+  progress,
+}: {
+  now: Ms
+  nextStart: Ms | null
+  progress: DayProgress
+}) {
   return (
     <MiniPrompt
       eyebrow="Outside working hours"
       title={nextStart === null ? 'Day done' : `Back in ${formatDuration(nextStart - now)}`}
       detail={
         nextStart === null
-          ? 'The plan picks up tomorrow.'
+          ? progress.blocks === 0
+            ? 'Nothing banked today. The plan picks up tomorrow.'
+            : `${progress.blocks} block${progress.blocks === 1 ? '' : 's'} · ${formatDuration(progress.focusMinutes * 60_000)} focused`
           : `Nothing scheduled until ${formatClock(nextStart)}.`
       }
     />

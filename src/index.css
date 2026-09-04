@@ -26,6 +26,31 @@
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
 }
 
+/* Curated dark rooms override the same semantic tokens, so every existing
+   utility and SVG fill changes together without learning about room names. */
+@layer base {
+  [data-room='ember'] {
+    --color-ink: #0d0908; --color-surface: #15100e; --color-surface-raised: #1e1613;
+    --color-line: #34251f; --color-muted: #8b7062; --color-body: #bfa797;
+    --color-bright: #fff2e8; --color-deep: #ed9b3b; --color-short: #7f9fc2;
+    --color-reflect: #b884c6; --color-rest: #70a87c; --color-commit: #d86f5f;
+  }
+
+  [data-room='tide'] {
+    --color-ink: #061014; --color-surface: #0b171c; --color-surface-raised: #102229;
+    --color-line: #1d3942; --color-muted: #67838c; --color-body: #a4bdc4;
+    --color-bright: #eaf7f8; --color-deep: #f0b65a; --color-short: #61b6d4;
+    --color-reflect: #aa8ddd; --color-rest: #63bd99; --color-commit: #df7878;
+  }
+
+  [data-room='moss'] {
+    --color-ink: #090d09; --color-surface: #101610; --color-surface-raised: #182018;
+    --color-line: #293429; --color-muted: #708171; --color-body: #a9b8a8;
+    --color-bright: #eff5ec; --color-deep: #d9a84e; --color-short: #7aa7b8;
+    --color-reflect: #aa8ac0; --color-rest: #6eae78; --color-commit: #d2736c;
+  }
+}
+
 @layer base {
   html {
     color-scheme: dark;

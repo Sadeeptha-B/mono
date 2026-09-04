@@ -2,13 +2,13 @@
  * The companion, as the stage mounts it: the cat, plus the one line it says.
  *
  * `PixelCat` is only a renderer — give it a phase and some numbers and it
- * draws. Everything that decides *which* numbers lives here, so the header can
- * mount the same creature as a bare mark without dragging the day's history
- * along with it.
+ * draws. `App` owns the day projection because the postcard and both companion
+ * surfaces consume it; this component adds the cat-specific vitals, mood and
+ * movement without refolding the same history.
  *
- * All three things the cat knows about the day come from the same append-only
- * log the timeline is drawn from. There is no companion state to persist, none
- * to migrate, and none that can survive a day it should not have.
+ * Everything the cat and its room know about the day comes from the same
+ * append-only log the timeline is drawn from. There is no companion state to
+ * persist, none to migrate, and none that can survive a day it should not have.
  */
 
 import { useMemo } from 'react'
@@ -18,14 +18,17 @@ import { markTierFor, moodForPhase, walkProgress } from './cat'
 import { utteranceFor } from './utterances'
 import { dayKey } from '@/domain/time'
 import { vitalsFor } from '@/domain/vitals'
+import { dayProgressLabel, type DayProgress } from '@/domain/dayProgress'
 import type { Phase } from '@/domain/machine'
-import type { ActiveSegment, CompletedSegment, Ms } from '@/domain/types'
+import type { ActiveSegment, CompletedSegment, Ms, RoomId } from '@/domain/types'
 
 type Props = {
   now: Ms
   phase: Phase
   active: ActiveSegment | null
   history: readonly CompletedSegment[]
+  roomId: RoomId
+  dayProgress: DayProgress
   /**
    * How big the cat is drawn. The mini window is the reason this is a prop:
    * deciding *which* numbers the cat knows is identical in both windows and
@@ -40,7 +43,9 @@ export function Companion({
   phase,
   active,
   history,
-  className = 'h-16 w-28 sm:h-24 sm:w-44',
+  roomId,
+  dayProgress,
+  className = 'h-16 w-28 sm:h-28 sm:w-56 lg:h-32 lg:w-64',
 }: Props) {
   const day = dayKey(now)
 
@@ -58,9 +63,8 @@ export function Companion({
     () => vitalsFor(history, now, justLanded),
     [history, day, justLanded],
   )
-
   const mood = moodForPhase(phase)
-  const says = utteranceFor(mood, vitals)
+  const says = utteranceFor(mood, vitals, dayProgress.milestone)
 
   const progress = walkProgress(active, now)
 
@@ -73,7 +77,12 @@ export function Companion({
         phase={phase}
         progress={progress}
         note={note}
-        tier={markTierFor(vitals.blocksToday)}
+        tier={markTierFor(dayProgress.blocks)}
+        roomId={roomId}
+        sceneTier={dayProgress.sceneTier}
+        trail={dayProgress.trail}
+        milestone={dayProgress.milestone}
+        progressLabel={dayProgressLabel(dayProgress)}
         interactive
         className={className}
       />

@@ -14,12 +14,15 @@ npm run test:e2e   # Playwright, builds and previews first
 npm run build      # production bundle + service worker
 ```
 
-Two more documents, for anyone picking this up:
+Three more documents, for anyone picking this up:
 
 - **[docs/decisions.md](docs/decisions.md)** — the calls that were made
   deliberately and the traps that have already cost an afternoon. Read it
   before changing something that looks odd; several things are odd on purpose.
 - **[CLAUDE.md](CLAUDE.md)** — the short orientation, auto-loaded by agents.
+- **[docs/ambient-interactivity-context.md](docs/ambient-interactivity-context.md)**
+  — the authoritative handover for rooms, ambience, companion progression,
+  PiP integration and the visual-QA tooling.
 
 Everything descriptive lives in the source. Every file worth reading opens with
 a docblock explaining what it is for.
@@ -45,6 +48,7 @@ stale but never wrong.
 src/domain/      pure: types, event log, planner, state machine, time, vitals
 src/store/       the only place that reads the clock, makes ids, persists
 src/hooks/       the ticker, reconciliation, notifications
+src/ambient/     rooms, procedural sound, theme, controls, shared scene geometry
 src/components/  the two panels, the stage prompts, the guide, the companion
 src/pip/         the always-on-top mini window
 ```
@@ -89,9 +93,10 @@ and `GuidePage` is that one decision.
 The **guide** is the exception that proves the rule: it is read rather than
 answered, so it is a page at `#/guide` rather than a dialog. `App` swaps the
 view without unmounting anything, so a block keeps running while you read it,
-and the guide's header shows the timer while it does. A decision like "do you
-need a break?" is only answerable while you can see the rest of the day, so it
-never gets covered up.
+and the guide's header shows the timer while it does. Its examples are built
+from the current settings, so changing a duration changes the explanation too.
+A decision like "do you need a break?" is only answerable while you can see the
+rest of the day, so it never gets covered up.
 
 Session state is a fold over an append-only event log
 ([src/domain/events.ts](src/domain/events.ts)). Only the log is persisted; the
@@ -221,24 +226,48 @@ again.
 Regions do not wrap past midnight — the plan is scoped to a calendar day, so a
 late stretch ends at 23:59 rather than running into tomorrow.
 
-## The companion
+## Rooms, ambience and the companion
 
-A pixel cat on a strip of ground, in the corner of the stage. It changes with
-what Mono is doing, and during a block it walks its ground from left to right as
-the time passes — so it is the progress indicator as well as the character.
+The header's `Room` menu offers four curated dark rooms: Mono, Ember, Tide and
+Moss, with a palette swatch beside each choice. A room is one coordinated
+palette and pixel environment rather than a loose accent picker, and it follows
+the timer into the always-on-top window. Mono remains the default, so an
+existing browser opens exactly where it left off.
 
-Its art is authored as text, one character per pixel, in
-[src/components/Companion/frames.ts](src/components/Companion/frames.ts). What
-it knows about the day is a fold over the same history the timeline is drawn
-from, so there is no companion state to store or migrate. The app icons are
-generated from the same frames, which is why the tab icon is the same animal.
+Ambient sound is off until it is explicitly chosen. Brown noise, pink noise
+and rain are synthesised locally with Web Audio; there are no streamed tracks
+or audio files. `Room sound` follows the current room's suggestion. It fades in
+only while a focus or priorities block is running and fades away for prompts
+and breaks. The timer's speaker icon controls a tab-local mute that is separate
+from the block-end chime. That mute governs automatic block ambience; choosing
+a sound while idle is an explicit request to hear its six-second preview.
+
+A pixel cat in a small room, in the corner of the stage. It changes with what
+Mono is doing, and during a block it walks the room from left to right as the
+time passes — so it is the progress indicator as well as the character.
+
+The cat sprite is authored as text, one character per pixel, in
+[src/components/Companion/frames.ts](src/components/Companion/frames.ts); the
+small room and trail are SVG rendered from shared, DOM-free geometry in
+[src/ambient/scene.ts](src/ambient/scene.ts), so the app and visual-QA sheet
+cannot drift. What it knows about the day is a fold over the same history the
+timeline is drawn from, so there is no companion state to store or migrate. The
+app icons are generated from the same frames, which is why the tab icon is the
+same animal.
+
+The room around it grows at one, three and six completed focus blocks, while a
+small trail keeps the sequence of focus, reflection, rest and honest gaps. Both
+are derived from today's history and reset at midnight; neither adds stored
+game state or takes anything away after an abandoned block. After the final
+working region, the same facts become the `Day done` postcard.
 
 The rule it keeps: lively at the seams of a block, dull in the middle of one. It
 reacts, it never interrupts, and it stops moving entirely under
-`prefers-reduced-motion`.
+`prefers-reduced-motion`. The companion has a few small interactions left for
+the user to discover; none writes progress or changes what the day earned.
 
 ```bash
-npm run companion   # a contact sheet of every frame, as a PNG
+npm run companion   # visual QA sheet for rooms, progression and companion frames
 npm run icons       # regenerate the favicon and PWA icons from those frames
 ```
 
@@ -278,3 +307,16 @@ real picture-in-picture window, and the e2e specs stand it in with an iframe:
    deliberately does not, so this is the whole of the multi-monitor story.
 6. Sleep the machine across a block end with the window open. "You were away"
    must appear in both, and answering it in either must resolve both.
+
+And four for ambient audio, whose output a browser test cannot hear:
+
+7. Choose each sound, let its six-second preview end, and listen for a clean
+   loop with no click at the join. After muting a running block, finish it and
+   choose a sound while idle; the explicit preview must still be audible.
+8. Start a block, mute from the mini window's speaker icon, and resume from the
+   main timer's icon. The two controls must follow each other and the completion
+   chime must still play.
+9. Reload during a running block. Sound must remain stopped until the muted
+   speaker icon is pressed, then return without restarting or changing the timer.
+10. Background the tab, sleep the machine across the end, and return. Ambience
+    must be gone before the reconciliation question is answered.

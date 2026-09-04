@@ -1,5 +1,5 @@
 /**
- * Mono, the companion — a pixel cat on a strip of ground.
+ * Mono, the companion — a pixel cat crossing a small focus room.
  *
  * It replaces the one-line character, and the reasoning behind the swap is
  * that the line could only ever be a *gesture*. Every expression had to be
@@ -21,11 +21,11 @@
  *  - One creature, two mounts. The header shows the same animal cropped to its
  *    head, rather than a second mark that has to be kept in step with this one.
  *  - It can be petted. The eyes follow the pointer across it and a click gets
- *    a hop and a heart — except during a block, where the same click gets one
- *    blink. Being boring while you work is the feature.
+ *    a hop and a heart. During focus, a deliberate tap instead gives a quiet
+ *    smile and briefly steps through how the room and cat can grow today.
  */
 
-import { useEffect, useMemo, useState, type PointerEvent } from 'react'
+import { memo, useEffect, useMemo, useState, type PointerEvent } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 
 import {
@@ -38,8 +38,25 @@ import {
   type Step,
 } from './cat'
 import { compose, runs } from './sprite'
-import { BODIES, FACES, MARKINGS, NOTE, SPARK, SPRITE_H, SPRITE_W, type Grid } from './frames'
+import { BODIES, FACES, MARKINGS, NOTE, SPARK, SPRITE_W, type Grid } from './frames'
+import {
+  GROUND_H,
+  GROUND_Y,
+  MILESTONE_SHAPES,
+  ROOM_SCENERY,
+  ROOM_SHELL,
+  SCENE_H,
+  SCENE_W,
+  SPRITE_TOP,
+  trailShapes,
+  type PixelShape,
+  type RoomShape,
+  type SceneTier,
+  type SceneToken,
+} from '@/ambient/scene'
 import type { Phase } from '@/domain/machine'
+import type { DayMilestone, TrailEntry } from '@/domain/dayProgress'
+import type { RoomId } from '@/domain/types'
 
 type Props = {
   phase: Phase
@@ -47,7 +64,7 @@ type Props = {
   progress: number | null
   className?: string
   /**
-   * Crop to the head. The full scene is 24 pixels of cat in a 36-pixel strip;
+   * Crop to the head. The full scene is 24 pixels of cat in a 48-pixel room;
    * at the 28px the header gives it that is under two screen pixels per sprite
    * pixel, which is mush. The head alone gets three, which is legible.
    */
@@ -71,15 +88,13 @@ type Props = {
    * The header one is the decorative copy.
    */
   decorative?: boolean
+  roomId?: RoomId
+  sceneTier?: 0 | 1 | 2 | 3
+  trail?: readonly TrailEntry[]
+  milestone?: DayMilestone | null
+  progressLabel?: string
 }
 
-/** The strip the cat lives on, in sprite pixels. */
-const SCENE_W = 36
-const SCENE_H = 20
-/** Top of the sprite, leaving two pixels of headroom for the hop. */
-const SPRITE_TOP = 2
-const GROUND_Y = SPRITE_TOP + SPRITE_H
-const GROUND_H = 0.9
 /** How far the cat can walk: the slack either side of it. */
 const TRAVEL = SCENE_W - SPRITE_W
 
@@ -99,6 +114,11 @@ export function PixelCat({
   tier = 0,
   note = null,
   decorative = false,
+  roomId = 'mono',
+  sceneTier = 0,
+  trail = [],
+  milestone = null,
+  progressLabel,
 }: Props) {
   const reduceMotion = useReducedMotion()
   const name: MoodName = moodForPhase(phase)
@@ -109,12 +129,17 @@ export function PixelCat({
   const [petting, setPetting] = useState<{ steps: readonly Step[]; nonce: number } | null>(
     null,
   )
+  const [focusPreview, setFocusPreview] = useState<{
+    tier: SceneTier
+    nonce: number
+  } | null>(null)
 
   // A reaction belongs to the mood that was petted. If the block ends
   // underneath one, the hop it was half-way through is answering a question
   // nobody is asking any more.
   useEffect(() => {
     setPetting(null)
+    setFocusPreview(null)
   }, [name])
 
   useEffect(() => {
@@ -124,29 +149,59 @@ export function PixelCat({
     return () => clearTimeout(id)
   }, [petting])
 
+  // A preview is intentionally ephemeral: it demonstrates the room's path,
+  // then hands the scene straight back to progress derived from today's log.
+  useEffect(() => {
+    if (!focusPreview) return
+    const id = setTimeout(() => setFocusPreview(null), 1_400)
+    return () => clearTimeout(id)
+  }, [focusPreview])
+
   const steps = petting?.steps ?? mood.steps
   const step = useStep(steps, petting ? `pet-${petting.nonce}` : name, animate)
 
   const palette = useMemo(() => paletteFor(mood.accent), [mood.accent])
   const look = mood.gazes && !reduceMotion ? gaze : 0
+  const displayedSceneTier =
+    name === 'focusing' && focusPreview ? focusPreview.tier : sceneTier
+  // The focus interaction tours all three stages, even when that briefly
+  // means fewer markings than today's earned state. It is local preview state,
+  // and the factual tiers return together after the same short timer.
+  const displayedMarkTier = name === 'focusing' && focusPreview
+    ? focusPreview.tier === 3
+      ? 2
+      : focusPreview.tier === 2
+        ? 1
+        : 0
+    : tier
 
   // Body, then what the day has added to it, then what it is holding, then the
   // face last so nothing can end up drawn over the eyes.
   const frame = useMemo(() => {
     const layers = []
-    const markings = MARKINGS[tier - 1]
+    const markings = MARKINGS[displayedMarkTier - 1]
     if (markings) layers.push({ grid: markings, x: mood.marks.x, y: mood.marks.y })
     if (note && mood.note) layers.push({ grid: NOTE, ...mood.note })
     layers.push({ grid: FACES[step.face], x: mood.face.x + look, y: mood.face.y })
     return compose(BODIES[mood.body], ...layers)
-  }, [mood, step.face, look, tier, note])
+  }, [mood, step.face, look, displayedMarkTier, note])
 
   // The cat stands where it has got to in the block, and in the middle of the
   // strip when there is no block to be part-way through.
   const walked = progress === null ? TRAVEL / 2 : progress * TRAVEL
   const lift = reduceMotion ? 0 : (step.lift ?? 0)
 
-  const pet = () => setPetting((was) => ({ steps: mood.pet, nonce: (was?.nonce ?? 0) + 1 }))
+  const pet = () => {
+    setPetting((was) => ({ steps: mood.pet, nonce: (was?.nonce ?? 0) + 1 }))
+    if (name !== 'focusing') return
+    setFocusPreview((was) => {
+      const from = was?.tier ?? sceneTier
+      return {
+        tier: ((from % 3) + 1) as SceneTier,
+        nonce: (was?.nonce ?? 0) + 1,
+      }
+    })
+  }
 
   // The card the cat is holding has no words on it, so this is where they go.
   const doing =
@@ -176,10 +231,25 @@ export function PixelCat({
       className="h-full w-full"
       {...(decorative || interactive
         ? { 'aria-hidden': true }
-        : { role: 'img', 'aria-label': doing })}
+        : { role: 'img', 'aria-label': progressLabel ? `${doing}. ${progressLabel}` : doing })}
     >
       {variant === 'full' && (
-        <Ground walked={walked} accent={mood.accent} lit={progress !== null} />
+        <>
+          <RoomScene
+            roomId={roomId}
+            tier={displayedSceneTier}
+            active={progress !== null}
+            animate={animate}
+            milestone={milestone}
+          />
+          <Ground
+            walked={walked}
+            accent={mood.accent}
+            lit={progress !== null}
+            animate={animate}
+          />
+          <Trail entries={trail} />
+        </>
       )}
 
       <motion.g
@@ -216,13 +286,124 @@ export function PixelCat({
       onClick={pet}
       onPointerMove={track}
       onPointerLeave={() => setGaze(0)}
-      aria-label={`Pet Mono. ${doing}`}
+      aria-label={`${name === 'focusing' ? 'Encourage Mono and preview the room' : 'Pet Mono'}. ${doing}${progressLabel ? `. ${progressLabel}` : ''}`}
+      data-scene-tier={displayedSceneTier}
+      data-mark-tier={displayedMarkTier}
       className={`${className ?? ''} cursor-pointer rounded-lg`}
     >
       {art}
     </button>
   )
 }
+
+/** Room-specific pixels behind the cat, from factual or temporary preview tiers. */
+const RoomScene = memo(function RoomScene({
+  roomId,
+  tier,
+  active,
+  animate,
+  milestone,
+}: {
+  roomId: RoomId
+  tier: 0 | 1 | 2 | 3
+  active: boolean
+  animate: boolean
+  milestone: DayMilestone | null
+}) {
+  return (
+    <g aria-hidden="true">
+      {ROOM_SHELL.map((shape, index) => (
+        <StaticSceneShape key={`shell-${index}`} shape={shape} />
+      ))}
+
+      {ROOM_SCENERY[roomId]
+        .filter((shape) => shape.tier <= tier)
+        .map((shape, index) => (
+          <AnimatedSceneShape
+            key={`${roomId}-${index}`}
+            shape={shape}
+            active={active}
+            animate={animate}
+          />
+        ))}
+
+      {milestone && (
+        MILESTONE_SHAPES.map((shape, index) => (
+          <StaticSceneShape key={`milestone-${index}`} shape={shape} />
+        ))
+      )}
+    </g>
+  )
+})
+
+const cssToken = (token: SceneToken): string =>
+  `var(--color-${token === 'raised' ? 'surface-raised' : token})`
+
+const shapePaint = (shape: PixelShape) => ({
+  fill: 'fill' in shape ? cssToken(shape.fill) : 'none',
+  ...(shape.stroke ? { stroke: cssToken(shape.stroke) } : {}),
+  ...(shape.strokeWidth !== undefined ? { strokeWidth: shape.strokeWidth } : {}),
+  ...(shape.opacity !== undefined ? { opacity: shape.opacity } : {}),
+})
+
+function StaticSceneShape({ shape }: { shape: PixelShape }) {
+  const paint = shapePaint(shape)
+  return shape.kind === 'rect'
+    ? <rect x={shape.x} y={shape.y} width={shape.width} height={shape.height} {...paint} />
+    : <path d={shape.d} {...paint} />
+}
+
+function AnimatedSceneShape({
+  shape,
+  active,
+  animate,
+}: {
+  shape: RoomShape
+  active: boolean
+  animate: boolean
+}) {
+  if (!shape.animation) return <StaticSceneShape shape={shape} />
+  const paint = shapePaint(shape)
+  const opacity = animate && active
+    ? { opacity: [...shape.animation.opacity] }
+    : { opacity: shape.opacity ?? 1 }
+  const transition = animate && active
+    ? { duration: shape.animation.duration, repeat: Infinity }
+    : { duration: 0 }
+
+  return shape.kind === 'rect'
+    ? (
+        <motion.rect
+          x={shape.x}
+          y={shape.y}
+          width={shape.width}
+          height={shape.height}
+          {...paint}
+          animate={opacity}
+          transition={transition}
+        />
+      )
+    : (
+        <motion.path
+          d={shape.d}
+          {...paint}
+          animate={opacity}
+          transition={transition}
+        />
+      )
+}
+
+/** A compressed, decorative account of the complete sequence of today's day. */
+const Trail = memo(function Trail({ entries }: { entries: readonly TrailEntry[] }) {
+  if (entries.length === 0) return null
+  return (
+    <g aria-hidden="true">
+      {trailShapes(entries).map((shape, index) => (
+        <StaticSceneShape key={index} shape={shape} />
+      ))}
+    </g>
+  )
+})
 
 /**
  * The ground, and how much of it is behind you.
@@ -231,7 +412,17 @@ export function PixelCat({
  * the trail and the creature are the same fact stated twice — there is nothing
  * for them to disagree about.
  */
-function Ground({ walked, accent, lit }: { walked: number; accent: string; lit: boolean }) {
+function Ground({
+  walked,
+  accent,
+  lit,
+  animate,
+}: {
+  walked: number
+  accent: string
+  lit: boolean
+  animate: boolean
+}) {
   return (
     <>
       <rect x={0} y={GROUND_Y} width={SCENE_W} height={GROUND_H} fill="var(--color-line)" />
@@ -243,7 +434,7 @@ function Ground({ walked, accent, lit }: { walked: number; accent: string; lit: 
           fill={accent}
           initial={false}
           animate={{ width: walked + SPRITE_W / 2 }}
-          transition={{ duration: 0.9, ease: 'linear' }}
+          transition={animate ? { duration: 0.9, ease: 'linear' } : { duration: 0 }}
         />
       )}
     </>

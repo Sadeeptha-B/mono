@@ -1495,3 +1495,130 @@ over their choice.
 
 That is worth knowing before anybody decides to "fix" the size hint, and it is
 item 5 of README's by-hand list, because no test here can see a real window.
+
+**2026-09-04 - Focus rooms, sound that knows when to stop, and a day-built scene.**
+
+Mono gained four curated dark rooms rather than a colour picker. A room owns a
+coordinated semantic palette, a small pixel environment and a suggested sound;
+the sound remains an override and defaults to off. That last part is the
+compatibility boundary: upgrading a focus timer must never make a previously
+silent browser begin playing noise on its next block. `Room sound` is the
+explicit opt-in that follows the room thereafter.
+
+The chime and ambience share one gesture-unlocked `AudioContext` but not one
+gain bus. A temporary ambience mute therefore cannot swallow the completion
+cue. Playback is an intent derived from the same active segment and phase the
+timer renders: focus and priorities ask for sound, every prompt, break,
+abandonment and reconciliation asks for silence. Restoring a running block
+after reload leaves that intent waiting behind `Resume ambience`, because the
+browser's autoplay boundary is a fact to expose rather than evade.
+
+The room, trail, milestones and end-of-day postcard add no events. They are a
+pure fold over today's existing history, including the provisional block held
+open at `blockComplete`, exactly as the cat's vitals already were. Decorations
+only accumulate until midnight and an abandoned block becomes an honest gap;
+nothing downgrades the companion's factual state. A user-invoked preview may
+temporarily visit an earlier tier; that is a tour of the interaction, not an
+earned-state change. The postcard is the existing `Day done`
+state reading the day back, not a stored award, dismissible overlay or history
+screen.
+
+**2026-09-04 (ambient UX pass) - The room belongs at hand, and focus previews stay temporary.**
+
+Room and ambience choices were placed in one header dropdown, shared by the day
+and guide headers, rather than being added to the general Settings dialog. Each room entry carries a
+small swatch of its semantic focus colour, making the four environments easier
+to scan without turning the header itself into a theme picker. The room choice
+still changes visuals only; choosing sound remains a separate explicit action.
+
+The running timer now uses one accessible speaker button instead of spending
+horizontal space on `Mute ambience` and `Resume ambience` text. Its label and
+title retain those exact actions for assistive technology and tooltips, and the
+main and mini surfaces still operate the same session-only mute state.
+
+The full companion scene is larger on desktop and in the pop-out while retaining
+its original small-screen footprint. A focus-time tap now cycles a short preview
+through the three visual growth tiers, including the cat's markings, then restores
+the factual tier derived from today's history after 1.4 seconds. The preview is
+gesture-driven, creates no event and unlocks nothing; reduced motion shows the
+same earned details and explicit preview frames without decorative animation.
+At a high earned tier the cycle deliberately visits an earlier tier before it
+returns; preventing that would turn a playful tour into a no-op on the days the
+companion has grown furthest.
+
+**2026-09-04 (companion visual QA) - Preview the environment, not only the sprite.**
+
+The companion contact sheet had remained a 36x20 Mono-coloured ground strip
+after the product moved to a 48x24 room. It now renders a room-evolution matrix
+for all four palettes and all four tiers, representative phase poses, the three
+focus-tap preview states, every trail mark, the aggregate mark, milestone
+sparkle and all header crops. The PNG is deliberately broad rather than a set
+of separate files: comparison across adjacent rooms and tiers is the review it
+exists to make cheap.
+
+The script imports the authored frame grids, canonical room metadata and a
+DOM-free scene description, but does not import the React renderer. Pulling
+`PixelCat` into plain Node would also pull Motion and browser assumptions into a
+generator that is meant to remain one command away. Coordinates instead live
+once in `src/ambient/scene.ts`: React turns them into SVG elements and the Node
+script paints the same shapes with literal palette values. The earlier mirrored
+copy was removed after a shelf and its objects moved independently and the
+contact sheet faithfully reproduced the same mistake instead of exposing it.
+
+**2026-09-04 (ambient review) — Continuous controls stop at the journal boundary, and one-time facts speak first.**
+
+The Room menu's volume slider exposed a mismatch between a continuous browser
+control and Mono's permanent event log. React receives an input event at every
+drag step, but those intermediate thumb positions are not durable decisions.
+The control now owns a local draft, updates the live gain directly, and appends
+only the value left on pointer release, blur or menu teardown. Teardown matters:
+an outside pointer press removes a focused slider before browsers dispatch
+blur, so without that final boundary a keyboard-adjusted volume could remain in
+the audio engine but not the journal. Sound previews read the same live draft.
+Coalescing in the reducer was rejected because it would make event-history
+mutation a general store behavior merely to serve one control.
+
+Recovery and return remarks had the opposite problem: they were derived from a
+repeatable transition yet outranked facts that can cross only once. The
+projection now reconstructs whether each transition remark has already been
+shown today, caps each at one, and gives 90 minutes, three in a row, the first
+deep block and the first block priority. A break before the 90-minute block can
+therefore still be acknowledged on a later return; it can no longer erase the
+only moment at which 90 minutes became true.
+
+The session mute continues to govern live focus ambience, not an explicit idle
+sound preview. Choosing a named sound is the gesture asking to hear it, including
+when a previous running block was muted; completion chimes remain independent.
+
+The day-end card now owns the only full scene in the main stage and names its
+superlative honestly as the longest completed block, with its duration beside
+the purpose. Consecutive blocks are not silently aggregated into a “stretch”:
+they can have different purposes and can be separated by decisions Mono does not
+record as uninterrupted work.
+
+The completed-day predicate is also owned once. It includes the transient fact
+that the opening questions are closed, then feeds both Stage's postcard branch
+and App's decision to omit the ordinary companion. Reopening setup at the end
+of the day can therefore never hide the cat while also replacing the postcard.
+
+**2026-09-04 (ambient contract pass) — Sparse trails grow in place, and shared seams are executable.**
+
+A trail is a sequence accumulating through the day, not a chart whose few
+entries must fill its entire width. Marks therefore advance from the left at a
+fixed 1.5-pixel pitch and a fixed 0.6 horizontal scale. The valid projection is
+capped at 32 entries, so an adaptive scale expression never changed on a
+reachable input and only disguised the visual rule. Overflow aggregation still
+preserves the most recent 31 facts.
+
+The shared scene module remains DOM-free and does not import the companion's
+frame implementation, which keeps the plain Node contact-sheet command cheap.
+The otherwise invisible seam is executable instead: a focused test asserts
+that the floor is `SPRITE_TOP + SPRITE_H`. The generator imports `SceneTier`
+and `TrailKind` from their owning modules as type-only dependencies, so neither
+its geometry nor its vocabulary is a second source of truth.
+
+The Guide follows the same ownership rule at a different scale. Its memoized
+section tree accepts one live `Settings` snapshot rather than that object plus
+a second list of selected fields. A settings change therefore rebuilds every
+example together, while the one-second timer can re-render the header without
+rebuilding static prose.

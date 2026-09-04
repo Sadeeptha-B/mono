@@ -19,12 +19,11 @@
  * page carries a `<link>` to the font in both.
  */
 
-/**
- * Enough of the theme to be legible without it, painted before anything loads.
- * Mirrors `index.css`, and is overwritten by it the moment the real sheet lands.
- */
-const INK = '#08080b'
-const BODY = '#a8a8bb'
+import { ROOMS } from '@/ambient/rooms'
+import { applyRoomTheme } from '@/ambient/theme'
+import type { RoomId } from '@/domain/types'
+
+/** The same font fallback as `index.css`, available before that sheet lands. */
 const DISPLAY = "'Inter', ui-sans-serif, system-ui, sans-serif"
 
 /**
@@ -102,21 +101,24 @@ export async function copyStylesInto(target: Document, source: Document): Promis
 }
 
 /**
- * The background, set on the element rather than left to the stylesheet.
+ * A legible first paint for the otherwise blank PiP document.
  *
  * The sheets take a moment to arrive, and a blank document is white. Half a
  * second of white in an always-on-top window on a dark desktop is the kind of
- * thing you feel rather than see. The rule in `index.css` sets the same colour
- * on `body` and takes over the moment it lands.
+ * thing you feel rather than see. These inline fallback properties remain
+ * authoritative after the stylesheet arrives, so room changes call this
+ * function again; the stylesheet owns the semantic tokens and all descendants.
  */
-export function paint(target: Document): void {
-  target.body.style.backgroundColor = INK
+export function paint(target: Document, roomId: RoomId): void {
+  const palette = ROOMS[roomId].palette
+  applyRoomTheme(target, roomId)
+  target.body.style.backgroundColor = palette.ink
   target.body.style.margin = '0'
   // The text colour matters for the same reason as the background, and only in
   // the case `PATIENCE_MS` exists for. A document with no stylesheet draws its
   // text black, and black on ink is not badly styled — it is invisible. These
   // three lines are what makes the window worth showing at all when the sheets
   // are late.
-  target.body.style.color = BODY
+  target.body.style.color = palette.body
   target.body.style.fontFamily = DISPLAY
 }

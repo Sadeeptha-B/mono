@@ -20,6 +20,7 @@ import { useCallback, useRef, useState } from 'react'
 import { copyStylesInto, paint } from './styles'
 import { alsoTickFrom } from '@/hooks/useNow'
 import { recheckPendingUpdate } from '@/pwa/registerServiceWorker'
+import { useSession } from '@/store/session'
 
 /**
  * Roughly a phone's notification, and resizable from there.
@@ -116,7 +117,7 @@ export function useMiniWindow(): MiniWindowControls {
       pip.addEventListener('pagehide', onGone)
 
       pip.document.title = 'Mono'
-      paint(pip.document)
+      paint(pip.document, useSession.getState().session.settings.roomId)
 
       const container = pip.document.createElement('div')
       container.className = 'h-dvh'

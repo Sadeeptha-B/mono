@@ -16,6 +16,7 @@
  */
 
 import type { Phase } from '@/domain/machine'
+import type { Ms } from '@/domain/types'
 
 /** The two questions the day opens with, in the order they are asked. */
 export type SetupStageId = 'commitments' | 'hours'
@@ -73,6 +74,36 @@ export const otherSetupStage = (stage: SetupStageId): SetupStageId =>
  * shape changed while you were working.
  */
 export const setupReachable = (phase: Phase): boolean => phase.name === 'idle'
+
+/**
+ * Whether the main stage is showing the completed-day postcard.
+ *
+ * This includes where the user is looking, not only facts about the clock: an
+ * open setup question outranks the postcard even after the final work region.
+ * `App` uses the same answer to decide whether the ordinary companion should
+ * yield its place to the postcard scene.
+ */
+export function dayDoneFor({
+  phase,
+  setupOpen,
+  withinHours,
+  nextRegionStart,
+  hasRegions,
+}: {
+  phase: Phase
+  setupOpen: boolean
+  withinHours: boolean
+  nextRegionStart: Ms | null
+  hasRegions: boolean
+}): boolean {
+  return (
+    phase.name === 'idle' &&
+    !setupOpen &&
+    !withinHours &&
+    nextRegionStart === null &&
+    hasRegions
+  )
+}
 
 /**
  * Where the day is now, or `null` when the question on screen is not part of

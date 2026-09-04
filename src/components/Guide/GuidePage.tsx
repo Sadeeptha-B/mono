@@ -34,8 +34,10 @@ import type { MiniWindowControls } from '@/pip/useMiniWindow'
 import { formatTimer } from '@/domain/time'
 import { DAY_HASH } from '@/hooks/useRoute'
 import { useSession } from '@/store/session'
+import { RoomMenu } from '@/ambient/RoomMenu'
 import type { Phase } from '@/domain/machine'
 import type { ActiveSegment, Ms, Settings } from '@/domain/types'
+import { ambienceLabel, ROOMS } from '@/ambient/rooms'
 
 type Section = { id: string; title: string; body: ReactNode }
 
@@ -56,16 +58,11 @@ export function GuidePage({
 
   const deep = settings.deepMinutes
   const short = settings.shortMinutes
-  const reflect = settings.reflectMinutes
-  const policy = settings.plannerPolicy
 
   // The page re-renders every second so the header strip can count down, and
   // this is several hundred elements of prose. Built once per settings change,
   // it is the same element tree on every tick, and React skips the subtree.
-  const sections = useMemo(
-    () => sectionsFor(deep, short, reflect, policy),
-    [deep, short, reflect, policy],
-  )
+  const sections = useMemo(() => sectionsFor(settings), [settings])
 
   const goTo = (id: string) => {
     const target = document.getElementById(id)
@@ -100,11 +97,12 @@ export function GuidePage({
             </span>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
             {/* A page invites you to stay, so whatever the timer would be
                 saying stays in sight — including when it is waiting on you. */}
             <StorageWarning onOpenSettings={onOpenSettings} />
             <HeaderStatus active={active} now={now} phase={phase} />
+            <RoomMenu idPrefix="guide-header" />
             <PopOutButton mini={mini} />
             <button type="button" onClick={onOpenSettings} className={headerControlClass}>
               Settings
@@ -386,16 +384,18 @@ function Setting({ name, children }: { name: string; children: ReactNode }) {
 /**
  * Every section of the guide, in order.
  *
- * The durations are threaded through rather than read from the store here: a
- * guide that quotes 45 minutes while settings say 30 is worse than no guide,
- * and passing them in makes that impossible to forget.
+ * The factory receives one settings snapshot rather than reaching into the
+ * store. Every live quote is therefore rebuilt from the same object whenever
+ * a setting changes, while the several-hundred-element tree remains stable on
+ * the Guide's one-second timer renders.
  */
-function sectionsFor(
-  deep: number,
-  short: number,
-  reflect: number,
-  policy: Settings['plannerPolicy'],
-): Section[] {
+function sectionsFor(settings: Settings): Section[] {
+  const {
+    deepMinutes: deep,
+    shortMinutes: short,
+    reflectMinutes: reflect,
+    plannerPolicy: policy,
+  } = settings
   return [
     {
       id: 'idea',
@@ -797,7 +797,7 @@ function sectionsFor(
     },
     {
       id: 'settings',
-      title: 'Settings, one by one',
+      title: 'Room menu and settings',
       body: (
         <div className="mt-1 space-y-3">
           <Setting name="Deep block / Short block">
@@ -815,6 +815,24 @@ function sectionsFor(
             The ranking policy described above. Currently{' '}
             {policy === 'prefer-deep' ? 'prefer deep blocks' : 'fill the most time'}
             .
+          </Setting>
+          <Setting name="Room menu: Focus room">
+            The coordinated colour and companion environment. Currently{' '}
+            {ROOMS[settings.roomId].label}. Changing it never turns sound on by itself.
+          </Setting>
+          <Setting name="Room menu: Ambient sound">
+            Plays only during a focus or priorities block and fades away at its edges.
+            Currently{' '}
+            {settings.ambience === 'off'
+              ? 'off'
+              : settings.ambience === 'room'
+                ? `the room sound — ${ambienceLabel(ROOMS[settings.roomId].suggestedAmbience)}`
+                : ambienceLabel(settings.ambience)}
+            {settings.ambience === 'off'
+              ? '.'
+              : ` at ${Math.round(settings.ambienceVolume * 100)}%.`}
+            {' '}The speaker icon on the timer mutes it temporarily and does not silence
+            the completion chime.
           </Setting>
           <Setting name="Pop the timer out when a block starts">
             Opens the always-on-top window for you as a block begins, rather than leaving
@@ -848,7 +866,7 @@ function sectionsFor(
         <>
           <P>
             The companion is a cat, and it reacts to what Mono is doing without ever
-            interrupting you. During a block it walks its strip of ground from left to
+            interrupting you. During a block it walks its room from left to
             right as the time passes, so where it is standing is roughly how far into the
             block you are — it is the progress indicator as well as the character. It
             also keeps hold of the note you wrote when you named the block.
@@ -860,6 +878,13 @@ function sectionsFor(
             behind. Nothing it says is stored anywhere — it is read back off the same
             history the timeline is drawn from, so it resets at midnight with everything
             else.
+          </P>
+          <P>
+            The room around it fills in from the day itself, and the small marks along
+            the ground read back completed blocks, deliberate breaks and the gaps that
+            did not go to plan. At the end of working hours the same facts become a
+            compact postcard. None of this is another score to maintain or another
+            piece of saved state: tomorrow begins with an empty room again.
           </P>
           <P>
             It is liveliest at the edges of a block and almost perfectly still in the

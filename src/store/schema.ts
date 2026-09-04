@@ -304,6 +304,23 @@ function sanitiseSettingsPatch(value: unknown): Partial<Settings> | null {
     if (typeof value.soundEnabled !== 'boolean') return null
     patch.soundEnabled = value.soundEnabled
   }
+  if ('roomId' in value) {
+    if (!['mono', 'ember', 'tide', 'moss'].includes(String(value.roomId))) return null
+    patch.roomId = value.roomId as Settings['roomId']
+  }
+  if ('ambience' in value) {
+    if (!['off', 'room', 'brown', 'pink', 'rain'].includes(String(value.ambience))) return null
+    patch.ambience = value.ambience as Settings['ambience']
+  }
+  if ('ambienceVolume' in value) {
+    if (
+      typeof value.ambienceVolume !== 'number' ||
+      !Number.isFinite(value.ambienceVolume) ||
+      value.ambienceVolume < 0 ||
+      value.ambienceVolume > 1
+    ) return null
+    patch.ambienceVolume = value.ambienceVolume
+  }
   // Absent from every log written before the mini window existed, which needs
   // no migration: a patch that was never appended cannot be replayed, so those
   // days simply fold to the default.
