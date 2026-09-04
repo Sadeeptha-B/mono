@@ -3,6 +3,12 @@ name: Deploy to GitHub Pages
 on:
     push:
         branches: [main]
+        # Prose changes cannot break the bundle, and this pipeline is the only
+        # thing standing between a commit and the live site — so a docs-only
+        # push skips it rather than spending five minutes proving nothing.
+        paths-ignore:
+            - '**.md'
+            - 'docs/**'
     workflow_dispatch:
 
 permissions:
@@ -15,7 +21,13 @@ concurrency:
     cancel-in-progress: true
 
 jobs:
-    build:
+    # Everything before the deploy is one job on purpose. Split across two, the
+    # second runner pays for its own boot, its own `npm ci`, and — because
+    # Playwright's webServer builds before it previews — a second production
+    # build, all of which cost more than the tests they were guarding. Built
+    # once here, the suite also runs against the exact bundle that ships rather
+    # than against a second build that happens to be made from the same commit.
+    verify:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v5
@@ -26,31 +38,44 @@ jobs:
                   cache: npm
 
             - run: npm ci
+
+            # Chromium is ~130 MB and is byte-identical between runs of the same
+            # Playwright release, so it is restored from cache and only
+            # downloaded when the lockfile moves it. The key covers the whole
+            # lockfile rather than the version alone: it is cheap to be wrong in
+            # the direction of an extra download.
+            - uses: actions/cache@v4
+              id: playwright-browsers
+              with:
+                  path: ~/.cache/ms-playwright
+                  key: playwright-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+
+            - if: steps.playwright-browsers.outputs.cache-hit != 'true'
+              run: npx playwright install --with-deps chromium
+
+            # The system libraries live on the runner image, not in the cache, so
+            # a cache hit still has to claim them — but that is apt with almost
+            # nothing left to do, not a fresh download.
+            - if: steps.playwright-browsers.outputs.cache-hit == 'true'
+              run: npx playwright install-deps chromium
+
             - run: npm run build
+            - run: npm test
+            - run: npm run test:e2e
+
+            - if: failure()
+              uses: actions/upload-artifact@v4
+              with:
+                  name: playwright-report
+                  path: playwright-report
+                  retention-days: 7
 
             - uses: actions/upload-pages-artifact@v5
               with:
                   path: dist
 
-    test:
-        needs: build
-        runs-on: ubuntu-latest
-        steps:
-            - uses: actions/checkout@v5
-
-            - uses: actions/setup-node@v5
-              with:
-                  node-version: 22
-                  cache: npm
-
-            - run: npm ci
-            - run: npm test
-
-            - run: npx playwright install --with-deps chromium
-            - run: npm run test:e2e
-
     deploy:
-        needs: [build, test]
+        needs: verify
         runs-on: ubuntu-latest
         environment:
             name: github-pages

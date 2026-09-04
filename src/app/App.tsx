@@ -17,12 +17,11 @@
  * frame first.
  */
 
-import { useLayoutEffect, useMemo, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { Clock } from '@/components/Clock'
 import { SettingsPanel } from '@/components/SettingsPanel'
-import { GuidePage } from '@/components/Guide/GuidePage'
 import { Companion } from '@/components/Companion/Companion'
 import { PixelCat } from '@/components/Companion/PixelCat'
 import { Stage } from '@/components/stage/Stage'
@@ -43,7 +42,7 @@ import {
   useHoursDraft,
   withIds,
 } from '@/components/TodayHours'
-import { headerControlClass } from '@/components/ui'
+import { GhostButton, headerControlClass, PrimaryButton } from '@/components/ui'
 import type { Composer } from '@/components/Timeline/SegmentEditor'
 
 import { MiniWindow } from '@/pip/MiniWindow'
@@ -61,8 +60,102 @@ import { paint } from '@/pip/styles'
 import { breakCost, countPlannedFocus, derivePlan } from '@/domain/planner'
 import { dayProgressFor } from '@/domain/dayProgress'
 import { dayKey, formatDuration, isWithinRegions, nextRegionStart } from '@/domain/time'
-import { useSession, toPlanInput, selectRegions } from '@/store/session'
+import { useSession, useStorageHealth, toPlanInput, selectRegions } from '@/store/session'
 import type { BlockKind } from '@/domain/types'
+
+/**
+ * The one piece of the app that is not in the bundle that opens it.
+ *
+ * The guide is a separate route you have to navigate to, and its prose is
+ * around 28 KB that the first paint was parsing in order to render a timer.
+ * It is fetched the moment that paint is done rather than when it is first
+ * wanted, so opening it a minute later is instant. The service worker
+ * precaches it, so this costs nothing offline or on the second visit; it buys
+ * the opening render, and only the opening render.
+ *
+ * Settings was deferred alongside it for a while — it is the last dialog left
+ * and it carries the whole of Radix, so it looked like the better half of the
+ * saving. It came back, and the reason is worth keeping. `Export` lives in
+ * that panel, and Export is what the storage warning sends you to when the
+ * browser has stopped saving and the day exists only in this tab. Deferring it
+ * put Mono's one rescue for its one unrecoverable failure behind a network
+ * fetch that can fail — and if it does fail in exactly that state, there is no
+ * copy to rescue the log with and no wording that makes it better. A dialog
+ * that has to work when everything else is going wrong is not a candidate for
+ * lazy loading, whatever it weighs.
+ */
+function useDeferred<T>(load: () => Promise<T>): { view: T | null; failed: boolean } {
+  const [state, setState] = useState<{ view: T | null; failed: boolean }>({
+    view: null,
+    failed: false,
+  })
+
+  useEffect(() => {
+    let live = true
+    void load().then(
+      (module) => {
+        if (live) setState({ view: module, failed: false })
+      },
+      () => {
+        if (live) setState({ view: null, failed: true })
+      },
+    )
+    return () => {
+      live = false
+    }
+  }, [])
+
+  return state
+}
+
+/**
+ * The guide, saying why it is not here.
+ *
+ * There is deliberately no retry button, and the reason is a property of the
+ * platform rather than a decision about the design. A dynamic import that
+ * fails is remembered as failed in the browser's module map: importing the
+ * same specifier again returns the same rejection *without going near the
+ * network*, so a retry that looks like one is a button that cannot work. Only
+ * a fresh document clears it.
+ *
+ * Which is why this asks the storage question before it offers the reload. A
+ * reload is free when the log is on disk and it is the whole day when it is
+ * not, and those are the same click. If the browser has stopped saving, the
+ * offer is the export instead — reachable, because settings is no longer
+ * something that can fail to arrive.
+ *
+ * A page rather than a dialog, because that is what it replaces: `#/guide` can
+ * be opened cold in its own tab, and what is missing there is the whole
+ * screen, not something layered over one.
+ */
+function GuideDidNotLoad({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const unsaved = useStorageHealth((s) => s.failedAt) !== null
+  const back = () => {
+    window.location.hash = ''
+  }
+
+  return (
+    <div
+      role="alert"
+      className="w-[min(26rem,calc(100vw-1.5rem))] rounded-2xl border border-line bg-surface p-6 shadow-2xl"
+    >
+      <h2 className="text-lg font-medium text-bright">The guide did not load</h2>
+      <p className="mt-1.5 text-sm leading-relaxed text-muted">
+        {unsaved
+          ? 'It failed to arrive over the network. This browser is also refusing to save, so today is only in this tab — export it before you reload anything.'
+          : 'It failed to arrive over the network. Everything you have done today is saved; reloading fetches the missing piece.'}
+      </p>
+      <div className="mt-5 flex gap-2">
+        {unsaved ? (
+          <PrimaryButton onClick={onOpenSettings}>Export today</PrimaryButton>
+        ) : (
+          <PrimaryButton onClick={() => window.location.reload()}>Reload Mono</PrimaryButton>
+        )}
+        <GhostButton onClick={back}>Back to Mono</GhostButton>
+      </div>
+    </div>
+  )
+}
 
 export function App() {
   const now = useNow()
@@ -75,6 +168,7 @@ export function App() {
   const mini = useMiniWindow()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const guide = useDeferred(() => import('@/components/Guide/GuidePage'))
   const [composer, setComposer] = useState<Composer | null>(null)
   const [setupStage, setSetupStage] = useState<SetupStageId>(FIRST_SETUP_STAGE)
   // The opening questions, re-opened after the day was already shaped. It is
@@ -206,6 +300,7 @@ export function App() {
     setSeenPhase(phase.name)
     if (phase.name === 'reconciling') setComposer(null)
   }
+
 
   const stage = stageFor(phase, setupOpen, setupStage)
   /**
@@ -390,12 +485,22 @@ export function App() {
   if (route === 'guide') {
     return (
       <>
-        <GuidePage
-          now={now}
-          active={session.active}
-          onOpenSettings={openSettings}
-          mini={mini}
-        />
+        {/* `#/guide` can be opened cold in its own tab, so there is a moment
+            before the page exists. It is the page's own background rather than
+            nothing, because a white flash between two dark screens is the one
+            part of this a reader would actually notice. */}
+        {guide.view ? (
+          <guide.view.GuidePage
+            now={now}
+            active={session.active}
+            onOpenSettings={openSettings}
+            mini={mini}
+          />
+        ) : (
+          <div className="flex min-h-dvh items-center justify-center bg-ink p-4">
+            {guide.failed && <GuideDidNotLoad onOpenSettings={openSettings} />}
+          </div>
+        )}
         {settings}
         {miniWindow}
       </>

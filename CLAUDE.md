@@ -17,10 +17,15 @@ here look odd on purpose.
 
 `docs/requirements.md` is the original brief, kept as history.
 
-For work on rooms, procedural ambience, companion progression, day trails or
-the postcard, read `docs/ambient-interactivity-context.md` before editing. It
-records the cross-surface ownership, browser constraints, test gaps and safe
-extension paths for that track.
+`docs/manual-qa.md` is the list of things no automated test can reach — real
+audio, a real always-on-top window, sleeping the machine. Work through the
+relevant part of it by hand when you touch one of those.
+
+**Where new documentation goes** is itself settled, in `docs/decisions.md`:
+docblock first, then a test, then that file, then the README, then here. A large
+change may keep a working document in `docs/wip/`, which is untracked and
+deliberately temporary — it is dissolved into those tiers when the change lands,
+so never leave lasting reasoning there and never assume one exists.
 
 ## The two invariants
 

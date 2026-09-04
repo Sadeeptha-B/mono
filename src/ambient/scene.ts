@@ -113,7 +113,21 @@ export const MILESTONE_SHAPES: readonly PixelShape[] = [
   { kind: 'rect', x: 35, y: 2, width: 1, height: 1, fill: 'short' },
 ]
 
-/** Lay out the domain-capped trail once for the product renderer and visual QA. */
+/**
+ * Lay out the domain-capped trail once for the product renderer and visual QA.
+ *
+ * The vocabulary, which is otherwise only legible in the contact sheet:
+ *
+ *   deep       a large warm stone
+ *   short      a small cool pebble
+ *   reflect    a lantern on a post
+ *   break      a low tuft, drawn in the rest colour
+ *   gap        an unlit dash — an abandoned block or a span spent away
+ *   aggregate  one muted mark standing for everything before the last 31
+ *
+ * Entries arrive capped at 32 from `dayProgressFor`, which is why the pitch
+ * below can be a fixed maximum rather than a scale fitted to the input.
+ */
 export function trailShapes(entries: readonly TrailEntry[]): PixelShape[] {
   if (entries.length === 0) return []
   // New marks extend one chronological trail from the left. Distributing a

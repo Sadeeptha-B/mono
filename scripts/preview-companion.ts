@@ -14,6 +14,15 @@
  * a browser DOM. Room and trail coordinates therefore live in a shared pure
  * module which this script paints with literal palette values. `sprite.test.ts`
  * remains the exact test for cat anchors.
+ *
+ * The sheet is a review artifact, not a fixture: both files are gitignored, and
+ * a successful run proves only that the shapes could be drawn. Contrast,
+ * occlusion and whether a tier looks like progress are the reasons to open it.
+ *
+ * Importing a union does not populate it. Adding a trail semantic or a scene
+ * tier makes this script compile against the new vocabulary while quietly
+ * continuing to draw the old set of cells, so add the cell by hand — an
+ * unreviewed shape is exactly what this command exists to prevent.
  */
 
 import { writeFileSync } from 'node:fs'

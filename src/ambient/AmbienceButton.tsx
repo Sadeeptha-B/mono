@@ -1,4 +1,18 @@
-/** The compact temporary playback control mounted in either timer surface. */
+/**
+ * The speaker in either timer surface, and the only mute the user ever sees.
+ *
+ * It renders nothing unless a sound is actually resolved *and* a block is
+ * running, so it is absent through breaks, prompts and the idle stage rather
+ * than sitting there greyed out. There is nothing to mute in those states, and
+ * a control that is present but inert only invites the question of what it
+ * would have done.
+ *
+ * `Resume ambience` is not a second feature. A browser will not start an
+ * AudioContext without a gesture, so a tab reloaded part-way through a block
+ * holds the intent but not the permission; the button says so and asks for the
+ * click, which is the honest version of an autoplay workaround. Both surfaces
+ * read one hook, so muting from the mini window shows here and the reverse.
+ */
 
 import type { AmbienceControls } from './useAmbience'
 

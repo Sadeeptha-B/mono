@@ -26,7 +26,19 @@
  */
 
 import { memo, useEffect, useMemo, useState, type PointerEvent } from 'react'
-import { motion, useReducedMotion } from 'motion/react'
+// `m` rather than `motion`, and the reason is worth the odd-looking import.
+// The `motion` proxy is a component that might do anything, so bundling it
+// drags in layout projection and drag handling — around 120 KB, for a cat that
+// only ever animates x, y, width and opacity on a duration.
+//
+// What decides which of those `m` can actually do is the `LazyMotion`
+// boundary, and it is deliberately not here: it wraps the whole app once, in
+// `main.tsx`, which explains why. It is `domAnimation`, which is animation and
+// exit plus the hover, tap, focus and in-view gestures — so most of what this
+// file might want next is already paid for. Only `drag` and `layout` are
+// outside it, and only those are worth widening to `domMax` for. Reaching back
+// for `motion` is never the answer; the bundle will say so either way.
+import { m, useReducedMotion } from 'motion/react'
 
 import {
   MARK_CROP,
@@ -252,7 +264,7 @@ export function PixelCat({
         </>
       )}
 
-      <motion.g
+      <m.g
         initial={false}
         animate={{
           x: variant === 'mark' ? 0 : walked,
@@ -270,7 +282,7 @@ export function PixelCat({
             <Pixels frame={SPARK} palette={palette} />
           </g>
         )}
-      </motion.g>
+      </m.g>
     </svg>
   )
 
@@ -373,7 +385,7 @@ function AnimatedSceneShape({
 
   return shape.kind === 'rect'
     ? (
-        <motion.rect
+        <m.rect
           x={shape.x}
           y={shape.y}
           width={shape.width}
@@ -384,7 +396,7 @@ function AnimatedSceneShape({
         />
       )
     : (
-        <motion.path
+        <m.path
           d={shape.d}
           {...paint}
           animate={opacity}
@@ -427,7 +439,7 @@ function Ground({
     <>
       <rect x={0} y={GROUND_Y} width={SCENE_W} height={GROUND_H} fill="var(--color-line)" />
       {lit && (
-        <motion.rect
+        <m.rect
           x={0}
           y={GROUND_Y}
           height={GROUND_H}

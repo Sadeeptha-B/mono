@@ -1,4 +1,20 @@
-/** An accessible quick room and sound menu for either application header. */
+/**
+ * The header's quick room and sound menu, on both the day and the guide route.
+ *
+ * It is a popover rather than a dialog in any behavioural sense. `role="dialog"`
+ * names it for assistive technology, but it is deliberately not modal and not
+ * focus-trapped: Escape closes it and returns focus to the trigger, a pointer
+ * press outside closes it, and that is the whole of its dismissal contract. If
+ * it ever grows enough controls to feel like a form, that decision is worth
+ * revisiting — for three radio groups and a range it would be ceremony.
+ *
+ * Choosing an option deliberately leaves it open. Room, sound and volume are
+ * one decision made through three controls — you pick Tide, hear what it
+ * suggests, then bring the level down — and a menu that closed on the first
+ * click would make that three trips. It is also why none of this was added to
+ * `SettingsPanel`: there is no second copy to keep in step, and the choice gets
+ * made where you can immediately see and hear the result.
+ */
 
 import { useEffect, useRef, useState } from 'react'
 

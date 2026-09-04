@@ -39,3 +39,6 @@ playwright/.cache
 # contact sheet from scripts/preview-companion.ts
 companion-preview.png
 companion-preview.svg
+
+# working documents for a change in flight; dissolved, never committed
+docs/wip/

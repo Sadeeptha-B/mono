@@ -19,10 +19,10 @@ Three more documents, for anyone picking this up:
 - **[docs/decisions.md](docs/decisions.md)** — the calls that were made
   deliberately and the traps that have already cost an afternoon. Read it
   before changing something that looks odd; several things are odd on purpose.
+  It also settles where new documentation goes.
+- **[docs/manual-qa.md](docs/manual-qa.md)** — what has to be checked by hand,
+  because no test can hear audio or open a real always-on-top window.
 - **[CLAUDE.md](CLAUDE.md)** — the short orientation, auto-loaded by agents.
-- **[docs/ambient-interactivity-context.md](docs/ambient-interactivity-context.md)**
-  — the authoritative handover for rooms, ambience, companion progression,
-  PiP integration and the visual-QA tooling.
 
 Everything descriptive lives in the source. Every file worth reading opens with
 a docblock explaining what it is for.
@@ -106,6 +106,11 @@ about how the day has gone.
 
 ## Behaviour worth knowing
 
+The full description of how Mono behaves is the guide at `#/guide`, and it is
+built from the current settings — change a duration and the explanation changes
+with it. That is the copy to trust. These are the rules everything else is
+shaped around:
+
 - **Blocks are `deep` (45m) and `short` (20m).** Free time is filled by
   enumerating every combination that fits and ranking it. The default,
   `prefer-deep`, takes one deep block over a free hour rather than shredding it
@@ -113,23 +118,17 @@ about how the day has gone.
   on raw minutes, usually by never scheduling a deep block at all.
 - **Working hours are the positive space.** Mono plans inside declared work
   regions and nowhere else, and the end of the last region is the planning
-  horizon. An unstructured evening is simply a gap between two regions:
-  planning stops before it and resumes after. With no regions there is no plan
-  — an empty day rather than a guess.
+  horizon. An unstructured evening is simply a gap between two regions. With no
+  regions there is no plan — an empty day rather than a guess.
 - **Margin is always rounded down.** A 50-minute gap holds one block and five
   dead minutes, never more.
 - **Breaks are never planned for you.** The timeline shows the maximum focus the
   day can hold, so taking a break is a visible trade — the duration prompt tells
   you what it costs before you commit.
-- **A pinned break and a commitment never share a minute**, and the rule is
-  kept from both ends. Adding or moving a commitment clears the breaks it
-  swallows — a pin inside its span, the time either side counted, would be
-  merged into the meeting and drawn as rest nobody gets — and only those. Pins
-  elsewhere in the day stay, because the day changing shape around a break you
-  can still take is a reason to let you move it, not to delete it. From the
-  other end, a break cannot be pinned or dragged across a commitment: the
-  composer names the one in the way and the reducer refuses the event, so a log
-  replays to the same day whichever order it was written in.
+- **A pinned break and a commitment never share a minute**, and the rule is kept
+  from both ends: adding a commitment clears the breaks it swallows, and a break
+  cannot be dragged across one. A log therefore replays to the same day whichever
+  order it was written in.
 - **Blocks can be abandoned but not paused.** A paused timer means `endsAt` is
   no longer a fixed instant, which is where timer bugs come from.
 - **Coming back after being away never auto-completes a block.** If the app was
@@ -140,80 +139,11 @@ about how the day has gone.
 - **The day opens with two questions** on the stage: what is already fixed, then
   today's hours. Commitments come first because they are the part of the day you
   cannot move, so they decide how much is left to declare. Neither gates the
-  other — the stage carousel moves between them freely and `Start the day`
-  finishes from either — but the carousel never skips ahead to naming a block.
-  Finishing appends `day/shaped`, a record of having been *asked*: an empty day
-  is a real answer, and confirming an unedited shape deliberately writes no
-  region override, so the day stays derived from the default.
-- **The calendar follows the hours question as it is typed.** The draft is fed
-  straight to `derivePlan` rather than stored anywhere, so adding an evening
-  stretch redraws the evening beside you; nothing is written until the question
-  is finished, and an untouched draft is never written at all. Opening the
-  calendar's own `Hours` drops the draft, because that editor now owns the
-  answer.
-- **Both questions stay reachable between blocks.** The strip goes back to them
-  whenever nothing is running, and `Back to the day` returns; `day/shaped` is
-  not appended a second time, because coming back to change an answer is not
-  being asked again. While a block runs the strip is an indicator only. Only one
-  editor of today's hours is ever on screen — opening the stage's question
-  closes the calendar's `Hours`, and opening `Hours` takes the question off the
-  stage — because each holds its own draft and the second save would silently
-  win.
-- **A commitment can cost time either side of itself.** `prepMin` and
-  `recoverMin` cover getting ready, travelling and settling back in — a 4pm swim
-  is an hour long and occupies 3:30 to 5:20. The planner keeps the whole span
-  clear; the calendar draws the travel as its own entries so the commitment
-  still shows its real length. Both are optional, so logs written before they
-  existed replay unchanged. Read them through `commitmentSpan`. The fold that
-  hides the pair goes both ways, and closing it zeroes them: a margin shapes the
-  plan whether or not its field is on screen, so hiding one would be keeping
-  time clear with nothing on the form to say why.
-- **Commitments** after the opening question are added from the calendar header
-  (`+ Commitment`). Both surfaces resolve a wall-clock time against today's
-  calendar at the edge; the domain only ever sees epoch milliseconds. A
-  commitment outside every work region still shows on the calendar, but it does
-  not extend the horizon. A commitment stops shaping the plan when its span
-  ends and stays drawn, dimmed, where it was — the axis is the day as it
-  happened as well as the day as planned.
-- **The timeline is one calendar day**, and midnight is the wall at both ends.
-  The planner scopes by when a thing *starts*; a span can still reach out of
-  that day — a 00:10 meeting with half an hour of getting ready begins at 23:40
-  the night before — so `layout` clamps its range to the day and clips each
-  entry to it, the same treatment the region bands get. The clip is on the
-  drawing, never on the entry: the block still reads back the real times.
-- **What the day holds is scoped in the domain.** `derivePlan` scopes `history`,
-  `commitments` and `overrides` to the day `now` falls in, using the same
-  predicate `vitals` uses, so the axis and the companion cannot disagree about
-  what today holds. The log itself keeps everything — it is the journal, and the
-  export — but a *drawing* of every block ever completed is not a day.
-- **The axis starts at the first thing there is to show** — `now`, or the
-  earliest entry, whichever is earlier. A work region does not hold it open, so
-  a day opened at two against nine-to-six hours starts at two rather than
-  padding itself with five empty hours; the region bands are clipped to what is
-  left. Stacked under the stage on a phone, that padding *was* the first
-  screenful of calendar.
-- **The two things you wrote can be rewritten.** A pinned break and a commitment
-  each carry a `✎` on their block, which reopens the composer that made them,
-  seeded from what they say now. The opening question's list carries the same
-  pair on every row, and lists them in the order the day happens rather than the
-  order they were named. That list is the answer to the question, so the form
-  under it folds away once there is one — `+ Another commitment` reopens it, and
-  a day with nothing fixed yet shows the form instead, there being nothing to
-  fold back to. Editing keeps the id, so the plan re-derives
-  around the same thing moved rather than around a new one. Nothing else on the
-  axis is editable: a focus block is output, and the way to move it is to change
-  the hours or the commitments it was planned around.
+  other, both stay reachable between blocks, and the calendar follows the hours
+  question as it is typed.
 - **Outside working hours Mono says so** and names the next stretch, rather than
   offering a block in time you declared unstructured. The way to work anyway is
   to change the hours.
-- **The pop-out window is one React tree with the tab**, not a second copy of
-  the app — the same store, the same ticker, one reconciler — so the two can
-  disagree about nothing. While it is open it lends the ticker its own timer,
-  because a hidden tab has its intervals throttled to about one a minute and a
-  countdown you popped out to watch is the last thing that should crawl. It also
-  suppresses end-of-block notifications, which would be duplicating a window you
-  can already see, and holds back a service worker update, because the reload
-  would take the window off your desktop with no way for the app to put it back.
 
 ## Working hours
 
@@ -284,39 +214,10 @@ Background notifications are best-effort. Without a push server a notification
 fired from a frozen tab can be delayed or dropped; the guarantee is the
 reconcile-on-wake path, not the notification.
 
-## Verifying the timer by hand
+## Verifying by hand
 
-Two things the tests cannot cover:
-
-1. Start a block, background the tab for five minutes, come back. The remaining
-   time must be correct and no block silently completed.
-2. Start a block and sleep the machine across its end. You should get the
-   "You were away" prompt with the right elapsed span.
-
-And three for the pop-out, which no test can reach — Playwright is never given a
-real picture-in-picture window, and the e2e specs stand it in with an iframe:
-
-3. Start a block, pop out, then bury the tab behind something else for five
-   minutes. The countdown must still move every second and the cat must still
-   walk. This is the one that decides whether the feature works at all.
-4. Close the mini window from its own control rather than Mono's. The app must
-   carry on, and `Pop out` must open a fresh one.
-5. Drag the mini window to a second monitor and resize it, then start another
-   block. It must come back where you left it, at the size you left it —
-   Chromium reuses the last placement unless a site opts out, and Mono
-   deliberately does not, so this is the whole of the multi-monitor story.
-6. Sleep the machine across a block end with the window open. "You were away"
-   must appear in both, and answering it in either must resolve both.
-
-And four for ambient audio, whose output a browser test cannot hear:
-
-7. Choose each sound, let its six-second preview end, and listen for a clean
-   loop with no click at the join. After muting a running block, finish it and
-   choose a sound while idle; the explicit preview must still be audible.
-8. Start a block, mute from the mini window's speaker icon, and resume from the
-   main timer's icon. The two controls must follow each other and the completion
-   chime must still play.
-9. Reload during a running block. Sound must remain stopped until the muted
-   speaker icon is pressed, then return without restarting or changing the timer.
-10. Background the tab, sleep the machine across the end, and return. Ambience
-    must be gone before the reconciliation question is answered.
+Some of this cannot be tested. A browser test cannot hear a loop seam, and
+Playwright is never given a real picture-in-picture window — the e2e specs stand
+it in with an iframe. [docs/manual-qa.md](docs/manual-qa.md) is the list of
+checks that close that gap: the timer across sleep, the pop-out across monitors,
+every ambient sound, reduced motion, and the end-of-day card.

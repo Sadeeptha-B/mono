@@ -4,6 +4,23 @@
  * AudioContext is created only inside a user gesture. Ambience intent may be
  * declared before that (notably after restoring a running block), and is
  * reconciled as soon as Resume supplies the gesture the browser requires.
+ *
+ * One context, two gain buses. The chime is a signal — the block ended, and you
+ * may not be looking — while ambience is furniture, so muting the furniture
+ * must never take the signal with it. Keep them separate through any change
+ * here; the shared context exists to avoid a second one, not to merge them.
+ *
+ * Adding a sound: widen `AmbienceSelection` and `AmbienceKind`, list it in the
+ * Room menu, add it to the id check in `sanitiseSettingsPatch`, and give it a
+ * deterministic buffer here. Deterministic matters — the buffers are cached per
+ * kind after first synthesis, so a crossfade must not regenerate noise on the
+ * main thread, and a fixed seed keeps the visual-QA and test runs repeatable by
+ * never drawing on application randomness. Blend the tail toward the first
+ * sample or the loop will click, and then go and listen to the seam on real
+ * hardware, because nothing in the test suite can hear it.
+ *
+ * Whatever else changes, room selection must not become an audio opt-in. Mono
+ * is silent until someone asks for sound.
  */
 
 import type { AmbienceKind } from './rooms'

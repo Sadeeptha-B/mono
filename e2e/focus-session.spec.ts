@@ -1384,12 +1384,14 @@ test('a time field is never drawn narrower than it can render', async ({ page })
   }
 })
 
-test('a browser that will not save says so, and keeps working', async ({ page }) => {
-  // The failure Mono cannot recover from on its own: the log is the one thing
-  // here that cannot be rebuilt from anything else, and a quota error is a
-  // silent way to lose a day. Uncaught it is worse than silent — zustand's
-  // persist throws it out of the store action, so the click that shaped the day
-  // would shape it and then not finish leaving the question.
+/**
+ * A browser that refuses to write the log, from before the first load.
+ *
+ * Thrown out of `setItem` rather than faked in the store, because what is being
+ * tested is how Mono survives the real thing: zustand's persist lets a quota
+ * error out of whichever store action happened to trigger the write.
+ */
+async function refuseToSave(page: Page) {
   await page.addInitScript(() => {
     const original = Storage.prototype.setItem
     let refusing = true
@@ -1401,6 +1403,18 @@ test('a browser that will not save says so, and keeps working', async ({ page })
       return original.call(this, key, value)
     }
   })
+}
+
+/** Let the writes through again, from this point on. */
+const allowSaving = (page: Page) =>
+  page.evaluate(() => (window as unknown as { __allowSaving: () => void }).__allowSaving())
+
+test('a browser that will not save says so, and keeps working', async ({ page }) => {
+  // The failure Mono cannot recover from on its own: the log is the one thing
+  // here that cannot be rebuilt from anything else, and a quota error is a
+  // silent way to lose a day. Uncaught it is worse than silent — the click that
+  // shaped the day would shape it and then not finish leaving the question.
+  await refuseToSave(page)
 
   // Mono records the day it woke up on, so the very first write is on load and
   // the warning is up before anything has been asked of it.
@@ -1420,9 +1434,74 @@ test('a browser that will not save says so, and keeps working', async ({ page })
 
   // A write that lands carries the whole log, so it catches up on everything
   // the refused ones missed — and there is nothing left to warn about.
-  await page.evaluate(() => (window as unknown as { __allowSaving: () => void }).__allowSaving())
+  await allowSaving(page)
   await page.getByRole('button', { name: 'Start deep block' }).click()
   await expect(page.getByRole('button', { name: 'Not saving' })).toHaveCount(0)
+})
+
+/**
+ * The guide is the one view Mono fetches after the first paint, so it is the
+ * one view that can fail to arrive. What it offers when it does is a data
+ * safety question rather than a cosmetic one, which is why both branches of it
+ * are pinned here.
+ *
+ * A reload is the only thing that can fix a failed dynamic import — the browser
+ * remembers the failure in its module map, so importing the same specifier
+ * again never even reaches the network. But a reload is free only while the log
+ * is on disk. If the browser has also stopped saving, the same click is the
+ * whole day, and the offer has to be the export instead.
+ */
+test.describe('a guide that never arrives', () => {
+  // The chunk is blocked at the network, so the service worker must not be
+  // allowed to answer from its precache and route around the point of the test.
+  test.use({ serviceWorkers: 'block' })
+
+  /**
+   * Cut the guide's chunk off, before anything has asked for it.
+   *
+   * Matched on Vite's name for it, loosely, because the hash changes every
+   * build. If that convention ever changes this stops matching and the guide
+   * simply loads — which fails the assertions below rather than passing them,
+   * and that is the right way round for a test about something not arriving.
+   */
+  const blockTheChunk = (page: Page) =>
+    page.route('**/GuidePage-*.js', (route) => route.abort())
+
+  test('says so, and offers the reload that fixes it', async ({ page }) => {
+    await blockTheChunk(page)
+    await openMono(page)
+
+    await page.getByRole('link', { name: 'Guide' }).click()
+    const card = page.getByRole('alert')
+    await expect(card).toContainText('The guide did not load')
+    await expect(card).toContainText('is saved')
+    await expect(card.getByRole('button', { name: 'Reload Mono' })).toBeVisible()
+
+    // And it is not a dead end: the app is still there to go back to.
+    await card.getByRole('button', { name: 'Back to Mono' }).click()
+    await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+  })
+
+  test('never offers that reload while the log is unsaved', async ({ page }) => {
+    await refuseToSave(page)
+    await blockTheChunk(page)
+    await openMono(page)
+    await expect(page.getByRole('button', { name: 'Not saving' })).toBeVisible()
+
+    await page.getByRole('link', { name: 'Guide' }).click()
+    const card = page.getByRole('alert')
+    await expect(card).toContainText('only in this tab')
+
+    // The whole reason this branch exists: the click that would delete the day
+    // is not on the card at all, rather than there and discouraged.
+    await expect(card.getByRole('button', { name: 'Reload Mono' })).toHaveCount(0)
+
+    // What is offered instead reaches the export — which is in the opening
+    // bundle precisely so that it cannot be the second thing to fail here.
+    await card.getByRole('button', { name: 'Export today' }).click()
+    await expect(page.getByRole('dialog')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Export', exact: true })).toBeVisible()
+  })
 })
 
 /**

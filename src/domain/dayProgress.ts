@@ -4,6 +4,19 @@
  * Like the plan and the existing vitals, this is a pure projection of the
  * append-only history. The only provisional input is a block whose timer has
  * landed on the completion prompt but has deliberately not been banked yet.
+ *
+ * Nothing this returns is ever persisted, and that is the point rather than an
+ * omission. A stored scene tier, trail or milestone would be a second authority
+ * beside the log it was computed from, and the two would eventually disagree
+ * about a day that only one of them can actually reconstruct. It also means the
+ * midnight reset needs no event: the projections filter by the day a segment
+ * started in, so a new day is empty because there is nothing in it yet.
+ *
+ * A milestone exists only for a pending completion — it is a remark made at a
+ * seam, not a badge — so it is null every other time this is called. What the
+ * trail records is wider than what the counters do: an abandoned block and an
+ * away span both leave an unlit gap, because a day that is drawn honestly has
+ * to include the parts that did not work. Nothing later removes an earned mark.
  */
 
 import { completeBlock } from './events'

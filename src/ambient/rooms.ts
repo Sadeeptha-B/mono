@@ -5,6 +5,27 @@
  * browser chrome, picture-in-picture's first paint, suggested sound and scene
  * selection all read it. The CSS declarations mirror these palettes because
  * Tailwind utilities need real custom properties in a stylesheet.
+ *
+ * Adding a room touches five files, and the order matters less than the fact
+ * that missing one of them fails quietly rather than loudly:
+ *
+ *  1. `domain/types.ts` — widen the `RoomId` union.
+ *  2. Here — the label, description, swatch, full palette and suggested sound.
+ *  3. `store/schema.ts` — the id list in `sanitiseSettingsPatch`. This is the
+ *     one that bites: an unlisted room makes an imported settings event look
+ *     malformed, so the whole patch is dropped and the user silently lands back
+ *     on Mono with no error anywhere.
+ *  4. `index.css` — all twelve tokens under the new `data-room` selector. A
+ *     test parses this file and requires it to equal the palette above.
+ *  5. `ambient/scene.ts` — the room's own scenery at tiers 1, 2 and 3.
+ *
+ * Then run `npm run companion` and look at it. Palette contrast, occlusion and
+ * whether an earned tier reads as *earned* are not things a test can see.
+ *
+ * Do not tint the cat to make a room feel more distinct. Its fur, shade, eyes
+ * and paper are fixed across every room; only the semantic accent follows. A
+ * room is the surfaces, the accent and the scenery — a recoloured animal would
+ * read as four cats rather than one cat in four rooms.
  */
 
 import type { RoomId } from '@/domain/types'

@@ -17,6 +17,45 @@ and it only survives if entries accumulate.
 
 ---
 
+## Where documentation goes
+
+Five places, in order of preference. The first one that can hold a fact owns
+it, and nothing that fits in an earlier tier is repeated in a later one.
+
+1. **The docblock of the file it is about.** Anything whose scope is one file:
+   what it is for, why it is shaped this way, what breaks if you change it,
+   what was tried here and rejected. This is the default and it takes most of
+   the traffic. It cannot drift, because moving the code moves the explanation
+   with it.
+2. **A test.** Where the fact is checkable, prefer an assertion to a paragraph.
+   `scene.test.ts` pinning the floor to `SPRITE_TOP + SPRITE_H` is a
+   cross-module invariant that would otherwise be a sentence nobody reads until
+   after they had broken it.
+3. **This file.** Reasoning that spans files and so has nowhere else to live,
+   traps, what was deliberately not built, and the dated log.
+4. **`README.md`.** What Mono is, how to run it, how the pieces fit together,
+   what it cannot do. Orientation for a person arriving, not a specification:
+   the in-app guide quotes live settings, which makes it the one description of
+   behaviour that cannot disagree with the app.
+5. **`CLAUDE.md`.** The map and the two invariants, so an agent gets its
+   bearings without being told where to look. Pointers, and nothing else.
+
+### Track documents are scaffolding, not artifacts
+
+A change large enough to need a working surface should get one, in `docs/wip/`,
+which is untracked. It may hold every kind of thing this file bans — file
+inventories, test counts, a base commit, a verification table — because that is
+exactly what it is for while the work is in flight.
+
+It is then **dissolved rather than merged**. Every paragraph goes to a docblock,
+a test, an entry here, or the bin, and the document itself is deleted. The
+derivable half is safe in there precisely because it never outlives the work
+that made it true. A track document that survives its track becomes the thing
+`HANDOVER.md` was: authoritative-looking, half rotted, and read in preference to
+the source because it is longer.
+
+---
+
 ## The two invariants
 
 Everything else is negotiable. These are not.
@@ -91,6 +130,19 @@ Never introduce a `remaining -= 1` counter.
 | Neither a break nor the priorities timer ends a streak | Both are things the app actively wants you to do. A counter that punished them would argue with the rest of the product. |
 | Utterances are derived from the numbers, not drawn from a phrase pool | A pool would need a seed to stop it churning on the tick, and it would be the one part of Mono that talks for the sake of talking. Everything else here states a fact and stops. |
 | The icons are generated from the companion's own frames | So the app icon cannot quietly stop being a picture of the thing in the corner of the app. |
+
+### Rooms and ambience
+
+| Decision | Why |
+|---|---|
+| Silent until asked, including for logs written before sound existed | An app that starts making noise because you updated it has spent trust it did not earn. A missing setting folds to `off`, so an old install is quiet and a room choice never implies a sound. |
+| Sound is synthesised locally, never streamed or bundled | Brown, pink and rain are a few lines of Web Audio. A track would mean a file to ship or a host to depend on, and Mono would stop being a thing that works with the network off. |
+| Preferences are persisted; progress is derived | `roomId`, `ambience` and `ambienceVolume` are a settings patch like any other. The scene tier, trail, milestones and postcard are projections of the same history the timeline is drawn from. Storing either of the latter would put a saved number beside the log it came from, and the day would eventually be told two ways. |
+| The rooms are four curated palettes, not a colour picker | Every room has to keep twelve semantic tokens legible against pixel art at four growth tiers. That is a design decision each time, and it is checked by eye through `npm run companion`. An arbitrary colour is a promise the contact sheet cannot keep. |
+| Room and sound live in a header menu, not in Settings | They are chosen by looking and listening, so the control belongs where the result is visible. Putting them in both places would have created a second copy to keep in step; they were never added to Settings, so there is nothing to reconcile. |
+| The session mute is not an event | It resets on reload and never reaches the log. The log is the day's journal and how loud the room was is not part of what the day was — see `useAmbience.ts` for the boundary it does and does not govern. |
+| The companion's growth is the same history, told as a room | Tiers at one, three and six completed blocks, and a trail that keeps the order things happened in. It is not a score: nothing is spent, nothing carries to tomorrow, and an abandoned block adds an honest gap rather than taking a mark away. |
+| The focus tap is a tour, not a reward | Tapping during a block steps through how the room *can* grow and then puts it back. It writes no event and unlocks nothing, which is what keeps it from becoming a reason to tap instead of work. |
 
 ---
 
@@ -206,6 +258,31 @@ a bare `useSession()`; it re-renders every second anyway, so this costs nothing
 today. Anything expensive that is keyed on the *day* rather than the second —
 the companion's vitals, for one — should stay keyed that way.
 
+**A room id lives in four places and only three of them fail loudly.**
+`RoomId` in `domain/types.ts`, `ROOMS` in `ambient/rooms.ts`, the twelve tokens
+in `index.css`, and a hardcoded id list in `sanitiseSettingsPatch`. The first
+three are caught by the compiler or by the test that parses the stylesheet
+against the palette metadata. The fourth is not: an id the sanitiser does not
+recognise makes an imported settings event look malformed, so the whole patch is
+dropped and the user lands silently back on Mono. The playbook at the top of
+`rooms.ts` lists all four for this reason.
+
+**The palette duplication between `rooms.ts` and `index.css` is deliberate.**
+JavaScript needs the values for swatches, the PiP fallback and the Node contact
+sheet; Tailwind needs literal custom properties in a stylesheet. Neither can be
+generated from the other at the point it is needed, so they are kept honest by a
+test that parses the authored CSS and requires every room block to equal its
+metadata. Change one and the test will tell you about the other.
+
+**The focus-tap preview can show a *lower* tier than the day has earned.**
+Tapping during a block starts one tier past the factual one and wraps from three
+back to one, so a tier-3 afternoon briefly displays a tier-1 room and fewer cat
+markings. This looks exactly like a bug and is not one: the tap is a tour of how
+the room grows, the state belongs to `PixelCat` rather than to the projection,
+and it expires back to the truth. Anything that "fixes" it by clamping to the
+earned tier removes the point of the interaction on the days most likely to use
+it.
+
 ---
 
 ## Deliberately not built
@@ -218,6 +295,20 @@ the companion's vitals, for one — should stay keyed that way.
 - **No editing a block's purpose after it starts.**
 - **No component tests.** Testing is either pure-domain or full e2e. Nothing
   mounts a component in vitest.
+- **No light theme, and no custom room colours.** See the rooms decision above.
+- **No external audio.** No Spotify, no Apple Music, no downloadable tracks, no
+  streamed anything. Ambience is synthesised or it does not exist.
+- **No points, levels, currencies, unlock checklists or room collections.** The
+  room grows within a day and starts again tomorrow. Anything that accumulated
+  across days would make the pressure to keep it the reason to use the app.
+- **No global streaks.** The streak inside a day is a fact about the day. A
+  streak across days is a debt.
+- **No shareable or downloadable postcard.** It is a card at the end of your own
+  day, not something to publish.
+- **No analytics, and no accounts.** Unchanged since the first line of this file.
+- **No second always-on-top window.** Document picture-in-picture gives one per
+  document and no way to place it; the feature is designed around that rather
+  than against it.
 
 ---
 
@@ -1622,3 +1713,181 @@ section tree accepts one live `Settings` snapshot rather than that object plus
 a second list of selected fields. A settings change therefore rebuilds every
 example together, while the one-second timer can re-render the header without
 rebuilding static prose.
+
+**2026-09-04 — The ambient track's handover document was dissolved.**
+
+`docs/ambient-interactivity-context.md` was 926 lines written to carry the
+ambient work while it was in flight, and it was the right thing to have at the
+time. What it had become by the end was the thing `HANDOVER.md` was in August:
+a status snapshot, a base commit, two file inventories, a test count, a
+last-verified table and a 22-row ownership map that `grep` answers — sitting
+next to 900 lines of real reasoning, and authoritative-looking enough to be read
+in preference to the source.
+
+Rather than refresh it, it was routed and deleted. The file-local reasoning went
+into docblocks: why `theme.ts` refuses to write an inline body colour, what the
+session mute in `useAmbience.ts` does and does not govern, why `RoomMenu` is a
+popover that stays open when you choose something, why `AmbienceButton`
+disappears rather than greying out. The playbooks went to the file you would
+start editing — adding a room is documented at the top of `rooms.ts`, adding a
+sound at the top of `audio.ts` — because that is where you are standing when you
+need them. The trail's visual vocabulary went to `trailShapes`, which is the
+only place it is not legible from the coordinates. Cross-file reasoning became a
+`Rooms and ambience` table above, three traps, and eight more entries under
+*Deliberately not built*. The manual checks became `docs/manual-qa.md`, which
+also absorbed the README's hand-verification list. Everything derivable was
+binned rather than moved.
+
+The general rule this produced is at the top of this file: five tiers, and a
+track document is scaffolding that lives in an untracked `docs/wip/` and is
+dissolved when the work lands. That is what makes it safe for one to hold file
+lists and test counts — it never outlives the moment they were true.
+
+The README lost a third of its length in the same pass. Its *Behaviour worth
+knowing* list had grown into a second copy of a specification whose live version
+is the in-app guide, and the guide is built from current settings and therefore
+cannot disagree with the app. The load-bearing rules stayed; the detail now has
+one home instead of two.
+
+**2026-09-04 — CI builds once, and the e2e suite tests the bundle that ships.**
+
+The deploy pipeline was three jobs — build, then test, then deploy — and took
+upwards of ten minutes to do about ninety seconds of work. `tsc -b` and the
+bundle are around thirty seconds on a Linux runner, the 334 unit tests are
+eight, and the 64 Playwright specs run against a paused clock in well under a
+minute. Everything else was overhead, and nearly all of it was structural.
+
+`test` declared `needs: build`, which bought nothing: the test job checked the
+repository out again, installed again, and then built the app a *second* time,
+because Playwright's `webServer.command` was `npm run build && vite preview`.
+The dist the build job had just produced was uploaded to Pages and never seen
+by a test. Two runners, two installs, two builds, strictly in series, so that
+the thing being verified was a different build from the thing being deployed.
+
+So the two collapsed into one `verify` job. It builds once, runs the unit tests,
+and points Playwright at that same dist — which is faster and also a stronger
+check, since the suite now exercises the artifact that is about to go live
+rather than a rebuild that merely shares its commit. `deploy` still stands
+alone, because `actions/deploy-pages` needs the `github-pages` environment.
+
+That leaves `playwright.config.ts` needing to know who built the app, which is
+the one odd-looking thing here: its `webServer.command` previews only under
+`CI` and still builds first everywhere else. `npm run test:e2e` is documented in
+three places as self-contained, and it stays that way for a human running it
+locally; CI is the only caller that has already done the work.
+
+Chromium is now restored from `~/.cache/ms-playwright` rather than downloaded
+each run, keyed on the whole lockfile. A cache hit still runs
+`playwright install-deps`, because the system libraries live on the runner
+image and not in the cache — that is apt with nothing to fetch, not a second
+download. Playwright also gets four workers in CI: the specs are independent and
+spend their time waiting on a browser, so half of a four-core runner was sitting
+idle under the 50% default.
+
+The trap, for anyone tempted to trim `npm ci` further: **do not add
+`--omit=optional`.** Rollup ships its platform binaries as optional
+dependencies, so omitting them does not skip `sharp`, it breaks `vite build`.
+
+**2026-09-04 — The bundle was one 534 KB chunk, and about a fifth of it was a cat.**
+
+Vite had been warning about the chunk for a while. Read with a source map, the
+warning turned out to be specific rather than general: 120 KB of it was Motion,
+imported by exactly one file, `PixelCat.tsx`, which animates x, y, width and
+opacity on a duration and nothing else. The `motion` proxy is a component that
+might do anything, so importing it brings layout projection and drag handling
+whether or not anything drags. `m` behind a `LazyMotion` boundary with the
+`domAnimation` feature set is the same four animations for 74 KB.
+
+Be precise about what that feature set is, because it is easy to be wrong in
+the expensive direction: `domAnimation` is animation and exit *plus* the hover,
+tap, focus and in-view gestures. Only drag and layout projection are outside
+it, and `domMax` is exactly those two added. So a future hover or tap on the
+cat needs no bundle change at all, and only a drag would — while reaching back
+for `motion` is never the answer either way.
+
+That boundary is in `main.tsx`, wrapping the whole app, and it belongs there
+rather than around the cat for a reason that is only visible in Motion's
+source. Handed a feature set directly — as opposed to a function returning one
+— `LazyMotion` merges it into Motion's *global* feature definitions during
+render, allocating a fresh object and a fresh context value each time. Inside
+`PixelCat` that ran once per cat per second, because the ticker re-renders
+every cat on screen and there are several. At the root it is a child of
+nothing that re-renders, so it happens once for the life of the tab. The mini
+window is covered by the same boundary: it is a portal rather than a second
+React root, so it is inside that tree even though it is in another document.
+
+The guide came out next: 28 KB of prose parsed on every cold open in order to
+render a timer. React and Motion are then split out by hand in
+`vite.config.ts`, which is a *caching* decision and not a size one: Mono is a
+precached PWA, so an ordinary release used to make the service worker refetch a
+file with React inside it, and now refetches the app chunk alone.
+
+**Settings was deferred too, for about an hour, and bringing it back is the
+more useful half of this entry.** It looked like the better saving — the whole
+of Radix's dialog, focus scope, scroll lock and dismissable layer, 46 KB to
+render nothing most of the time. What that missed is what is *inside* it.
+`Export` lives in settings, and Export is where the storage warning sends you
+when the browser has stopped saving and the day exists only in this tab. So
+deferring it put Mono's one rescue for its one unrecoverable failure behind a
+network fetch that can fail, and if both failed together there was no copy left
+to rescue anything with. The fallback card written for that case made it worse
+before it made it better: it told the user their work was saved and offered a
+reload, which in that exact state is the click that deletes the day.
+
+There is no wording that fixes that, because the missing thing is the export
+itself. The rule is the one in the docblock: **a dialog that has to work when
+everything else is going wrong is not a candidate for lazy loading, whatever it
+weighs.** The 16 KB gzipped it costs is the cheapest thing in this entry.
+
+It also took a hand-rolled modal with it, which `Dialog`'s own docblock had
+already argued against — focus trapping, escape handling, scroll locking and
+the aria wiring are easy to get subtly wrong, and the fallback got all four
+wrong: focus stayed on the covered button behind it, escape did nothing, and
+tab walked into the inert page. Radix is back to doing that job.
+
+The critical path went from 534 KB to 460 KB, 166 KB to 144 KB gzipped, and the
+total shipped fell by the 46 KB that Motion stopped sending. The bundle is
+`react`, `motion`, the app, and the guide arriving after the first paint.
+
+**The trap, and it cost an afternoon: `React.lazy` does not work under a paused
+clock.** The obvious way to defer those two views is `lazy()` behind a
+`<Suspense>`, and it works perfectly in a browser and fails in thirteen e2e
+specs. React throttles the reveal of suspended content — the delay that stops a
+fallback flashing — on a `setTimeout`, and `openMono` calls
+`page.clock.pauseAt`, so that timeout never fires and the content never
+commits. The dialog opens and nothing appears, with no error anywhere.
+Preloading the module first does not help: `lazy` still suspends for the first
+render either way.
+
+So `App` holds the guide in ordinary state, filled by a `useEffect` that
+imports it. It is smaller than the Suspense version rather than a workaround
+for one: an effect runs after paint, which is the whole of what the split is
+for, and once it is fetched unconditionally a moment after load there is no
+fallback left for a boundary to show. The rule to take from it is that anything
+routed through Suspense has to be checked against the specs, because the specs
+pause time and Suspense is the one part of React that is built on time passing.
+
+**Each, separately.** While there were two of these they were briefly loaded
+together under one `Promise.all`, which quietly made two independent views into
+one failure: blocking the guide's chunk and nothing else left Settings doing
+nothing at all when clicked, with an unhandled rejection as the only trace. One
+`useDeferred` call per view was the fix, and the shape survives now that there
+is only one — a second deferred view must not be added back into a combinator
+with the first.
+
+**And the second trap: a failed dynamic import cannot be retried.** The obvious
+recovery is to import again on the next click, and it can never work — a module
+that failed is remembered as failed in the browser's module map, so the second
+`import()` of the same specifier returns the same rejection without going near
+the network. Measured, not assumed: the retry produced zero further requests,
+while the same URL with a query string appended fetched and resolved normally.
+Only a new document clears it, so the honest offer is a reload — but only when a
+reload is free. `GuideDidNotLoad` in `App.tsx` asks the storage question first:
+with the log on disk it offers the reload, and with the browser refusing to save
+it offers the export instead and does not mention reloading at all. Those are
+the same click and one of them is the whole day.
+
+Both halves of that are pinned in `e2e/focus-session.spec.ts`, under *a guide
+that never arrives*, which blocks the chunk at the network and asserts each
+branch. A data-safety rule that only exists in a docblock is one refactor away
+from being an ordinary reload button again.
