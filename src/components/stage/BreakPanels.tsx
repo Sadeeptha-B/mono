@@ -8,10 +8,14 @@
 
 import { useState } from 'react'
 
+import {
+  BREAK_DURATIONS,
+  DEFAULT_BREAK_MINUTES,
+  describeBreakCost,
+  FREE_BREAK,
+} from '../breakCost'
 import { GhostButton, PrimaryButton, StagePrompt } from '../ui'
 import type { BlockKind } from '@/domain/types'
-
-const DURATIONS = [5, 10, 15, 20, 30]
 
 export function BlockCompletePanel({
   nextBlockKind,
@@ -60,8 +64,10 @@ export function BreakDurationPanel({
   onConfirm: (minutes: number) => void
   onCancel: () => void
 }) {
-  const [minutes, setMinutes] = useState(10)
-  const cost = costOf(minutes)
+  const [minutes, setMinutes] = useState(DEFAULT_BREAK_MINUTES)
+  // What the lengths are and how the price is worded are shared with the mini
+  // window's picker; only the layout is this panel's own. See `breakCost`.
+  const cost = describeBreakCost(costOf(minutes))
 
   return (
     <div className="max-w-md">
@@ -72,7 +78,7 @@ export function BreakDurationPanel({
       />
 
       <div className="flex flex-wrap gap-2">
-        {DURATIONS.map((d) => (
+        {BREAK_DURATIONS.map((d) => (
           <button
             key={d}
             type="button"
@@ -91,20 +97,12 @@ export function BreakDurationPanel({
       </div>
 
       <p aria-live="polite" className="mt-4 min-h-10 text-sm leading-relaxed text-muted">
-        {cost.blocksLost === 0 && cost.focusMinutesLost === 0 ? (
-          <>This fits in time that wasn't going to hold a block anyway. It's free.</>
+        {cost.free ? (
+          FREE_BREAK
         ) : (
           <>
-            Costs you{' '}
-            <span className="text-body">
-              {cost.blocksLost > 0
-                ? `${cost.blocksLost} block${cost.blocksLost === 1 ? '' : 's'}`
-                : `${cost.focusMinutesLost} focus minutes`}
-            </span>
-            {cost.blocksLost > 0 && cost.focusMinutesLost > 0 && (
-              <> and {cost.focusMinutesLost} focus minutes</>
-            )}
-            .
+            Costs you <span className="text-body">{cost.lost}</span>
+            {cost.also && <> and {cost.also}</>}.
           </>
         )}
       </p>

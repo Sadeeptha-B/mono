@@ -29,6 +29,8 @@ import { useMemo, type ReactNode } from 'react'
 import { PixelCat } from '../Companion/PixelCat'
 import { StorageWarning } from '../StorageWarning'
 import { EditGlyph, headerControlClass } from '../ui'
+import { PopOutButton } from '@/pip/PopOutButton'
+import type { MiniWindowControls } from '@/pip/useMiniWindow'
 import { formatTimer } from '@/domain/time'
 import { DAY_HASH } from '@/hooks/useRoute'
 import { useSession } from '@/store/session'
@@ -41,10 +43,13 @@ export function GuidePage({
   now,
   active,
   onOpenSettings,
+  mini,
 }: {
   now: Ms
   active: ActiveSegment | null
   onOpenSettings: () => void
+  /** The mini window, offered from here too — the header carries the timer. */
+  mini: MiniWindowControls
 }) {
   const settings = useSession((s) => s.session.settings)
   const phase = useSession((s) => s.phase)
@@ -100,6 +105,7 @@ export function GuidePage({
                 saying stays in sight — including when it is waiting on you. */}
             <StorageWarning onOpenSettings={onOpenSettings} />
             <HeaderStatus active={active} now={now} phase={phase} />
+            <PopOutButton mini={mini} />
             <button type="button" onClick={onOpenSettings} className={headerControlClass}>
               Settings
             </button>
@@ -434,6 +440,53 @@ function sectionsFor(
       ),
     },
     {
+      id: 'popout',
+      title: 'The pop-out timer',
+      body: (
+        <>
+          <P>
+            <Em>Pop out</Em> in the header opens the timer as a small window that stays on
+            top of everything else — your editor, your browser, whatever the block is
+            actually for. It is the answer to the one thing the two panels cannot do: be
+            useful once you have switched away from them.
+          </P>
+          <P>
+            It is not a second copy of Mono. It shows what is running and when it ends,
+            and it asks whatever Mono is currently asking — name the block, keep going or
+            take a break, how long, did you finish the one you slept through. When nothing
+            is running it offers the next block, so the window is worth leaving open
+            between blocks rather than only during them. Answer in either place; there is
+            one session and both windows are looking at it.
+          </P>
+          <P>
+            The one thing it will not do is the shape of your day. Hours and commitments
+            are questions about the whole day, and the whole day does not fit in a window
+            that size — so it says so and points you back to the tab, where the calendar
+            is drawn beside the answer. That is the same rule as everywhere else here,
+            not an exception to it.
+          </P>
+          <P>
+            You do not have to remember it. By default the window opens itself the moment
+            a block starts running — the click that begins the timer is the last thing you
+            do before you go off to the work, so it is the moment worth spending on
+            getting the timer in front of you. <Em>Pop the timer out when a block starts</Em>{' '}
+            in settings turns that off, and the header button still opens one by hand.
+          </P>
+          <P>
+            That start is also the <Em>only</Em> moment it can happen. A browser hands out
+            a window in answer to a click and at no other time, so Mono cannot pop the
+            timer up when you minimise the tab, however much it might like to — the way to
+            have it there is to let it arrive with the block.
+          </P>
+          <P>
+            Close it from its own × or from the header, and it goes when the tab does. It
+            needs a Chromium browser — Chrome, Edge, Arc, Brave — and the button is simply
+            absent anywhere else.
+          </P>
+        </>
+      ),
+    },
+    {
       id: 'shape',
       title: 'Give the day a shape',
       body: (
@@ -762,6 +815,11 @@ function sectionsFor(
             The ranking policy described above. Currently{' '}
             {policy === 'prefer-deep' ? 'prefer deep blocks' : 'fill the most time'}
             .
+          </Setting>
+          <Setting name="Pop the timer out when a block starts">
+            Opens the always-on-top window for you as a block begins, rather than leaving
+            it to the header button. On unless you turn it off. It can only happen at that
+            moment — a window is only ever granted in answer to a click.
           </Setting>
           <Setting name="Chime when a block ends">
             A short two-tone chime. Browsers only allow sound after you have interacted

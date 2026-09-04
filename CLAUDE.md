@@ -35,6 +35,7 @@ src/domain/      pure. no clock, no storage, no React. the interesting logic.
 src/store/       the only place that reads the clock, makes ids, or persists.
 src/hooks/       the shared ticker, reconciliation, notifications.
 src/components/  the two panels, the stage prompts, the guide, the companion.
+src/pip/         the always-on-top mini window: lifecycle, styles, its panels.
 scripts/         generators: app icons, and a contact sheet of companion frames.
 e2e/             Playwright.
 ```

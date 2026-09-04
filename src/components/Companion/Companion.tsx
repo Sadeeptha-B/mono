@@ -14,7 +14,7 @@
 import { useMemo } from 'react'
 
 import { PixelCat } from './PixelCat'
-import { markTierFor, moodForPhase } from './cat'
+import { markTierFor, moodForPhase, walkProgress } from './cat'
 import { utteranceFor } from './utterances'
 import { dayKey } from '@/domain/time'
 import { vitalsFor } from '@/domain/vitals'
@@ -26,9 +26,22 @@ type Props = {
   phase: Phase
   active: ActiveSegment | null
   history: readonly CompletedSegment[]
+  /**
+   * How big the cat is drawn. The mini window is the reason this is a prop:
+   * deciding *which* numbers the cat knows is identical in both windows and
+   * belongs in one place, while how much room there is to draw it in is not
+   * something this component could work out for itself.
+   */
+  className?: string
 }
 
-export function Companion({ now, phase, active, history }: Props) {
+export function Companion({
+  now,
+  phase,
+  active,
+  history,
+  className = 'h-16 w-28 sm:h-24 sm:w-44',
+}: Props) {
   const day = dayKey(now)
 
   // At `blockComplete` the timer has run out but the log has not recorded the
@@ -49,12 +62,7 @@ export function Companion({ now, phase, active, history }: Props) {
   const mood = moodForPhase(phase)
   const says = utteranceFor(mood, vitals)
 
-  // Walking is how a *block* shows its progress. A break has its own timer on
-  // the stage, and a cat that is supposed to be resting should not be pacing.
-  const progress =
-    active?.kind === 'block'
-      ? clamp01((now - active.startedAt) / Math.max(1, active.endsAt - active.startedAt))
-      : null
+  const progress = walkProgress(active, now)
 
   // Only a block has a purpose. A break is a break.
   const note = active?.kind === 'block' ? active.purpose : null
@@ -67,7 +75,7 @@ export function Companion({ now, phase, active, history }: Props) {
         note={note}
         tier={markTierFor(vitals.blocksToday)}
         interactive
-        className="h-16 w-28 sm:h-24 sm:w-44"
+        className={className}
       />
 
       {/* Reserved whether or not there is anything to say, so the cat does not
@@ -76,5 +84,3 @@ export function Companion({ now, phase, active, history }: Props) {
     </div>
   )
 }
-
-const clamp01 = (n: number): number => Math.min(1, Math.max(0, n))

@@ -18,6 +18,7 @@
 
 import { SPRITE_H, type BodyName, type FaceName } from './frames'
 import type { Phase } from '@/domain/machine'
+import type { ActiveSegment, Ms } from '@/domain/types'
 
 export type MoodName =
   | 'idle'
@@ -243,6 +244,23 @@ export function moodForPhase(phase: Phase): MoodName {
     case 'reconciling':
       return 'away'
   }
+}
+
+/**
+ * How far through a block we are, as the cat walks it.
+ *
+ * Only a block. A break has its own timer wherever it is being shown, and a cat
+ * that is supposed to be resting should not be pacing.
+ *
+ * Here rather than in the component that draws it, because there are two of
+ * those now — the stage's companion and the mini window's — and two copies of a
+ * progress formula is exactly the thing that drifts apart. `Math.max(1, …)`
+ * covers a zero-length segment rather than dividing by nothing.
+ */
+export function walkProgress(active: ActiveSegment | null, now: Ms): number | null {
+  if (active?.kind !== 'block') return null
+  const through = (now - active.startedAt) / Math.max(1, active.endsAt - active.startedAt)
+  return Math.min(1, Math.max(0, through))
 }
 
 /**

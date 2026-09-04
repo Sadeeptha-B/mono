@@ -5,6 +5,7 @@ import { RegionShapeEditor } from './RegionShapeEditor'
 import { GhostButton, labelClass, MinutesInput } from './ui'
 import { parseBoundedMinutes } from './minutes'
 import { dayKey, formatClock } from '@/domain/time'
+import { supportsMiniWindow } from '@/pip/useMiniWindow'
 import { useSession, useStorageHealth } from '@/store/session'
 import type { Settings } from '@/domain/types'
 
@@ -101,6 +102,29 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
           Background notifications are best-effort — browsers throttle hidden tabs, so one
           can arrive late. Mono always reconciles when you come back.
         </p>
+
+        {/* Absent, rather than present and disabled, on a browser with no
+            Document Picture-in-Picture — the same call the header control makes
+            and for the same reason. A setting for a window this browser was
+            never going to open is a row that can only ever be an apology for
+            the user's choice of browser. The guide names the requirement once,
+            which is where somebody looking for the feature would go. */}
+        {supportsMiniWindow() && (
+          <>
+            <Toggle
+              checked={settings.popOutOnStart}
+              onChange={(v) => set('popOutOnStart', v)}
+              label="Pop the timer out when a block starts"
+            />
+            <p className="text-xs leading-relaxed text-muted">
+              The always-on-top window, opened for you at the moment the timer starts
+              rather than left for you to remember. It cannot open itself at any other
+              time — browsers only hand out a window in answer to a click — so turning
+              this off leaves <span className="text-bright">Pop out</span> in the header
+              as the way to it.
+            </p>
+          </>
+        )}
       </div>
 
       {storageFailedAt !== null && (

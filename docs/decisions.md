@@ -1176,3 +1176,322 @@ fact being withheld.
 Lanes are still assigned on the real spans, before the clip. Two entries that
 overlap only outside the visible day still get a column each, because they do
 overlap; the alternative is a lane count that changes at midnight.
+
+**2026-09-03 — A second window, which is not a second modal.**
+
+Mono has spent three separate rounds taking overlay surfaces *out*: the break
+prompt, the away prompt, and finally the calendar's own editors, all on one
+argument — a decision about the day is unanswerable with the day covered up. So
+opening a floating window deserves the obvious objection, and the answer is that
+it is the opposite case rather than an exception to that one.
+
+A modal covers the day while asking about it. This window exists for the minutes
+when the day is *not on screen at all* — you switched to the editor the block
+was named for, and Mono went behind it. Nothing is being hidden by the mini
+window, because at that moment nothing was visible. The rule survives intact,
+and it survives literally: the one question the window declines is the day's
+shape, because hours and commitments really are unanswerable without the
+calendar, and there is no calendar in four hundred pixels. `miniViewFor` returns
+`unshaped` and points back at the tab.
+
+The corollary is `dayShaped`, not `setupOpen`. The stage re-opens the opening
+questions whenever the user goes back to them, which is where the *user* is
+looking rather than a fact about the day. Following that out here would turn the
+mini window into a sign pointing at the window they are already reading, for as
+long as they read it.
+
+*A portal, not a second root.* Both work — React 19 attaches its delegated
+listeners to any portal container, including one in a foreign document, and
+builds DOM nodes from that container's `ownerDocument`. The reason to prefer one
+tree is not rendering, it is the hooks. `useReconciliation` and
+`useBlockEndAlerts` are the only things in Mono that dispatch without a user,
+and their once-only guards are per-hook-instance refs. A second root is one
+careless import away from mounting a second copy and banking a block twice. A
+portal makes that impossible to write rather than merely unwise, and it comes
+with the store subscription, the ticker and the reconciler already shared.
+
+*The window lends the ticker its timer.* This is the part that decides whether
+the feature is worth having. `useNow` runs one interval on the opener, and a
+hidden tab has its timers throttled to roughly one a minute — which is fine for
+a page nobody is watching, and useless for a window whose entire purpose is to
+be watched while the tab is hidden. So an open mini window adds its own
+`setInterval` for as long as it lives, and a picture-in-picture window is always
+on top and therefore never throttled.
+
+Note what makes that safe to do at all: the second invariant. The tick has only
+ever triggered a re-render, and every countdown is still `endsAt - now`, so
+adding, dropping or duplicating tick sources cannot make a clock wrong — only
+stale. A design where the tick advanced a counter could not have borrowed a
+timer from anywhere. `tick()` also grew a same-second guard while this was being
+done, which makes extra sources free: two intervals out of phase, plus the wake
+listeners on top, still cost exactly one render per second. Nothing here reads
+below a second, so the skipped update would have painted the identical screen.
+
+*Two consequences that are easy to miss.* A notification fires when the tab is
+hidden — and with the window open, hidden no longer means unseen, so `notify`
+now declines. The chime is deliberately left alone: it is audible from another
+room, which is exactly what a visible window is not. And the service worker's
+"never reload during a block" rule now also covers "never reload while the
+window is open", which is the stronger case of the two: a block interrupted by a
+reload can be started again, whereas picture-in-picture can only be opened from
+a user gesture, so a reload takes the window off the desktop with nothing the
+app can do to put it back.
+
+*Panels of its own rather than a `compact` prop.* Every panel in `stage/` opens
+`max-w-md` — 448 pixels, wider than the whole window — and `BreakDurationPanel`
+alone is five chips, a reserved cost paragraph and two buttons. Threading a flag
+through six files to reach a `Stage` signature already carrying forty props,
+half of which mean nothing out here, buys a duplication problem in exchange for
+a layout one. What is shared is the part that would actually drift if copied:
+the buttons, the field, the formatting and the words. A control called *Keep
+going* on the stage and *Continue* in the window would be two applications.
+
+*Verified by hand, and the specs say why.* Playwright is never given a real
+picture-in-picture window. The default run uses `chrome-headless-shell`, which
+has no browser-window layer to put one in, and Playwright only promotes CDP
+targets of type `page`, so even headed the window is attached and dropped rather
+than handed over. The three specs therefore stand it in with a same-origin
+iframe, which has the shape that matters — a different document, one shared
+realm — and covers the portal, the stylesheet copy, and a click in one document
+moving the session in the other. What it cannot cover is the window floating
+above other applications and its timers outliving a backgrounded tab, and those
+are items 3 to 5 of README's by-hand list. One thing the first run of those
+specs settled: Chromium under Playwright *does* expose
+`documentPictureInPicture`, it simply cannot produce a window from it. So the
+absent case has to be arranged with an init script, the same way the storage
+spec arranges a browser that refuses to save.
+
+*The one thing the stylesheet copy is not.* It reads like housekeeping and it is
+load-bearing. A picture-in-picture window is a blank document, so without it
+there are no Tailwind utilities and, worse, no `@theme` custom properties — and
+the cat's ears, nose, tail and the ground it walks on are all `var(--color-…)`
+fills. Uncopied, the companion renders as a cream silhouette with black holes
+where its face should be. The nodes are copied rather than the sheets adopted
+because the font sheet is cross-origin: reading its rules throws, so it would
+need a `<link>` fallback anyway, at which point the link is the entire
+mechanism.
+
+**2026-09-03 (later) — The order of the four lines that open a window.**
+
+Review of the entry above, on the lifecycle. Three things, and the first two are
+the same mistake seen from opposite ends: an `await` in the middle of setting a
+window up.
+
+*The listener has to go on before anything is waited for.* Opening did the
+stylesheet copy and only then attached `pagehide`, which reads harmlessly and is
+not. The window is on the user's desktop from the moment `requestWindow`
+resolves, with its own close control, and everything after that point is a
+window that can go away underneath us. A close arriving during the style copy
+was heard by nobody: the continuation then appended a container to a discarded
+document, started a timer against it, and set the state that says a window is
+open. The header would offer to close a window that was not there. So the
+listener goes on first, and the continuation checks on the far side of the await
+whether the thing it is about to furnish still exists.
+
+*Waiting for a sheet is not the same as waiting for an answer.* The copy
+resolved on `load` or `error` for every sheet, which the docblock described as
+not blocking on a sheet that will not load — true for one that fails and false
+for one that never replies at all. The font is fetched across the network, so a
+captive portal was enough to leave an empty window sitting there for as long as
+the connection stayed ambiguous. It now gives up after two seconds and shows the
+window plain, which is what the docblock had been claiming all along.
+
+That made `paint` load-bearing in a way it had not been. It set the background
+so there was no white flash; a document with no stylesheet also draws its text
+black, and black on ink is not badly styled, it is invisible. It sets the
+colour and the font as well now, so the plain window is a window rather than an
+empty one.
+
+*Closing before tidying up, which looks backwards.* `close` ran `forget` and then
+shut the window. But `forget` re-checks whether a held-back service worker
+update can be let through, and that check asks the browser whether a mini window
+is open — so asked in that order it always answered "still open" and the update
+sat until some later dispatch happened to ask again. The window goes first now.
+It costs a `pagehide` that may arrive before the listener comes off, and that is
+free because `forget` is idempotent.
+
+One consequence worth naming: the disposer for the borrowed ticker now runs
+against a window that is definitely closed, where before it ran against one that
+was still open. A closed window need not still have a `document` to take a
+listener off, so it checks. That one is precautionary and says so in the code —
+the specs stand a mini window up with an iframe, and a detached iframe keeps its
+document, so nothing here can demonstrate it either way.
+
+**2026-09-03 (later still) — Two panels may differ in layout, not in what they offer.**
+
+The mini panels were written with a docblock claiming that what they shared with
+the stage was "the button styles, the field style, the time formatting, and the
+words". The first three were true. The words were not, and the review that
+noticed it was right: the break lengths were two copies of one array, and the
+free-break sentence had *already* drifted inside a single commit — "This fits in
+time that wasn't going to hold a block anyway" on the stage against "Lands in
+time that wasn't going to hold a block" in the window. Nobody decided that. It
+is what copying looks like a week later, arriving early.
+
+The line drawn, in `components/breakCost.ts`, is between a choice and a caption.
+What a break may cost and which lengths are on offer are *decisions about the
+product*: a fifth duration added to one picker and not the other means Mono
+offers different breaks depending on which window you are looking at, which is
+not a layout difference. Those are shared. The cost is shared as its parts
+rather than as a finished sentence, because each panel lifts the number out with
+its own emphasis and a formatter that returned one string would have to own the
+markup to do it.
+
+Short labels are deliberately left duplicated, which is the part that would look
+like an oversight without this paragraph. `Start break`, `Not yet` and `Keep
+going` are read at a glance, and a constant makes a word worse by making it
+something to look up. They are also allowed to differ where room forces it — the
+stage says `Keep going (deep)` and four hundred pixels do not — so a shared
+constant would have to pick one and be wrong in the other place. The test that
+protects the real risk is on the description, not on the captions.
+
+**2026-09-04 — The window cannot follow you, so it leaves with you.**
+
+The question that prompted this: if the main window is minimised, can the mini
+window be made to appear? The answer is no, and it is worth writing down
+properly, because it is the sort of thing that looks like a missing feature
+forever unless somebody records that it was looked into.
+
+Detecting the minimise is nothing — `visibilitychange` fires with a
+`visibilityState` of `hidden`. It is the other half that is closed. Requesting a
+picture-in-picture window needs *transient activation*: it has to be invoked in
+answer to a click or a key press, and it throws `NotAllowedError` otherwise.
+Clicking your operating system's minimise button is not activation inside the
+page, and by the time the visibility event arrives there is none left to spend.
+An auto-open on minimise would not be unreliable; it would fail every single
+time, and fail into the `catch` that already treats a refusal as an ordinary
+answer, so it would look like nothing happening at all.
+
+There is one sanctioned way to enter picture-in-picture without a gesture, and
+Mono is not allowed through it. Chrome's automatic picture-in-picture runs a
+`mediaSession` handler for `enterpictureinpicture` on visibility change, and a
+page is only eligible for it while **actively capturing camera or microphone
+through `getUserMedia`**. It was built for video calls. Mono would have to hold
+a microphone open — a permission prompt, an operating system recording
+indicator, and a claim on the user's privacy that a focus timer has no business
+making — in order to get a countdown to appear. That is not a trade, it is a
+disguise, so the answer is simply no.
+
+*What replaced it, and the decision it reverses.* The entry above lists "no
+auto-open" among the things deliberately not built, on two grounds: that it
+cannot be done, and that a focus app opening a window at you is the wrong
+instinct. The first is now confirmed for the case it was written about and is
+not going to change. The second was overruled, by the app's own argument: a
+block is time you deliberately spend somewhere other than here, and a timer that
+is ambiently present is a good part of what makes that time read as a block
+rather than as an unmarked stretch of afternoon. So `popOutOnStart` exists, and
+it defaults on.
+
+The moment matters more than the setting does. The window is opened from the
+click that starts the timer — `setPurpose`, and `cannotDecide` for the
+priorities block — and not from `startBlock`, which only opens the naming
+prompt. A window arriving at `startBlock` takes the focus off the field the user
+is still typing their purpose into, which is the one field in the app that
+matters most. Starting the timer is the last gesture before they leave, which
+makes it both the right moment and, thanks to the paragraph above, the only one.
+
+There is deliberately no effect watching the phase for this. One would work
+today — activation outlives a render, comfortably — but "works because the grant
+has not expired yet" is a thing that breaks quietly on a slow frame a year from
+now, and the call belongs in the handler where the gesture actually is.
+
+The setting needs no schema bump. A `settings/updated` patch that was never
+appended cannot be replayed, so every log written before today folds to the
+default, which is what an old day should get. `sanitiseSettingsPatch` gained a
+branch so an imported file can carry the field.
+
+One accepted roughness: closing the window mid-block does not stop the next
+block from opening another. That is what "ambient" means, and the escape is the
+setting rather than a per-block memory of having been dismissed — which would be
+a second, invisible setting that only some days have.
+
+**2026-09-04 (later) — Asking for a window twice takes the first one away.**
+
+A comment in `useMiniWindow` said that the API allows one window per document
+"and says so by rejecting". That is not what it does. The request algorithm's
+step 8 reads: *let win be this's last-opened window; if win is not null and
+win's closed attribute is false, then close win's navigable.* A second request
+does not fail — it **closes the window the user is looking at** and hands back a
+replacement.
+
+Worth recording twice over. The behaviour itself is surprising, and a comment
+asserting the opposite is the kind of thing that gets a guard deleted by
+somebody tidying up a check the browser was supposed to be making anyway. The
+guard was doing real work and was described as belt-and-braces.
+
+It was also only half a guard. `documentPictureInPicture.window` is null until a
+request resolves, so the stretch between asking and being answered was
+unprotected, and nothing else can observe it. That gap stopped being theoretical
+when a block starting began opening a window on its own: press `Pop out` and
+then `Start` quickly, or simply double-click `Pop out` — which goes on reading
+`Pop out` until the first window lands — and two requests go out, the second
+destroying the window the first produced. Both continuations would then write
+the same `teardown` ref, so one window's closing would run the other's cleanup
+and leave a borrowed ticker running against a document nobody can see. There is
+now an `opening` ref alongside the `api.window` check, cleared when the request
+settles rather than when the setting-up finishes, because by then the window
+exists and the other guard has taken over.
+
+The race is not reachable from the specs — it lives inside one microtask — so
+there is no test for it, and that is worth saying plainly rather than implying
+coverage that does not exist. What the specs did gain is a stub that behaves
+like the real algorithm: it closes the open window and replaces it, where before
+it refused. A stub that refuses is a browser that does not exist, and the guard
+would have been tested against it.
+
+*Where the two-second escape hatch lives.* The stylesheet deadline was scheduled
+on the opener's clock. The case it exists for is a sheet that never answers, and
+the way the user gets there is the workflow that now opens windows for them:
+the block starts, the window appears, and they go straight to the work — leaving
+the opener hidden and its timers throttled, taking the escape hatch down with
+them in the one situation it was written for. It runs on the mini window's own
+timer now, which is never throttled, for the same reason and by the same
+argument as the borrowed ticker.
+
+Rendering the window immediately and letting the styles arrive afterwards was
+the other way to fix it, and was not taken. `paint` does make an unstyled
+document legible, but it is a safety net for the pathological case, and routing
+every user through an unstyled frame in the common case to avoid a rare one is
+the wrong way round.
+
+*The setting is absent where the button is absent.* A browser with no Document
+Picture-in-Picture showed no `Pop out` control and a `Pop the timer out when a
+block starts` checkbox, on by default, that could never do anything. The header
+control's reasoning already covers this — a permanently dead control explaining
+itself is the app apologising for the user's choice of browser — and it applies
+to a settings row at least as well. The stored value stays whatever it is; it is
+the row that goes.
+
+**2026-09-04 (later still) — One window, and the monitor is the user's to choose.**
+
+Asked whether there could be a mini window per monitor. There cannot, and the
+reason is the same sentence that produced the guard two entries above: step 8 of
+the request algorithm closes the last-opened window before opening a
+replacement. One document gets one window, and asking for a second is how you
+lose the first. Chrome's own documentation puts a ceiling above that as well —
+a site may have one open at a time, and the user agent may restrict how many
+exist globally.
+
+There is also nowhere to put a second one if it existed. `requestWindow` takes a
+width, a height, and two booleans; nothing names a screen or a coordinate. The
+Window Management API can place a window on a chosen display, but only an
+ordinary `window.open` popup, and an ordinary popup is not always on top — which
+is the entire property this feature is made of. Trading the one thing it is for
+the ability to have two of them is not a trade.
+
+The multi-tab route fails twice over before it starts: the global limit may
+refuse it outright, and two tabs of Mono are two independent sessions writing
+the same log to the same storage key. The store has no cross-tab
+synchronisation and was never meant to; adding it to put a clock on a second
+monitor would be a rewrite of the persistence layer paying for a decoration.
+
+*What actually serves it.* Chromium reuses the previous mini window's position
+and size unless the site sets `preferInitialWindowPlacement`. Mono does not set
+it, and now deliberately does not: drag the window onto whichever monitor you
+want it on, once, and every open after that — including the automatic one at the
+start of every block — puts it back there. The `SIZE` passed to `requestWindow`
+is the opening hint for a user who has never placed one, not a size reasserted
+over their choice.
+
+That is worth knowing before anybody decides to "fix" the size hint, and it is
+item 5 of README's by-hand list, because no test here can see a real window.

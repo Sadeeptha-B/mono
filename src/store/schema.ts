@@ -304,6 +304,13 @@ function sanitiseSettingsPatch(value: unknown): Partial<Settings> | null {
     if (typeof value.soundEnabled !== 'boolean') return null
     patch.soundEnabled = value.soundEnabled
   }
+  // Absent from every log written before the mini window existed, which needs
+  // no migration: a patch that was never appended cannot be replayed, so those
+  // days simply fold to the default.
+  if ('popOutOnStart' in value) {
+    if (typeof value.popOutOnStart !== 'boolean') return null
+    patch.popOutOnStart = value.popOutOnStart
+  }
 
   return patch
 }

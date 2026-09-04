@@ -587,6 +587,7 @@ describe('derivePlan invariants', () => {
     ),
     notificationsEnabled: fc.boolean(),
     soundEnabled: fc.boolean(),
+    popOutOnStart: fc.boolean(),
   })
 
   const arbCommitments: fc.Arbitrary<Commitment[]> = fc.array(

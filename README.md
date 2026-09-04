@@ -46,6 +46,7 @@ src/domain/      pure: types, event log, planner, state machine, time, vitals
 src/store/       the only place that reads the clock, makes ids, persists
 src/hooks/       the ticker, reconciliation, notifications
 src/components/  the two panels, the stage prompts, the guide, the companion
+src/pip/         the always-on-top mini window
 ```
 
 The UI is two panels. The **stage** on the left is the one thing that changes
@@ -53,6 +54,21 @@ with the session phase — every question Mono asks happens there, in the space
 the timer occupies, not in a modal over the top of it. The **calendar** on the
 right lays the same derived timeline out against real hours, so a 45-minute
 block looks like 45 minutes and the gaps read as gaps.
+
+There is a third surface, and it is deliberately somewhere else. **Pop out**
+opens the timer as an always-on-top window — Chromium's document
+picture-in-picture — that stays above whatever you switched to. It is a
+reduction of the stage rather than a mirror of the app: it shows the phase, the
+countdown, the purpose, the cat, and the controls for whatever Mono is currently
+asking. The one question it declines is the day's shape, which needs the
+calendar beside it; that one it hands back to the tab.
+
+It arrives on its own when a block starts, which is a setting and is on by
+default: a block is time you spend somewhere else, and an ambient timer is what
+makes that time read as a block rather than an unmarked stretch of afternoon.
+That start is also the only moment it *can* arrive — a browser grants a window
+in answer to a click and at no other time — so Mono cannot pop it up when you
+minimise the tab, and does not pretend to.
 
 Both panels edit themselves in place. The calendar's `Hours`, `+ Break` and
 `+ Commitment` expand under its own heading rather than opening a window over
@@ -185,6 +201,14 @@ about how the day has gone.
 - **Outside working hours Mono says so** and names the next stretch, rather than
   offering a block in time you declared unstructured. The way to work anyway is
   to change the hours.
+- **The pop-out window is one React tree with the tab**, not a second copy of
+  the app — the same store, the same ticker, one reconciler — so the two can
+  disagree about nothing. While it is open it lends the ticker its own timer,
+  because a hidden tab has its intervals throttled to about one a minute and a
+  countdown you popped out to watch is the last thing that should crawl. It also
+  suppresses end-of-block notifications, which would be duplicating a window you
+  can already see, and holds back a service worker update, because the reload
+  would take the window off your desktop with no way for the app to put it back.
 
 ## Working hours
 
@@ -239,3 +263,18 @@ Two things the tests cannot cover:
    time must be correct and no block silently completed.
 2. Start a block and sleep the machine across its end. You should get the
    "You were away" prompt with the right elapsed span.
+
+And three for the pop-out, which no test can reach — Playwright is never given a
+real picture-in-picture window, and the e2e specs stand it in with an iframe:
+
+3. Start a block, pop out, then bury the tab behind something else for five
+   minutes. The countdown must still move every second and the cat must still
+   walk. This is the one that decides whether the feature works at all.
+4. Close the mini window from its own control rather than Mono's. The app must
+   carry on, and `Pop out` must open a fresh one.
+5. Drag the mini window to a second monitor and resize it, then start another
+   block. It must come back where you left it, at the size you left it —
+   Chromium reuses the last placement unless a site opts out, and Mono
+   deliberately does not, so this is the whole of the multi-monitor story.
+6. Sleep the machine across a block end with the window open. "You were away"
+   must appear in both, and answering it in either must resolve both.

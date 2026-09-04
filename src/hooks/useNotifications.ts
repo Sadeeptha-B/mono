@@ -56,6 +56,14 @@ export function playChime(): void {
 export function notify(title: string, body: string): void {
   if (!('Notification' in window) || Notification.permission !== 'granted') return
   if (document.visibilityState === 'visible') return
+  // The mini window is always on top, so a hidden tab no longer means the user
+  // cannot see this. A notification saying "block complete" beside a window
+  // already saying "block done" is the app talking over itself.
+  //
+  // The chime is deliberately left alone. It is audible from another
+  // application and from another room, which is exactly what a visible window
+  // is not, so it is not the duplicate this is.
+  if (window.documentPictureInPicture?.window) return
   new Notification(title, { body, tag: 'mono-block', icon: `${import.meta.env.BASE_URL}icons/icon-192.png` })
 }
 

@@ -134,6 +134,31 @@ describe('session import', () => {
     expect(state.events.map((event) => event.type)).toEqual(['settings/changed'])
   })
 
+  it('carries a setting that defaults on, in both directions', () => {
+    // `popOutOnStart` is the first setting whose default is `true`, which makes
+    // it the first one where "absent from the log" and "turned off" have to be
+    // told apart. A file written before it existed has no patch for it and must
+    // fold to the default; a file that says it is off must stay off, rather
+    // than the default quietly winning back on the next load.
+    const state = useSession.getState()
+    const file = (events: unknown[]) =>
+      JSON.stringify({ version: 2, dayKey: dayKey(TODAY.getTime()), events })
+
+    // A patch for a *different* setting, so the assertion below cannot pass by
+    // the import having been dropped on the floor — `true` is the default, and
+    // an empty session would answer `true` for the wrong reason.
+    state.importJSON(
+      file([{ type: 'settings/changed', at: at(TODAY, 10), patch: { shortMinutes: 25 } }]),
+    )
+    expect(useSession.getState().session.settings.shortMinutes).toBe(25)
+    expect(useSession.getState().session.settings.popOutOnStart).toBe(true)
+
+    state.importJSON(
+      file([{ type: 'settings/changed', at: at(TODAY, 10), patch: { popOutOnStart: false } }]),
+    )
+    expect(useSession.getState().session.settings.popOutOnStart).toBe(false)
+  })
+
   it('drops malformed imported payloads before replay', () => {
     expect(() =>
       useSession.getState().importJSON(

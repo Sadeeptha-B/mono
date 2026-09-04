@@ -62,6 +62,20 @@ export type Settings = {
   plannerPolicy: PlannerPolicy
   notificationsEnabled: boolean
   soundEnabled: boolean
+  /**
+   * Open the always-on-top window by itself when a block begins running.
+   *
+   * On by default, which is the one place Mono opens something you did not
+   * click. The argument for it is the app's own: a focus block is time you
+   * spend somewhere else, and a timer that is ambiently present is what makes
+   * that time feel like a block rather than an unmarked stretch of afternoon.
+   *
+   * It can only ever fire from the click that starts the block — a window
+   * cannot be requested without a user gesture — so this is a preference about
+   * a moment that already exists, not a licence to appear at any time. Browsers
+   * without the API ignore it entirely.
+   */
+  popOutOnStart: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -72,6 +86,7 @@ export const DEFAULT_SETTINGS: Settings = {
   plannerPolicy: 'prefer-deep',
   notificationsEnabled: false,
   soundEnabled: true,
+  popOutOnStart: true,
 }
 
 // -----------------------------------------------------------------------------

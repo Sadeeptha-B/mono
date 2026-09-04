@@ -18,6 +18,7 @@
  */
 
 import { useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 import { Clock } from '@/components/Clock'
 import { SettingsPanel } from '@/components/SettingsPanel'
@@ -44,6 +45,10 @@ import {
 import { headerControlClass } from '@/components/ui'
 import type { Composer } from '@/components/Timeline/SegmentEditor'
 
+import { MiniWindow } from '@/pip/MiniWindow'
+import { PopOutButton } from '@/pip/PopOutButton'
+import { useMiniWindow } from '@/pip/useMiniWindow'
+
 import { useNow } from '@/hooks/useNow'
 import { useRoute, GUIDE_HASH } from '@/hooks/useRoute'
 import { useReconciliation } from '@/hooks/useReconciliation'
@@ -61,6 +66,7 @@ export function App() {
 
   const store = useSession()
   const unlock = useUnlock()
+  const mini = useMiniWindow()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [composer, setComposer] = useState<Composer | null>(null)
@@ -203,6 +209,38 @@ export function App() {
     store.dispatch({ type: 'startBlock', at: Date.now(), blockKind: kind })
   }
 
+  /**
+   * Bring the mini window out, if that is what the user wants of a block.
+   *
+   * Called from the click that starts the segment, and it has to be — a window
+   * cannot be requested without transient activation, and this is the last
+   * activation before the user goes off to do the thing they just named. There
+   * is deliberately no effect watching the phase for this: one would work today,
+   * because activation outlives a render, but "works because the grant has not
+   * expired yet" is not a thing to build on.
+   *
+   * The moment is `setPurpose` and `cannotDecide` rather than `startBlock`,
+   * which is a distinction worth keeping. `startBlock` only opens the naming
+   * prompt; a window arriving then would take the focus off the field the user
+   * is still typing in. These two are where a timer actually starts running.
+   *
+   * A no-op when a window is already open, when the setting is off, and on any
+   * browser without the API — all three are handled inside `open`.
+   */
+  const popOutForBlock = () => {
+    if (session.settings.popOutOnStart) mini.open()
+  }
+
+  const setPurpose = (purpose: string) => {
+    popOutForBlock()
+    store.dispatch({ type: 'setPurpose', at: Date.now(), purpose })
+  }
+
+  const cannotDecide = () => {
+    popOutForBlock()
+    store.dispatch({ type: 'cannotDecide', at: Date.now() })
+  }
+
   // Settings is the last dialog in Mono, and the only thing both routes offer.
   // Opening it closes whatever the calendar had expanded: they both edit
   // working hours, and two editors of the same thing on screen at once is a
@@ -243,14 +281,80 @@ export function App() {
     <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
   )
 
+  /**
+   * The mini window, rendered into a document that is not this one.
+   *
+   * A portal rather than a second React root, so there is one tree, one store
+   * subscription and one reconciler — the hooks at the top of this component
+   * are the only copy of themselves that can exist, which is the property that
+   * stops a block being completed twice.
+   *
+   * Keyed on the generation for the same reason the stage is: this subtree
+   * holds a purpose being typed and a break length chosen, both of which
+   * describe one particular session. It is *not* closed by a rollover or an
+   * import — a window the app opened at the user's request should not vanish
+   * off their desktop because midnight came round; it just re-renders into
+   * whatever the session became.
+   *
+   * Alongside settings in both route branches, and for the same reason: this
+   * belongs to the app rather than to the view, and opening the guide must not
+   * take an always-on-top window off the screen.
+   */
+  const miniWindow =
+    mini.container &&
+    createPortal(
+      <MiniWindow
+        key={store.generation}
+        now={now}
+        phase={phase}
+        active={session.active}
+        history={session.history}
+        settings={session.settings}
+        facts={{
+          // `dayShaped`, not `setupOpen`: going back to re-read the opening
+          // questions is where the user is looking, and the mini window should
+          // not become a sign pointing at the window they are reading.
+          dayShaped,
+          withinHours,
+          nextBlockKind,
+          nextRegionStart: upNext,
+        }}
+        planned={planned}
+        costOf={(minutes) => breakCost(planInput, now, minutes, timeline)}
+        onStartBlock={startBlock}
+        onSetPurpose={setPurpose}
+        onCannotDecide={cannotDecide}
+        onAbandon={() => store.dispatch({ type: 'abandonBlock', at: Date.now() })}
+        onTakeBreak={() => store.dispatch({ type: 'takeBreak', at: Date.now() })}
+        onSkipBreak={(kind) =>
+          store.dispatch({ type: 'skipBreak', at: Date.now(), nextBlockKind: kind })
+        }
+        onConfirmBreak={(durationMin) =>
+          store.dispatch({ type: 'confirmBreak', at: Date.now(), durationMin })
+        }
+        onCancelBreak={() => store.dispatch({ type: 'cancelBreakChoice', at: Date.now() })}
+        onEndBreak={() => store.dispatch({ type: 'endBreak', at: Date.now() })}
+        onResolveAway={(outcome) =>
+          store.dispatch({ type: 'resolveAway', at: Date.now(), outcome })
+        }
+      />,
+      mini.container,
+    )
+
   // A view swap rather than a mount swap: every hook above stays live, so a
   // block in flight keeps ticking, chiming and reconciling while the guide is
   // open. Nothing about the session depends on this component's subtree.
   if (route === 'guide') {
     return (
       <>
-        <GuidePage now={now} active={session.active} onOpenSettings={openSettings} />
+        <GuidePage
+          now={now}
+          active={session.active}
+          onOpenSettings={openSettings}
+          mini={mini}
+        />
         {settings}
+        {miniWindow}
       </>
     )
   }
@@ -286,6 +390,7 @@ export function App() {
             {/* Nothing at all unless the browser has started refusing to save,
                 which is the one failure worth a permanent place on screen. */}
             <StorageWarning onOpenSettings={openSettings} />
+            <PopOutButton mini={mini} />
             {/* A real link, so the guide can be opened in its own tab and
                 survives a reload like the document it is. */}
             <a href={GUIDE_HASH} className={headerControlClass}>
@@ -359,12 +464,8 @@ export function App() {
                 onDayShaped={finishSetup}
                 onEditHours={() => openComposer({ kind: 'hours' })}
                 onStartBlock={startBlock}
-                onSetPurpose={(purpose) =>
-                  store.dispatch({ type: 'setPurpose', at: Date.now(), purpose })
-                }
-                onCannotDecide={() =>
-                  store.dispatch({ type: 'cannotDecide', at: Date.now() })
-                }
+                onSetPurpose={setPurpose}
+                onCannotDecide={cannotDecide}
                 onAbandon={() => store.dispatch({ type: 'abandonBlock', at: Date.now() })}
                 onTakeBreak={() => store.dispatch({ type: 'takeBreak', at: Date.now() })}
                 onSkipBreak={(kind) =>
@@ -422,6 +523,7 @@ export function App() {
       </div>
 
       {settings}
+      {miniWindow}
     </div>
   )
 }

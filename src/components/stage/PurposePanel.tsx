@@ -35,9 +35,17 @@ export function PurposePanel({
 
   // Focus on entry, and start from a blank prompt rather than the last block's
   // text. Runs once per mount: the panel unmounts when the phase moves on.
+  //
+  // Only if this document already has focus, which matters since the mini
+  // window arrived. Starting a block from there mounts this panel in a tab
+  // nobody is looking at, and focusing an element in an unfocused window can
+  // raise that window — so an ungated call would drag the user back to the tab
+  // they had just walked away from, mid-keystroke. The mini window's own field
+  // is gated the same way, so at most one of the two takes focus and only if
+  // its window already had it.
   useEffect(() => {
     setPurpose('')
-    input.current?.focus()
+    if (document.hasFocus()) input.current?.focus()
   }, [])
 
   const trimmed = purpose.trim()
