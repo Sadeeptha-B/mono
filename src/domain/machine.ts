@@ -38,7 +38,7 @@
  */
 
 import type { MonoEvent, SessionState } from './events'
-import { minutesToMs, type BlockKind, type Ms } from './types'
+import { minutesToMs, type ActiveSegment, type BlockKind, type Ms } from './types'
 
 export type Phase =
   | { name: 'idle' }
@@ -57,6 +57,34 @@ export type Phase =
   | { name: 'reconciling'; lastSeenAt: Ms; blockEndedAt: Ms }
 
 export const initialPhase: Phase = { name: 'idle' }
+
+/**
+ * Whether a focus block is *actually running* this instant.
+ *
+ * Two things ask, for unrelated reasons, and they must not be allowed to answer
+ * differently: ambience fades in only while this is true (`useAmbience`), and
+ * the browser extension arms site blocking only while it is true
+ * (`src/blocking/publish.ts`). Both are describing the same fact about the day,
+ * so it is owned once rather than written twice and left to drift.
+ *
+ * What it deliberately excludes is more interesting than what it includes:
+ *
+ * - `blockComplete`. The timer reached zero but `active` is still set, because
+ *   `timerElapsed` appends nothing and the block is not banked until the user
+ *   answers — see the trap in `docs/decisions.md`. The block is nonetheless
+ *   over, and neither a sound nor a blocked website should outlive it.
+ * - `reconciling`. Same shape, worse: `active.endsAt` is already in the past by
+ *   at least the away threshold. Whatever happened during that stretch, it was
+ *   not a block anybody was sitting in.
+ * - `onBreak`. A break is a running segment and is not a block.
+ * - `definingPurpose`. Naming the block comes *before* the clock starts, which
+ *   is why time spent deciding is not charged to the block.
+ *
+ * The phase is the authority here, not what happens to be on screen. If the two
+ * consumers ever genuinely need to disagree, split this then — not before.
+ */
+export const isBlockRunning = (phase: Phase, active: ActiveSegment | null): boolean =>
+  active?.kind === 'block' && (phase.name === 'focusing' || phase.name === 'reflecting')
 
 export type Action =
   | { type: 'startBlock'; at: Ms; blockKind: BlockKind }

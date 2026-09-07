@@ -12,7 +12,9 @@
     "test:e2e": "playwright test",
     "typecheck": "tsc -b --noEmit",
     "icons": "node scripts/gen-icons.ts",
-    "companion": "node scripts/preview-companion.ts"
+    "companion": "node scripts/preview-companion.ts",
+    "build:ext": "node scripts/build-extension.ts",
+    "build:ext:dev": "node scripts/build-extension.ts --dev"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
@@ -26,6 +28,7 @@
     "@playwright/test": "^1.55.0",
     "@tailwindcss/vite": "^4.1.13",
     "@testing-library/jest-dom": "^6.8.0",
+    "@types/chrome": "^0.2.8",
     "@types/node": "^24.3.0",
     "@types/react": "^19.1.12",
     "@types/react-dom": "^19.1.9",

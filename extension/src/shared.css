@@ -1,0 +1,82 @@
+/*
+  The extension's own stylesheet, and a deliberate duplication.
+
+  These are the default room's tokens from `src/index.css`, copied rather than
+  imported. Nothing here can reach the app: this is a chrome-extension:// page
+  with no build relationship to the Tailwind theme, and the app cannot export
+  what it does not have — the palette lives in an `@theme` block, not in a
+  module. Generating one from the other would mean a build step whose only
+  output is five colours.
+
+  So it is copied, and it is copied *only for the default room*. The extension
+  does not follow the room you chose, on purpose: it never receives one, and a
+  contract field existing solely to tint an interstitial would be a field to
+  keep compatible forever. This page is grey, quiet and rarely seen.
+
+  If the ink or bright values change in `index.css`, this drifts and nothing
+  fails. It is worth exactly the cost of two colours looking slightly off on a
+  page nobody is meant to linger on.
+*/
+
+:root {
+  --ink: #08080b;
+  --surface: #101016;
+  --line: #24242e;
+  --muted: #6e6e80;
+  --body: #a8a8bb;
+  --bright: #f0f0f5;
+  --deep: #e8a33d;
+
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--ink);
+  color: var(--body);
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-family: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
+}
+
+button {
+  font: inherit;
+  color: var(--body);
+  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+button:hover {
+  background: var(--surface);
+  color: var(--bright);
+}
+
+input[type='text'] {
+  font: inherit;
+  color: var(--bright);
+  background: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 7px 10px;
+  width: 100%;
+}
+
+input[type='text']:focus-visible,
+button:focus-visible {
+  outline: 2px solid var(--deep);
+  outline-offset: 2px;
+}

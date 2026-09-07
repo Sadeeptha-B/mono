@@ -63,6 +63,29 @@ jobs:
             - run: npm test
             - run: npm run test:e2e
 
+            # The extension is not deployed anywhere — the Pages artifact below
+            # is `dist` alone — but it shares the contract type with the app, so
+            # a change to that type has to fail here rather than the next time
+            # somebody happens to build it. `npm run build` already typechecks
+            # it; this proves the two Vite builds still produce a loadable
+            # directory.
+            - run: npm run build:ext
+
+            # The exact archive the Chrome Web Store wants, built by the same
+            # run that verified the app. Zipped here rather than left to
+            # upload-artifact, which wraps whatever it is given in a structure
+            # of its own — the store requires `manifest.json` at the root of the
+            # zip, and a nested folder is rejected at upload with a message that
+            # does not say so.
+            - name: Package the extension
+              run: cd dist-extension && zip -qr ../mono-extension.zip .
+
+            - uses: actions/upload-artifact@v4
+              with:
+                  name: mono-extension
+                  path: mono-extension.zip
+                  retention-days: 14
+
             - if: failure()
               uses: actions/upload-artifact@v4
               with:

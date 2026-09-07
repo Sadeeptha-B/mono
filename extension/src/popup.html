@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mono blocking</title>
+
+  </head>
+  <body>
+    <header class="head">
+      <span class="wordmark">Mono</span>
+      <span id="status" class="status tnum"></span>
+    </header>
+
+    <form id="add" class="add">
+      <label class="visually-hidden" for="host">Site to block</label>
+      <input
+        type="text"
+        id="host"
+        name="host"
+        placeholder="reddit.com"
+        autocomplete="off"
+        autocapitalize="off"
+        spellcheck="false"
+      />
+      <button type="submit">Add</button>
+    </form>
+
+    <p id="hint" class="hint" role="status"></p>
+
+    <ul id="list" class="list"></ul>
+
+    <p class="footnote">
+      These are blocked only while a focus block is running in Mono. Nothing is
+      blocked on a break, between blocks, or when no focus block is running.
+    </p>
+
+    <script type="module" src="./popup.ts"></script>
+  </body>
+</html>

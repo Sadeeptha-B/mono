@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Mono — you are in a block</title>
+
+  </head>
+  <body>
+    <main class="card">
+      <p class="eyebrow">You are in a focus block</p>
+
+      <!-- Filled from the armed block. Left empty rather than pre-filled with a
+           placeholder, because a wrong purpose showing for a frame is worse
+           than a beat of nothing on a page that exists to be believed. -->
+      <h1 id="purpose" class="purpose"></h1>
+
+      <p id="remaining" class="remaining tnum"></p>
+
+      <div class="actions">
+        <button type="button" id="back">Go back</button>
+        <button type="button" id="end">End this block early</button>
+      </div>
+
+      <p class="footnote">
+        Ending it early records the block as cut short in Mono, the same as the
+        timer&rsquo;s own End early. Nothing here is hidden from your day.
+      </p>
+    </main>
+
+    <script type="module" src="./blocked.ts"></script>
+  </body>
+</html>

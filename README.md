@@ -14,18 +14,20 @@ npm run test:e2e   # Playwright, builds and previews first
 npm run build      # production bundle + service worker
 ```
 
-Three more documents, for anyone picking this up:
+Documentation is split by audience and ownership:
 
-- **[docs/decisions.md](docs/decisions.md)** — the calls that were made
-  deliberately and the traps that have already cost an afternoon. Read it
-  before changing something that looks odd; several things are odd on purpose.
-  It also settles where new documentation goes.
-- **[docs/manual-qa.md](docs/manual-qa.md)** — what has to be checked by hand,
-  because no test can hear audio or open a real always-on-top window.
-- **[CLAUDE.md](CLAUDE.md)** — the short orientation, auto-loaded by agents.
+- **[CLAUDE.md](CLAUDE.md)** — the short repository map and invariants for
+  agents.
+- **[docs/extension.md](docs/extension.md)** — the current cross-file contract
+  for the Chromium extension.
+- **[docs/decisions.md](docs/decisions.md)** — historical reasoning and traps;
+  search the relevant area before changing something that looks odd.
+- **[docs/manual-qa.md](docs/manual-qa.md)** — checks that need a real browser,
+  audio output, or always-on-top window.
 
-Everything descriptive lives in the source. Every file worth reading opens with
-a docblock explaining what it is for.
+[`docs/requirements.md`](docs/requirements.md) preserves the original brief; it
+is not the current specification. Local implementation facts stay in source
+docblocks beside the code they describe.
 
 ## How it fits together
 
@@ -51,6 +53,9 @@ src/hooks/       the ticker, reconciliation, notifications
 src/ambient/     rooms, procedural sound, theme, controls, shared scene geometry
 src/components/  the two panels, the stage prompts, the guide, the companion
 src/pip/         the always-on-top mini window
+src/contract/    the one type the browser extension shares with the app
+src/blocking/    publishing what the session is doing, for the extension
+extension/       the Chromium site blocker: worker, bridge, interstitial
 ```
 
 The UI is two panels. The **stage** on the left is the one thing that changes
@@ -201,6 +206,68 @@ npm run companion   # visual QA sheet for rooms, progression and companion frame
 npm run icons       # regenerate the favicon and PWA icons from those frames
 ```
 
+## Blocking sites during a block
+
+There is a Chromium extension in [extension/](extension/) that blocks sites you
+name, and only while a focus block is actually running. Build the store version
+with `npm run build:ext`, or use `npm run build:ext:dev` when running Mono on
+localhost, then load `dist-extension/` unpacked. The blocklist is your own and
+nothing is shipped in it.
+
+The interesting part is how little the two halves say to each other. Mono
+publishes its current blocking intent when the session changes and when the
+extension asks it to republish. A running intent carries an **absolute end
+time** — the same instant the timer counts to. The extension never counts down,
+never asks whether Mono is still there, and never needs the tab to stay open.
+Close it, sleep the machine, let Chrome kill the extension's service worker:
+the intended end is still exactly right because it was never a duration. That
+is the timer invariant again, one process further out.
+
+What is exact is the timestamp, not the tidying up. Mono's stop message asks the
+worker to remove the rules promptly; with Mono closed the extension falls back
+to an alarm, and Chrome may delay an alarm by an arbitrary amount. The alarm is
+scheduled to retry at one-minute intervals until a successful reconciliation
+clears it, but that interval is not a delivery guarantee. Blocking is never
+armed before Mono announces a block; removal after `endsAt` is deliberately
+best-effort rather than falsely exact.
+
+Several Mono tabs can disagree because each holds its own in-memory session.
+The extension orders competing blocks by when they began and scopes ambiguous
+messages to the page instance that armed the current one, so a stale tab cannot
+silently cancel a newer block. The current arbitration and failure model is in
+[docs/extension.md](docs/extension.md); its historical reasoning remains in
+[docs/decisions.md](docs/decisions.md). Expiry cleanup has the same best-effort
+timing described above.
+
+Mono itself is never blocked, whatever the list says. Blocking ends by asking
+Mono to abandon the block, so a rule that caught Mono would block the way out of
+itself — and the entry that did it need not even name Mono, since naming a site
+covers everything under it. Every rule carves Mono out, so blocking a domain
+Mono happens to live under blocks the rest of it and leaves Mono reachable.
+
+Mono does not know whether the extension is installed. It publishes into its own
+window and carries on identically either way, which is why there is nothing
+about blocking anywhere in the app's interface.
+
+When a blocked site is opened, the extension shows the purpose you typed rather
+than an error page — that sentence is the only argument it has worth making. Its
+one button ends the block through Mono itself, so the day records a block cut
+short exactly as End early would. There is no timed pass, for the same reason
+there is no pause.
+
+Showing that page needs Chrome's permission for the site, so site access is
+requested one hostname at a time from the click that adds it. Decline and the
+site is still blocked — it just gets Chrome's error page instead of the
+reminder. No broad site access is granted at install, and removing a site gives
+its permission back.
+
+The manifest requires `declarativeNetRequest`, `storage`, and `alarms`. None can
+read browsing history. The extension holds no `tabs` permission and watches no
+navigation. A content script runs only on Mono's declared origins so the timer
+can reach the worker; Chrome may name those origins in the install prompt. The
+full permission and authority boundaries are in
+[docs/extension.md](docs/extension.md).
+
 ## Limitations
 
 If the browser refuses to save — a full quota, or site data blocked — Mono says
@@ -220,4 +287,5 @@ Some of this cannot be tested. A browser test cannot hear a loop seam, and
 Playwright is never given a real picture-in-picture window — the e2e specs stand
 it in with an iframe. [docs/manual-qa.md](docs/manual-qa.md) is the list of
 checks that close that gap: the timer across sleep, the pop-out across monitors,
-every ambient sound, reduced motion, and the end-of-day card.
+every ambient sound, reduced motion, the end-of-day card, and the installed
+site-blocking extension.

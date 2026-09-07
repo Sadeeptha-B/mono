@@ -4,6 +4,7 @@ import { domAnimation, LazyMotion } from 'motion/react'
 
 import { App } from './app/App'
 import { applyRoomTheme } from './ambient/theme'
+import { publishBlockingIntent } from './blocking/publish'
 import { registerServiceWorker } from './pwa/registerServiceWorker'
 import { useSession } from './store/session'
 import './index.css'
@@ -45,3 +46,7 @@ createRoot(root).render(
 )
 
 registerServiceWorker()
+
+// Tell the site-blocking extension what the session is doing, if one is there to
+// listen. Nothing downstream of this call knows or cares whether one is.
+publishBlockingIntent()

@@ -1,0 +1,164 @@
+/*
+  The popup: a text field, a list, and a line saying whether anything is
+  running. It is the whole of the extension's settings, and it stays that size.
+*/
+
+body {
+  width: 20rem;
+  padding: 14px;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.wordmark {
+  font-size: 12px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--body);
+}
+
+.status {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.status[data-running='true'] {
+  color: var(--deep);
+}
+
+.add {
+  display: flex;
+  gap: 8px;
+}
+
+.add button {
+  flex: none;
+}
+
+/*
+  The hint says why an entry was refused. It is empty most of the time and
+  collapses to nothing rather than reserving a line, because a permanently
+  visible empty slot reads as something being broken.
+*/
+.hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.hint:empty {
+  display: none;
+}
+
+.list {
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 16rem;
+  overflow-y: auto;
+}
+
+.list:empty::after {
+  content: 'Nothing blocked yet.';
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+
+.row:first-child {
+  border-top: 0;
+}
+
+.host {
+  color: var(--bright);
+  overflow-wrap: anywhere;
+  margin-right: auto;
+}
+
+/*
+  Whether this site will explain itself or merely fail to load.
+
+  Three states in one slot, deliberately the same size and position, because
+  the difference is a fact about the site rather than a problem with it. The
+  granted and unavailable states are labels; the ungranted one is a button,
+  because it is the only thing on this row anyone can do something about.
+*/
+.state {
+  flex: none;
+  font-size: 10.5px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  padding: 2px 7px;
+  border-radius: 999px;
+  line-height: 1.5;
+}
+
+.state.granted,
+.state.unknown {
+  color: var(--muted);
+  border: 1px solid var(--line);
+}
+
+.state.ungranted {
+  color: var(--deep);
+  border: 1px solid color-mix(in srgb, var(--deep) 35%, transparent);
+  background: transparent;
+  cursor: pointer;
+}
+
+.state.ungranted:hover {
+  background: color-mix(in srgb, var(--deep) 12%, transparent);
+  color: var(--deep);
+}
+
+/*
+  The same × Mono uses for anything the user wrote, in both panels. A blocklist
+  entry is one of those, so it gets the same control rather than a new one.
+*/
+.remove {
+  flex: none;
+  border: 0;
+  padding: 2px 6px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.remove:hover {
+  background: transparent;
+  color: var(--bright);
+}
+
+.footnote {
+  margin: 16px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

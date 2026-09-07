@@ -5,27 +5,26 @@ name a single purpose before each one. Single user, one device, no backend.
 
 ## Read this first
 
-**Every file worth touching opens with a docblock** saying what it is for and
-why it is shaped that way. Read it before editing the file. Those comments are
-the real documentation — they sit next to the code and cannot drift.
+Start with the opening docblock of a file before editing it. It owns local
+purpose, ordering constraints, and failure details; tests own executable
+invariants.
 
-**[docs/decisions.md](docs/decisions.md) is the other half**: the reasoning that
-is not recoverable from the source. Calls made deliberately, several of them
-after being built the other way, plus the traps that have already cost an
-afternoon. Check it before "improving" something that looks odd — several things
-here look odd on purpose.
+Use **[docs/extension.md](docs/extension.md)** for the extension's current
+cross-file protocol, authority, recovery, and permission model. Use
+**[docs/decisions.md](docs/decisions.md)** for historical reasoning and traps,
+not as a snapshot of current implementation. Earlier decisions may have been
+superseded by later entries. Search it by the relevant subsystem or term rather
+than loading the append-only log as general context.
 
 `docs/requirements.md` is the original brief, kept as history.
+`docs/manual-qa.md` owns checks that need real browser facilities. Work through
+the relevant section when a change crosses one of those boundaries.
 
-`docs/manual-qa.md` is the list of things no automated test can reach — real
-audio, a real always-on-top window, sleeping the machine. Work through the
-relevant part of it by hand when you touch one of those.
-
-**Where new documentation goes** is itself settled, in `docs/decisions.md`:
-docblock first, then a test, then that file, then the README, then here. A large
-change may keep a working document in `docs/wip/`, which is untracked and
-deliberately temporary — it is dissolved into those tiers when the change lands,
-so never leave lasting reasoning there and never assume one exists.
+The documentation ownership rules are settled at the top of
+`docs/decisions.md`. A large change may keep an untracked working document in
+`docs/wip/`; normally dissolve it when the change lands. Promote only stable,
+trimmed cross-file material whose subsystem genuinely needs an operational
+reference. Never treat a WIP document as authoritative.
 
 ## The two invariants
 
@@ -47,6 +46,9 @@ src/hooks/       the shared ticker, reconciliation, notifications.
 src/ambient/     rooms, procedural audio, theme, controls, shared scene geometry.
 src/components/  the two panels, the stage prompts, the guide, the companion.
 src/pip/         the always-on-top mini window: lifecycle, styles, its panels.
+src/contract/    the wire type the browser extension shares. pure, both sides.
+src/blocking/    publishes what the session is doing. no extension knowledge.
+extension/       the Chromium site blocker. never imports React or the store.
 scripts/         generators: app icons, and visual QA for the companion environment.
 e2e/             Playwright.
 ```
@@ -61,6 +63,8 @@ npm run typecheck
 npm run build
 npm run icons      # regenerate favicon + PWA icons from the companion's frames
 npm run companion  # room, progression, interaction and companion visual QA sheet
+npm run build:ext  # production/store extension, into dist-extension/
+npm run build:ext:dev # extension with localhost origins for manual development
 ```
 
 ## Working here
@@ -86,6 +90,14 @@ npm run companion  # room, progression, interaction and companion visual QA shee
   coupling the DOM-free module to the component. Run `npm run companion` and
   inspect the PNG across every room and growth tier; pixel art and scene
   layering are unreadable as source.
+- **Read [docs/extension.md](docs/extension.md) before changing the extension.**
+  It owns the current cross-file protocol, authority, failure, permission, and
+  verification model. Source docblocks own local ordering constraints;
+  `docs/decisions.md` is history, not the operating manual.
+- **Test extension behavior at its real boundaries.** Extend the behavioral
+  worker harness and its failure injection rather than replacing Chrome with
+  loose spies. Installed DNR, permission, alarm, and document-targeting behavior
+  still requires the real-browser checks in `docs/manual-qa.md`.
 - **Before finishing:** `npm run typecheck`, `npm test`, and `npm run test:e2e`
   if anything user-facing moved. Add a dated entry to the log at the bottom of
   `docs/decisions.md` for anything a future reader would be puzzled by.

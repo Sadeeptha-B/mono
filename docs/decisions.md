@@ -4,23 +4,26 @@ What this file is: the reasoning that is **not recoverable from the source**.
 Calls that were made deliberately, several after being built the other way; and
 traps that have already cost someone an afternoon.
 
-What this file is not: a description of the codebase. Every file worth reading
-opens with a docblock explaining what it is for and why it is shaped that way,
-and those cannot drift because they sit next to the code. Nothing here should
-duplicate them, and nothing here should state a fact a command could answer —
-no test counts, no file inventories, no line totals. Those rot within a week
-and then actively mislead.
+What this file is not: a current description of the codebase. Local facts belong
+beside their code and stable cross-file operating contracts belong in a focused
+document such as `extension.md`. Nothing here should state a fact a command
+could answer — no test counts, file inventories, or line totals. Those rot
+within a week and then actively mislead.
 
-Append to the log at the bottom rather than editing entries above. "Changed
-after being built the other way" is the most useful sentence in this document
-and it only survives if entries accumulate.
+Append to the log at the bottom rather than editing entries above. Earlier
+entries can describe implementations that later entries replaced, so never use
+one isolated entry as the current specification. "Changed after being built the
+other way" is useful precisely because the history accumulates.
+
+For an ordinary change, read the settled decisions and traps that apply, then
+search the log by subsystem or term. The full chronological log is historical
+evidence, not required onboarding context.
 
 ---
 
 ## Where documentation goes
 
-Five places, in order of preference. The first one that can hold a fact owns
-it, and nothing that fits in an earlier tier is repeated in a later one.
+Each fact has one owner. Link to that owner instead of keeping parallel copies.
 
 1. **The docblock of the file it is about.** Anything whose scope is one file:
    what it is for, why it is shaped this way, what breaks if you change it,
@@ -31,14 +34,22 @@ it, and nothing that fits in an earlier tier is repeated in a later one.
    `scene.test.ts` pinning the floor to `SPRITE_TOP + SPRITE_H` is a
    cross-module invariant that would otherwise be a sentence nobody reads until
    after they had broken it.
-3. **This file.** Reasoning that spans files and so has nowhere else to live,
-   traps, what was deliberately not built, and the dated log.
-4. **`README.md`.** What Mono is, how to run it, how the pieces fit together,
+3. **A focused operational document.** A subsystem may get one when agents need
+   a stable cross-file contract that source and tests cannot express compactly.
+   It owns the current model, not a file inventory, test count, work log, or
+   duplicate commentary. `extension.md` is the current example; most features
+   do not need an equivalent.
+4. **This file.** Historical reasoning, traps, rejected alternatives, and the
+   dated log. It explains why policy changed; it does not restate current code.
+5. **`README.md`.** What Mono is, how to run it, how the pieces fit together,
    what it cannot do. Orientation for a person arriving, not a specification:
    the in-app guide quotes live settings, which makes it the one description of
    behaviour that cannot disagree with the app.
-5. **`CLAUDE.md`.** The map and the two invariants, so an agent gets its
-   bearings without being told where to look. Pointers, and nothing else.
+6. **`CLAUDE.md`.** The repository map, global invariants, and routing pointers
+   an agent must see before it knows where to look.
+
+`manual-qa.md` separately owns checks that require real platform behavior, and
+`requirements.md` preserves the original brief as history.
 
 ### Track documents are scaffolding, not artifacts
 
@@ -47,12 +58,13 @@ which is untracked. It may hold every kind of thing this file bans — file
 inventories, test counts, a base commit, a verification table — because that is
 exactly what it is for while the work is in flight.
 
-It is then **dissolved rather than merged**. Every paragraph goes to a docblock,
-a test, an entry here, or the bin, and the document itself is deleted. The
-derivable half is safe in there precisely because it never outlives the work
-that made it true. A track document that survives its track becomes the thing
-`HANDOVER.md` was: authoritative-looking, half rotted, and read in preference to
-the source because it is longer.
+It is normally **dissolved rather than merged**. Each durable paragraph moves to
+its owning docblock, test, operational document, decision entry, or the bin. A
+subsystem document may be promoted deliberately, but only after removing
+volatile status, inventories, counts, and duplicated implementation detail. A
+track document that simply survives its track becomes the thing `HANDOVER.md`
+was: authoritative-looking, half rotted, and read in preference to the source
+because it is longer.
 
 ---
 
@@ -309,6 +321,25 @@ it.
 - **No second always-on-top window.** Document picture-in-picture gives one per
   document and no way to place it; the feature is designed around that rather
   than against it.
+- **No blocking outside a running block.** The extension arms while a block runs
+  and at no other time. An always-on focus mode is a different product, and it
+  would destroy the thing that makes taking a break a visible trade.
+- **No shipped blocklist.** No categories, no curated set of "distracting"
+  sites. That is a judgement about someone's life that Mono has not earned, and
+  it would be wrong for anyone whose work happens on one of them.
+- **No keyword or content blocking.** It would have to read the page, which
+  needs host permissions, which puts the extension in a permission class a focus
+  timer has no business being in.
+- **No plan derivation in the extension.** It is handed a conclusion with an
+  expiry, never the inputs. Two processes running `derivePlan` are two schedules
+  that can disagree.
+- **No UI in Mono for the extension.** The app publishes an intent and never
+  learns whether anything heard it. The same reasoning as the pop-out button
+  rendering nothing where the API is absent, one step further along: here there
+  is not even a capability to detect.
+- **No browsing data in the event log**, if and when tracking is built. The log
+  is the day's journal of decisions the user made, and where you went is
+  observed rather than decided — the same boundary the session mute sits on.
 
 ---
 
@@ -1891,3 +1922,688 @@ Both halves of that are pinned in `e2e/focus-session.spec.ts`, under *a guide
 that never arrives*, which blocks the chunk at the network and asserts each
 branch. A data-safety rule that only exists in a docblock is one refactor away
 from being an ordinary reload button again.
+
+**2026-09-04 — Site blocking, in a browser extension that is told one number.**
+Mono could ask you to name a purpose and could time the block, and could do
+nothing whatever about the tab you open out of habit two minutes in. Fixing that
+needs a browser extension, which means a second process, which is where this
+could have gone badly.
+
+It went in this repository, and the argument is narrow rather than
+philosophical. The two halves share exactly one type, `BlockingIntent` in
+`src/contract/blocking.ts`. Across two repositories a change to it compiles on
+both sides and fails at runtime in a user's browser with blocking stuck on; in
+one repository it is a red squiggle. Nothing else about the split needed
+solving. `src/domain` was already pure, and `tsconfig.app.json` narrows `types`
+to Vite and vitest, so `chrome.*` is not in scope in app code at all — a
+compiler-enforced boundary that was already there by accident of good config.
+
+**The extension is handed one absolute timestamp, and that is the whole design.**
+It is the second invariant carried across a process boundary. The extension
+never counts down, never polls, never asks for a heartbeat, and never needs the
+tab that told it to still exist. Close the tab, sleep the machine, let Chrome
+kill the service worker after its thirty seconds — blocking still ends at the
+right instant, because it was never a duration. The alternative not built is a
+heartbeat, and it is worth being explicit about why: with a heartbeat, the
+absence of a message is indistinguishable from a dead app, and every way of
+resolving that ambiguity is either "block forever" or "stop blocking whenever
+the tab is briefly slow".
+
+**Session rules rather than dynamic ones, which is the counter-intuitive half.**
+Dynamic rules persist to disk and survive a crash. That sounds like the safer
+choice and is the opposite: a crash mid-block would leave a stale rule blocking
+sites indefinitely with nothing running that knows why, and the user's only
+recourse is working out which extension is doing it. Session rules evaporate
+when the browser closes, and `resume()` puts them back deliberately, from an
+`endsAt` it has just checked against the clock. Losing the state is the safe
+direction; restoring it is a decision taken once. The same asymmetry settles
+every ambiguous path in the worker — a malformed message, an unknown contract
+version, a timestamp outside the clamp all end in *no rules* rather than in
+leaving the previous ones up. Failing to block costs one block. Blocking wrongly
+costs the user, who uninstalls rather than debugs.
+
+**`redirect` rather than `block`, and the cost that comes with it.** Blocking
+hands the user Chrome's error page, which is a dead end that says nothing. The
+interstitial repeats the sentence they typed half an hour ago, and that sentence
+is the only argument this extension has any business making. The price is that
+`blocked.html` has to be in `web_accessible_resources` for `<all_urls>` — a rule
+cannot redirect a public request to a resource that is not web accessible, and
+the target is fixed at rule-authoring time so `use_dynamic_url` is not
+available. So any site can probe that URL and learn the extension is installed.
+That is a real cost, accepted knowingly, and it would not be worth paying for
+something like an ad blocker.
+
+**Three permissions: `declarativeNetRequest`, `storage`, `alarms`.** No host
+permissions and no `tabs`. The interstitial still has to reach the app to end a
+block, and `tabs.query({ url })` would make that a one-liner in exchange for the
+URL of every tab the user has open. Instead the content script announces its own
+tab id and the worker keeps the list — fifteen lines in `state.ts`, with a stale
+id costing one caught `sendMessage`. The precedent is the automatic
+picture-in-picture refusal above: a focus timer does not get to make a claim on
+your privacy in order to be slightly more convenient.
+
+**The escape hatch ends the block rather than lifting the rules.** The worker
+could simply drop its rules and let you through, and the app would never find
+out — the block would keep running, the timer would keep counting, and the day
+would record a block nobody sat through. So the interstitial's one button routes
+back through the app and dispatches the same `abandonBlock` that End early does.
+One vocabulary, one code path, and the `running: false` that follows disarms the
+extension by itself. There is deliberately no timed pass: a five-minute
+exemption is a pause under another name, and there is no pause.
+
+**`wantsAmbience` became `isBlockRunning` and moved to `machine.ts`.** Blocking
+wants precisely the predicate ambience already had — a *block*, in `focusing` or
+`reflecting` — and the rows that matter are the false ones. At `blockComplete`
+and `reconciling` the segment is still `active`, because `timerElapsed` appends
+nothing and nothing is banked until the user answers, so anything reading
+`active` alone would keep a sound playing and a website blocked after the block
+was over. Two copies of that expression is how you end up with a break that is
+silent but still blocked. `machine.test.ts` now walks all eight phases against a
+block, a break and nothing, and asserts the two consumers still agree.
+
+**What the e2e suite can and cannot reach here.** Playwright is never given the
+extension: the default run uses `chrome-headless-shell`, which has no extension
+layer at all. So `e2e/blocking-intent.spec.ts` records `window.postMessage`
+through `addInitScript` and covers the half that is Mono's — the right intent,
+with the right absolute end, at the right moments, including a reload mid-block
+republishing the same instant and the ticker *not* republishing forty-five times
+a minute. Everything past that message is ten numbered checks in
+`docs/manual-qa.md`. The same bargain as the iframe standing in for
+picture-in-picture, and worth writing down rather than rediscovering.
+
+**Two things about the build that will bite.** `scripts/build-extension.ts` runs
+Vite twice, because a content script declared in a manifest is a classic script
+rather than a module and needs its own IIFE build written into the same
+directory without erasing the first — `emptyOutDir` is true exactly once, and
+getting that wrong produces a directory that loads as an extension and silently
+does nothing. And `publicDir` is `false` on both builds: the root has to be the
+repo for `@/` to resolve, and the default would quietly copy the app's PWA
+manifest, `mono.svg` and every icon into the extension. The manifest itself is
+generated from `extension/src/manifest.ts` rather than checked in, so the origins
+the content script is injected into cannot drift from the origins the worker
+will listen to. Those two lists disagreeing gives you a feature that is
+completely dead and looks entirely fine.
+
+**2026-09-05 — The extension blocked nothing, and five smaller ways it lied to
+itself.** A review of the blocking extension before it had ever been loaded.
+Six findings, all of them real, and the first invalidated the mechanism.
+
+**`declarativeNetRequest` does not cover `redirect`.** It grants implicit access
+to `allow`, `allowAllRequests` and `block`. A `redirect` rule additionally needs
+host permission for the URL it acts on, and without it the rule installs,
+matches nothing, and reports no error whatsoever. Every rule this extension
+wrote was a redirect, so it would have shipped looking entirely correct and
+blocking not one site. Nothing in the automated suite could have caught it: the
+rule shape was right, and rule shape was all a test without a browser can see.
+
+The fix keeps the interstitial without buying it at the usual price. Host access
+is `optional_host_permissions` rather than `host_permissions`, so nothing is
+requested at install, and it is asked for one site at a time from the click that
+adds that site — the prompt names the site the user has just typed. A host
+without permission still gets a `block` rule, so the promise is kept and only
+the explanation is lost. `rulesForHosts` therefore takes the granted subset and
+decides per host. Requesting `*://*/*` up front was the alternative and is the
+one thing that would have made this worse: it is the loudest warning Chrome
+shows, it is named in the Web Store's review guidance as a major cause of
+extended review, and it would be false about an extension that reads no page.
+
+What made the mistake possible is worth more than the fix. The permission was
+verified against a summary that said the permission "provides implicit access to
+rules", and the list of *which* rules was one clause further on. A capability
+that fails silently deserves the primary source read twice.
+
+**Delivery is not agreement, in two places.** The interstitial's End early
+button set a boolean, and the content script consumed it on `hello` — at
+`document_start`, before Mono has evaluated its own modules and therefore before
+anything in the page is listening. The request was posted into an empty room and
+the only record of it had already been destroyed. Separately, the worker treated
+`tabs.sendMessage` resolving as confirmation and stopped at the first tab that
+answered; with two tabs open that may be a background one, and the tab the user
+is actually in is never told. Both are now the same thing: the request is
+recorded against a **segment id**, survives until an intent says that segment
+has stopped, is sent to every known tab, and is held by the bridge until the
+page proves it is listening — the proof being the page's own first intent, since
+`publishBlockingIntent` registers its listener and then immediately publishes.
+The segment id also went into the contract, because a request that can arrive
+late can arrive after the block it was arguing with has ended, and abandoning
+the block the user started *next* is a worse failure than not abandoning at all.
+
+**Every mutation is serialised now.** `arm`, `disarm` and `materialise` each
+await several times, and message, alarm and permission events all started them
+with a bare `void`. A start followed quickly by a stop could interleave so the
+stop cleared the rules and the older start then installed the ones it had
+already computed — blocked, with nothing running, and no path back but
+uninstalling. A promise chain fixes it; there is nothing to contend for beyond
+ordering.
+
+**The alarm claim was simply wrong.** A docblock here said a one-shot `when`
+escapes the thirty-second floor. It does not: Chrome will not fire an alarm
+sooner than thirty seconds away whatever `when` says, and may delay it
+arbitrarily beyond that. So expiry is documented as best-effort, and the alarm
+is now a backstop rather than the mechanism — `readArmed` refuses an expired
+record, and every question asked of the worker reconciles first, which makes the
+interstitial reaching zero one of the moments the rules come down.
+
+**Storage was the one input that skipped validation.** `readArmed` cast what it
+found and checked only that `endsAt` was in the future, so a corrupt record or
+one with a timestamp a year out would be re-armed without meeting the clamp
+every incoming message meets. It now runs through `readBlockingIntent`, the same
+guard against the same clock, which is possible because `ArmedBlock` was made
+literally the running arm of `BlockingIntent` rather than a parallel shape. A
+design that fails open cannot have a back door that fails closed.
+
+**And the privacy claim was too broad.** The README said none of the permissions
+can read a page. The three named permissions cannot, but `content_scripts`
+grants access to Mono's own origins and Chrome shows them in the install prompt.
+The narrower claim — no `tabs`, no navigation watching, so no browsing history —
+is both true and still the interesting one.
+
+**2026-09-06 — Identity, everywhere a message can arrive late.** A second review
+pass on the blocking extension, again before it had been loaded once. Five
+findings, all real, and four of them are the same mistake in different clothes:
+*resolving "which block" at the moment a message is received rather than at the
+moment it was sent.*
+
+**A message that arrives late must say what it is about.** The interstitial's
+button sent `{ kind: 'endBlockEarly' }` and the worker looked up whatever was
+armed. But an interstitial is an ordinary page — it can sit in a background tab
+across the end of the block that produced it and the start of the next one — so
+pressing that button could end a block the user had just started and was not
+looking at. It now carries the segment it *displayed*, captured once at load,
+and the worker refuses a request naming anything but the armed one. The same
+correction applied to the idle intent, which had no identity at all: two Mono
+tabs hold two independent stores with nothing synchronising them, so a tab still
+holding a finished block would eventually announce its end and disarm a block
+another tab had genuinely started. `running: false` now carries
+`stoppedSegmentId`, and a stop naming a block that is not the armed one is
+ignored entirely.
+
+The null case is worth stating because it looks like the same hole and is not.
+`stoppedSegmentId: null` means "I was not tracking one", which is a freshly
+loaded tab — and a freshly loaded tab is *authoritative*, because it rebuilt its
+session from the same `localStorage` every other tab wrote to. An unqualified
+stop is also what an unparseable message folds to, and that has to keep working:
+refusing an idle nobody can qualify would be a way to stay blocked.
+
+**Compatibility with nothing is not compatibility.** `segmentId` on the end
+request was briefly optional, folding to "whatever is running", on the reasoning
+that an older extension might not send it. No version of the extension has ever
+shipped, so there is no older half — and the fallback was precisely the hole the
+field existed to close. Required now, and a request without one is refused.
+
+**A default argument rebuilt the critical bug as a convenience.** `rulesForHosts`
+took `redirectable` with a default of `hosts`, so any future caller that forgot
+the second argument would silently emit redirect rules for hosts nobody had
+permission for. That is the exact failure the parameter was added to fix. The
+argument is required. Relatedly, a comment claiming redirects consume a smaller
+session-rule allowance was wrong: `MAX_NUMBER_OF_UNSAFE_SESSION_RULES` and
+`MAX_NUMBER_OF_SESSION_RULES` are both 5,000. The 5,000-of-30,000 sub-quota is a
+*dynamic* rule limit, and this extension uses no dynamic rules.
+
+**The declined-permission path had no way to heal.** A granted site redirects to
+our interstitial, which pings the worker as its countdown hits zero — that is a
+reconciliation trigger. A declined site gets a plain block and Chrome's own
+error page, which cannot ask us anything. So with Mono closed and the alarm
+delayed, that rule could sit there until some unrelated extension event, which
+could be hours. The alarm now repeats every minute and stops itself on the first
+firing that finds nothing armed. The contract is written down rather than
+implied, in the README and in `manual-qa.md`: **nothing is ever blocked before a
+block starts or after Mono says it ended, and clearing up after `endsAt` with
+Mono closed is best-effort with a one-minute retry.** The QA item that asserted
+"a few seconds is correct and a minute is not" was unenforceable — Chrome
+documents no upper bound — and now asks the answerable question instead, which
+is whether the rule clears at all.
+
+**Two documentation claims had rotted within a day of being written.** The
+manifest's opening comment still said `declarativeNetRequest` covers redirects,
+directly above the corrected comment saying it does not. The README said
+blocking "ends at exactly the right moment" immediately before describing
+best-effort expiry. The precise version of the first claim is the interesting
+one and now appears once; the second was split into the half that is exact (the
+instant) and the half that is not (the tidying up).
+
+**2026-09-06 (review follow-up) — A fresh tab is a snapshot, not an authority.**
+The identity fix above is correct for a named stop and incomplete for
+`stoppedSegmentId: null`. The claim that a reload is authoritative because it
+reads shared `localStorage` ignored two properties Mono already supports: a
+write can fail while the running session continues in memory, and an older tab
+can overwrite the shared key from its independent store. A fresh tab can
+therefore reconstruct idle while another tab genuinely has a block running.
+An expired or otherwise invalid intent has the same hole, because the worker
+currently folds validation failure into the same anonymous stop.
+
+The repair should stay extension-local rather than turn this into a persistence
+rewrite: remember `sender.documentId` for the accepted running block as a
+browser-session lease, accept anonymous failure only from that owner (or with no
+owner during startup recovery), and continue requiring segment identity for a
+normal stop. Chrome supplies that document-lifetime UUID to content-script
+messages; a tab id is useful for delivery but too broad for authority because a
+reload keeps the tab and replaces the document. A running intent also needs
+`startedAt` before the worker can reject an older tab's stale running snapshot
+rather than letting last delivery win.
+This is the narrower version of fail-open: fail open for the current authority;
+ignore ambiguity from unrelated publishers. The active track document records
+the state table and tests this still needs.
+
+**An alarm period is a requested cadence, not a delivery bound.** The repeating
+alarm is still useful after a transient reconciliation failure, but Chrome may
+delay any occurrence by an arbitrary amount. Documentation now says it is
+scheduled every minute rather than promising a retry arrives every minute, and
+manual QA asserts the result once a reconciliation trigger reaches the worker
+rather than inventing an elapsed-time ceiling the platform does not provide.
+
+**2026-09-06 (later) — The publisher lease, and what "fail open" actually meant.**
+Built the repair sketched in the entry above. A running intent now carries
+`startedAt`, the worker records the `sender.documentId` that armed the current
+block in `chrome.storage.session`, and the whole judgement lives in one pure
+function — `decideIntent` in `extension/src/authority.ts` — that
+`extension/src/background.ts` gathers facts for and obeys.
+
+Three kinds of message, three different amounts of trust, and the split is the
+whole idea. A **named stop** is self-scoping, not secret or authenticated: it can
+only tear down the block it names, so it cannot touch a different block and any
+Mono publisher may send one. A **running intent** can be ordered against what is
+armed, so a block that began later wins and one that began earlier is a stale
+tab talking about history. Everything else — an anonymous stop, and anything
+that failed validation — is honoured only from the document that armed the
+block, or when session storage holds no publisher claim.
+
+That no-owner case is broader than browser startup. Chrome clears
+`storage.session` when an extension is disabled, reloaded, or updated as well as
+when the browser restarts, while the armed record in `storage.local` survives.
+The first Mono page to speak after any of those transitions is therefore the
+fail-open recovery evidence. A stored document id is an authority token, not a
+liveness check: it can remain after its document closes, until the block is
+disarmed or ownership moves to another accepted running intent.
+
+The failure that made this necessary was not exotic. Mono tolerates a failed
+`localStorage` write and carries on from memory, and two tabs hold independent
+stores writing the same key, so a second tab reconstructing an empty day was an
+ordinary event — and it used to disarm a block someone was sitting through. The
+sharpest version needed no storage failure at all: a stale tab republishing a
+block whose `endsAt` had passed was *correctly* rejected by validation, and the
+rejection was then folded into an unconditional stop. Refusing to read a message
+and concluding something from it are different things, and the worker was doing
+both at once. `applyIntent` now receives `null` for an unreadable message rather
+than an idle intent, precisely so the difference survives to the decision.
+
+*Why a document and not a tab.* `sender.tab.id` survives a reload, which is
+exactly wrong here: "the tab running the block failed to write, reloaded, and
+came back knowing nothing" is half of the original failure, and with a tab id
+that page is still the owner and still disarms. `sender.documentId` is a fresh
+UUID per document, so a reloaded page has to earn its authority again. Chrome
+has supplied it since 106 and the manifest floor is 120. Neither can be forged
+from page script; both come from Chrome.
+
+*What ignoring a stop costs*, given that this codebase is otherwise emphatic
+that failing to clear rules is the expensive direction. `endsAt` makes an
+expired arm recognisable to the worker; it does not make a DNR rule expire.
+Rules come down when Mono sends the accepted stop or when a later reconciliation
+observes the timestamp, and Chrome gives no wall-clock upper bound for alarm
+delivery. The lease therefore trades an incorrect early unblock for a possibly
+late unblock. That remains the right trade for unrelated publishers, but it is
+not a hard safety guarantee, and it makes the alarm, startup, status, and message
+reconciliation paths load-bearing rather than optional tidying.
+
+*Ownership is written where messages are judged*, never by `arm`. `reconcile`
+re-arms from a stored record on an alarm and on startup, and neither is a
+publisher saying anything; an owner written there would be invented or erased
+every time the alarm ticked. `disarm` drops the claim, because a claim on
+nothing would otherwise let a document that armed something an hour ago keep
+authority over whatever is armed next.
+
+`startedAt` is required rather than optional, on the same reasoning that made
+`endBlockEarly`'s `segmentId` required: no version of the extension has ever
+shipped, so there is nothing older to be lenient towards. It is read off the
+segment rather than generated at publish time — a token minted on each publish
+would make every republish look like a newer block, which is the failure mode
+inverted. A stored `armed` record written before this change no longer
+validates, and is therefore cleared rather than resurrected, which is the
+existing rule for a record a newer version cannot read.
+
+**The worker is now tested, which it was not.** `extension/src/authority.test.ts`
+is the state table, pure and browser-free. `extension/src/background.test.ts`
+runs the real worker against `extension/src/chrome.fake.ts` — a small fake with
+actual behaviour rather than recorded calls, because every bug here is about
+state that outlives a call: rules left installed, an alarm that never stops, a
+claim left behind. Tests drain the worker's serial queue by sending a second
+message and awaiting its reply, since nothing in the worker is awaited by its
+caller; `hello` is used for that rather than `getStatus`, because `getStatus`
+reconciles before answering and would quietly perform the tidying up several of
+those tests exist to check the worker did on its own.
+
+**2026-09-06 (later still) — A lease names its block, and writes are ordered by
+which failure you would rather have.**
+Review of the publisher lease found the fix half-built, and two of the holes were
+introduced by the fix itself. Both come from the same blind spot: every sequence
+in the worker is several `await`s long, and it had been reasoned about as though
+each one either happens completely or not at all.
+
+*The lease now names its segment.* Arming a block and recording its publisher are
+two writes. Storing a bare document id meant a failure of the second left the
+*previous* block's owner in place — holding authority over a block it had never
+heard of, and locking out the tab that had genuinely published it. That is the
+original cross-tab failure rebuilt out of a partial write, and the comment
+claiming it would leave "no owner" was simply wrong. A lease of
+`{ segmentId, documentId, tabId }` cannot express it: a lease applies to the
+block it names or to nothing, so a half-finished handover reads as no owner,
+which is the direction to fail in. `applicableLease` is the single place that
+rule lives, and the worker uses the same function to pick a tab. Nothing has to
+be cleaned up in the right order any more, because a stale lease is inert rather
+than wrong.
+
+*The writes are ordered by their failure mode.* `arm` now secures the record and
+the expiry alarm **before** installing any rule, because a rule installed with
+no alarm behind it is a user blocked with nothing left that intends to stop
+them; done the new way the same failure leaves an armed record and an alarm with
+nothing installed, which blocks nobody. `disarm` removes the rules **before**
+clearing the alarm, so a failed removal keeps the thing that will try again, and
+tidies the lease away **last** — it had been second, which put an ordinary
+storage write in front of the one operation that must happen and let a refused
+write keep every rule installed.
+
+*`startedAt` is held to the same standard as `endsAt`.* It was validated only as
+"finite, and not after the end", which is thin for a field that decides which of
+two publishers is believed: a start in the future outranks every block that has
+actually happened and keeps that rank until the clock catches up. It must now be
+no later than now plus a minute of clock skew, strictly before `endsAt`, and
+within `MAX_BLOCK_MS` of it. The two clamps compose, so a block ending four
+hours out can only have begun now. Republishing the *armed* segment additionally
+has to agree with the stored record about both timestamps — they come off the
+log and never change, so a "repeat" that disagrees is something claiming an
+armed block's name for a longer span.
+
+*The worker checks its alarm at start.* This is a deliberate, narrow exception to
+this file's own rule against a top-level resume call. That rule is about rules:
+session rules survive worker suspension, so re-materialising on every wake is
+work for nothing, and that still stands. Alarms are different — their survival is
+not something an extension may assume, Chrome's guidance is to check the ones you
+depend on at worker start, and the alarm is the only thing that reconciles while
+Mono is closed, so a missing one has no other repair path. Two reads when nothing
+is armed.
+
+*End early now brings the publisher's tab forward*, not whichever id sits first
+in an insertion-ordered list. Every tab is still told — with two open, the first
+to answer may be a background one — but the tab the user was working in is the
+one that armed the block. Implemented by ordering the list rather than tracking a
+second variable, which keeps the fallback honest when that tab has gone.
+
+**And the thing to stop saying.** Several comments claimed that ignoring a stop
+costs "an unblock a moment late", because `endsAt` bounds every arm. It does not.
+No DNR rule understands `endsAt`; a rule comes down when something reconciles
+against it, and the alarm that usually does is one Chrome may delay by an
+arbitrary amount. The honest statement is that ignoring a stop trades a wrong
+*early* unblock — the failure that makes people uninstall a blocker — for a
+cleanup that may be late by an amount nothing here can bound, and that the only
+hard bound is at the far end, where session rules do not survive the browser
+closing. It is still the right trade. It is not a free one, and writing it down
+as free is how the next person talks themselves into leaning on it.
+
+Related: the no-lease state is not only browser startup. Chrome clears
+`storage.session` on an extension reload, an update and a disable/enable too, and
+each leaves a locally restored block that the first page to speak can disarm.
+Deliberate, and now tested and in the by-hand list rather than assumed.
+
+**Testing a write order needs a way to refuse a write.** Mutation testing cannot
+reach any of the ordering fixes above: the code is correct either way and it is
+the *order* that is wrong, so no mutant fails. `chrome.fake.ts` grew `failNext`,
+which refuses one matching operation once, and the four half-finished sequences
+are covered directly. Everything else this round was mutation-checked — eight
+mutations, eight caught.
+
+**2026-09-06 (last of the day) — Mono is not blockable, storage and DNR are two
+writes, and orphan rules are somebody's job.**
+
+*The blocklist could block Mono.* `sadeeptha-b.github.io` was an ordinary
+hostname as far as anything here was concerned, and the exact entry was not even
+the dangerous one — `requestDomains` matches subdomains, so `github.io` covers
+Mono too, and blocking the whole of `github.io` is a perfectly reasonable thing
+to want. The result had no way out from inside the browser: blocking ends by
+asking Mono to abandon the block, so a blocked Mono is a blocked escape route.
+The interstitial's button opens the app, the app is redirected back to the
+interstitial, and the only exits left are waiting out a best-effort expiry or
+quitting Chrome.
+
+The fix is in the generated rules, not in validation. Every rule now carries
+`excludedRequestDomains: MONO_HOSTS`, which Chrome gives precedence over
+`requestDomains`, so it holds whatever ends up in storage — a corrupt list, a
+parent domain, a record from a version that meant something else. `MONO_HOSTS`
+is derived from `MONO_MATCHES` so it cannot drift. The popup additionally
+refuses Mono's own hostname, because a rule carved out down to nothing is a line
+in a list that does not do anything, and annotates a parent domain so that "I
+blocked github.io and Mono still works" reads as intended rather than broken.
+Neither of those popup behaviours is the guarantee; only the rule is.
+
+*Storage and DNR are two writes and cannot be made one.* `setHosts` saved the
+list and then installed it, and if the install was refused it neither retried
+nor said so — and it had returned `true` from the listener without ever
+replying, so the popup sat on a port that had already closed. Chrome applies a
+rule update atomically, so a refusal leaves the *whole* previous set installed:
+a site removed from the list goes on being blocked, from a row that is no longer
+on screen. That is the wrong direction to fail in silently.
+
+So `materialise` now schedules `mono.rulesRetry` when an update is refused and
+clears it on the next successful one, and `setHosts` always answers with whether
+the rules actually took. A second alarm is a real addition to a file that says
+"one alarm, replaced rather than accumulated", and it earns its place: the
+expiry alarm is scheduled for the *end* of a block, so it does not fire during
+one, and a list can be edited with no block running at all. There was no other
+path back.
+
+*Orphan rules had nobody looking for them.* The start-up check added earlier
+returned as soon as `readArmed` came back null, which reads an absent record as
+"in order" rather than as "so why is anything installed?". Session rules outlive
+worker suspension, so the worker routinely starts into a browser that is already
+enforcing something, and a refused removal or a sequence that stopped halfway
+leaves rules with nothing behind them — the exact failure this design refuses.
+It is now an audit over all three: armed with no alarm, re-arm; nothing armed
+with rules or an alarm still there, disarm; otherwise nothing. Three reads and no
+writes in the ordinary case.
+
+*"Self-authenticating" was the wrong word* for a named stop, and worth correcting
+rather than leaving as a nice phrase. A segment id is not a secret and proves
+nothing about who sent it. What naming the block does is bound what the message
+can affect — it can only ever tear down the block it names, which is why it
+needs no sender check. *Self-scoping.* The distinction matters because the wrong
+word invites someone to lean on it as identity, which it is not.
+
+*And a fidelity bug in the test double, found by a test that should have failed
+and did not.* `firePermissionsChanged` fired the `onAdded` and `onRemoved`
+listeners together, so the worker's handler ran twice — a refused rule update
+was immediately retried by the second call and a genuine failure looked
+self-healing. Chrome fires one or the other, never both. Split into
+`firePermissionAdded` and `firePermissionRemoved`. Worth recording because the
+failure mode of a fake is that it makes the code look better than it is, and the
+only reason this surfaced was a test written to assert that a failure *persists*.
+
+Twelve mutations run against the suite this round, including all of the previous
+rounds' fixes; twelve caught.
+
+**2026-09-06 (documentation pass) — What the track document is the only copy
+of.**
+Audited `README.md`, `CLAUDE.md`, `docs/decisions.md` and the track document in
+`docs/wip/` against the extension as it now stands. Three things came out of it,
+and only the third is interesting.
+
+The README still closed its blocking section by saying the rules are "torn down
+rather than kept when anything is unclear" — the unqualified rule, three
+paragraphs after the same file correctly describes the scoped one. Fixed.
+
+`CLAUDE.md` had drifted behind the code in ways that would cost an agent real
+time: it described a single timestamp when there are now two with different
+jobs, did not say that the lease names its segment, and did not mention the
+start-up audit, the second alarm, or how to drive the worker's test harness.
+All of that is now there, and it is there rather than in the track document on
+purpose — see below.
+
+**The real finding: `docs/wip/extension.md` is untracked, and it had become the
+sole home of things that are not scaffolding.** The documentation model says a
+working document is temporary and dissolved into docblocks, tests, this log and
+the README when a track lands, and that nothing lasting should live there. That
+rule was being followed for *reasoning* and quietly broken for *operations*: the
+Chrome Web Store privacy answers, the release checklist, the reviewer
+instructions and the manual-QA release gate exist nowhere else, and none of them
+fits any of the tiers. They are not reasoning about a decision and they are not
+one file's docblock; they are a runbook.
+
+So the question the track has been deferring — promote it to a tracked
+`docs/extension.md`, or dissolve it — is not a tidying preference. Dissolving it
+as written means deleting the runbook. That is a documentation decision, it
+belongs in this log rather than in a quiet `git add`, and it is recorded here
+because writing it down only in the untracked document would be the same mistake
+one level up.
+
+Everything else in that document is now either duplicated into `CLAUDE.md` or
+already beside the code, so the working tree could be lost today without losing
+a rule.
+
+**2026-09-06 (failure-boundary review) — Stored, applied and cleaned up are
+three different facts.**
+
+The popup and worker had collapsed two failures into one boolean. If
+`storage.local.set` rejected, the popup still replaced its list and said the
+change was saved even though nothing canonical had changed. If DNR succeeded
+but clearing `mono.rulesRetry` rejected, the worker reported failure even though
+Chrome had atomically installed exactly the requested rules. Deletion made the
+first error worse by revoking host permission before it knew the removal was
+stored; addition could leak the inverse permission after a refused write.
+
+`setHosts` now reports persistence and projection separately. The popup commits
+a row only after `stored: true`, persists deletions before revoking permission,
+and compensates a newly granted permission when addition was not stored. A lost
+message reply is deliberately a third state: the worker may have committed
+before its port disappeared, so the popup re-reads canonical status before it
+rolls back or removes anything.
+
+The projection itself now has one success condition: the atomic DNR update
+resolved. Clearing its retry alarm and dirty marker afterwards is best-effort;
+failure leaves only harmless extra work. Desired-state writes set `rulesDirty`
+in the same local-storage call, and only successful projection clears it. That
+marker survives the case where both DNR and retry-alarm creation fail and makes
+the next worker start converge even when the armed record and expiry alarm look
+structurally healthy. The start-up path is therefore documented as an
+interrupted-write and orphan audit, not as a comparison of all three complete
+representations.
+
+Chrome storage reads reject too, rather than resolving as empty. Projection
+preparation now sits inside the same failure boundary as the DNR update, the
+fake can refuse reads and alarm cleanup, and popup/interstitial status failures
+produce an explicit unavailable state instead of an optimistic or blank one.
+Stored host strings are normalised on read, and `storage.local` is restricted to
+trusted extension contexts because the content-script bridge has no reason to
+see the blocklist or current purpose.
+
+**2026-09-06 (extension lifecycle follow-up) — An alarm is not evidence that a
+rule survived.**
+
+The dirty marker closes interrupted writes owned by the worker, but it does not
+describe Chrome erasing session-scoped state outside such a write. Extension
+reload and disable/enable cycles can leave the persistent armed record while
+session rules and session storage disappear, and alarm survival is separately
+not something the extension may assume. The start-up audit therefore reads
+rule presence whenever a valid arm exists and re-arms if the expiry alarm is
+absent, or if hosts are configured but no rules remain. An empty blocklist still
+correctly projects to no rules. The audit remains read-only in the healthy case
+and does not grow into byte-for-byte rule comparison.
+
+Two smaller state leaks were closed at the same boundary. `disarm` now clears a
+pending end request as best-effort housekeeping once its block is provably over,
+beside the equally inert publisher lease. And the contract reader's accepted
+block-kind table is a `Record<BlockKind, true>`, so adding a kind becomes a
+compile error at the wire decision instead of silently disabling blocking for
+that kind.
+
+The remaining review items did not justify architectural churn. `reconcile`
+still performs a full idempotent rewrite and now says so in its docblock rather
+than being split into check/apply modes. The interstitial no longer creates an
+interval after its first render has already found expiry, and the bridge catches
+the synchronous invalid-context throw seen during extension reloads. Localhost
+remains deliberately carved out by the single derived Mono-origin list. The
+permission prompt can still destroy a popup on some Chrome platforms between
+grant and persistence; reordering cannot preserve its user gesture, so that
+platform behavior is an explicit real-browser release check rather than a
+larger permission protocol.
+
+**2026-09-06 (end-early failure boundary) — A dead publisher is not replaced by
+the first tab that accepts a message.**
+
+Mono tabs share persistence but not necessarily their in-memory session. If the
+tab that armed a block closes, another already-open tab can accept the extension
+message and still correctly refuse its segment because that tab never ran it.
+Delivery and focus therefore cannot make that page the publisher by accident.
+
+Closing the publisher now removes its tab id from the lease while retaining the
+document claim. That distinction preserves the core promise that closing Mono
+does not stop blocking: an unrelated idle tab remains unable to send an
+authoritative anonymous stop. When the user subsequently makes the explicit,
+self-scoped end request, an absent or unreachable publisher changes the policy.
+The worker addresses the publisher by both tab and Chrome document id, so a
+reload cannot turn a replacement document into successful delivery. If that
+publisher is absent or unreachable, the worker tears DNR down immediately. It
+retains the named pending request if it was persisted and only then opens a
+fresh Mono page: rehydration can still record the abandonment, while a failed
+page load cannot hold the user's browser hostage. If the pending write failed,
+opening a page would instead let the still-running persisted block re-arm, so
+the worker leaves the browser unblocked without manufacturing that recovery.
+
+Session storage remains routing and housekeeping, never a prerequisite for a
+named stop. `applyIntent` reads the lease only for anonymous or unreadable
+messages that actually need publisher authority, and pending-request cleanup
+runs after correctness-changing work. If persisting a new end request fails,
+the worker attempts live delivery but removes the rules without waiting for an
+acknowledgement it can no longer recover. If reading a lease fails when an
+unqualified message actually needs it, the lease is treated as absent: session
+metadata is not permission to keep blocking when authority cannot be resolved.
+
+Stored tab ids are external data like every other storage value. They are now
+normalised to unique, non-negative integers before `.includes` or `.filter` can
+touch them. The popup copy was also corrected: blocking depends on a running
+focus block, not on whether a Mono tab is open.
+
+**2026-09-07 — The extension gets an operational document, not another copy of
+its implementation.**
+
+The extension's stable model had outgrown a README section, while accumulating
+the same protocol detail in `CLAUDE.md`, this decision log, source docblocks, and
+an ignored track document. That made the context discoverable only in the
+original working tree and made drift more likely than omission.
+
+`docs/extension.md` now owns the current cross-file boundary: invariants,
+authority, storage and rule lifecycle, end-early recovery, permissions, and the
+verification gate. The root agent document keeps only the repository-wide
+invariants and a mandatory pointer. The README remains a product overview,
+source docblocks retain local ordering facts, `docs/manual-qa.md` retains
+installed-browser checks, and this file remains the historical explanation of
+why policy changed. The WIP was used as source material rather than promoted
+verbatim; volatile status, dated counts, release notes, and repeated local
+implementation commentary do not belong in the permanent reference.
+Store-submission prerequisites and the reviewer path were retained in the
+operational document before the superseded WIP was deleted.
+
+**2026-09-07 (review follow-up) — Delivery, focus, and permission coverage are
+separate facts.**
+
+A stale interstitial cannot end the newer block it does not name, but refusing
+it still owes the user a route to Mono. Reconciliation is therefore
+best-effort on that branch: a refused DNR update retains its repair evidence and
+cannot consume the navigation that answers the click.
+
+Conversely, document-targeted delivery resolving is already evidence that the
+publisher received the request. A later tab or window focus failure does not
+undo that fact and does not prove the tab died; opening a fresh page there made
+a duplicate out of a presentation failure. Rules now fail open with the pending
+request preserved, while fresh-page recovery remains exclusive to failed
+delivery or missing routing.
+
+Chrome host permissions form a coverage relation rather than one boolean per
+row. A parent-domain grant can supply a child entry, so revoking the parent must
+be followed by a canonical permission read for every survivor. The fake models
+that same subsumption, and the popup shows permission state as unavailable if
+the refresh itself fails rather than leaving a confident stale label.
+
+Finally, the first intent after page load is itself an authority decision when
+Chrome has cleared the publisher lease. Mono currently makes that safe because
+its local-storage adapter rehydrates synchronously before publishing. The first
+reload message is now asserted to be the restored running block; any future
+asynchronous persistence must gate publishing on hydration instead of emitting
+an anonymous idle first.

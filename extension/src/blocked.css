@@ -1,0 +1,68 @@
+/*
+  The interstitial.
+
+  Centred, small, and mostly empty. It is read for about two seconds by someone
+  who is mildly annoyed, so it has one job: say what the block is for in their
+  own words, and get out of the way. Anything else on this page is an argument
+  with a person who did not ask for one.
+*/
+
+body {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.card {
+  width: 100%;
+  max-width: 30rem;
+  text-align: center;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/*
+  The purpose is the largest thing here and is set in the user's own sentence
+  case rather than shouted, because it is a quotation. `min-height` holds the
+  layout still while it is being filled in, so the buttons do not jump.
+*/
+.purpose {
+  margin: 14px 0 0;
+  min-height: 2.4rem;
+  font-size: 26px;
+  font-weight: 300;
+  line-height: 1.3;
+  color: var(--bright);
+}
+
+.purpose:empty::after {
+  content: 'A block is running';
+  color: var(--muted);
+}
+
+.remaining {
+  margin: 18px 0 0;
+  font-size: 15px;
+  color: var(--deep);
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 28px;
+}
+
+.footnote {
+  margin: 22px auto 0;
+  max-width: 24rem;
+  font-size: 12px;
+  color: var(--muted);
+}

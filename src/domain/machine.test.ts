@@ -1,8 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
 import { initialState, reduce, replay, type MonoEvent, type SessionState } from './events'
-import { initialPhase, transition, type Action, type Deps, type Phase } from './machine'
-import { DEFAULT_SETTINGS, minutesToMs, type Ms } from './types'
+import {
+  initialPhase,
+  isBlockRunning,
+  transition,
+  type Action,
+  type Deps,
+  type Phase,
+} from './machine'
+import { DEFAULT_SETTINGS, minutesToMs, type ActiveSegment, type Ms } from './types'
+import { wantsAmbience } from '@/ambient/useAmbience'
 
 const BASE_DAY = new Date(2026, 7, 20)
 
@@ -471,5 +479,73 @@ describe('the event log', () => {
     expect(session.history).toHaveLength(1)
     expect(session.history[0]).toMatchObject({ id: 'a', outcome: 'abandoned' })
     expect(session.active).toMatchObject({ id: 'b' })
+  })
+})
+
+/**
+ * The predicate two unrelated subsystems depend on: ambience fades in only
+ * while this is true, and the browser extension arms site blocking only while
+ * it is true. They were one expression written in one place, and this is the
+ * table that stops them quietly meaning different things.
+ *
+ * The rows that matter are the false ones. `blockComplete` and `reconciling`
+ * both still carry an `active` block — the timer reached zero but nothing is
+ * banked until the user answers — and anything reading `active` alone would
+ * keep a sound playing and a website blocked after the block was over.
+ */
+describe('whether a block is actually running', () => {
+  const block: ActiveSegment = {
+    kind: 'block',
+    id: 'b1',
+    blockKind: 'deep',
+    purpose: 'ship it',
+    startedAt: at(9),
+    endsAt: at(9, 45),
+  }
+
+  const rest: ActiveSegment = { kind: 'break', id: 'r1', startedAt: at(9), endsAt: at(9, 10) }
+
+  const PHASES: Phase[] = [
+    { name: 'idle' },
+    { name: 'definingPurpose', blockKind: 'deep', afterReflection: false },
+    { name: 'reflecting' },
+    { name: 'focusing' },
+    { name: 'blockComplete' },
+    { name: 'choosingBreak' },
+    { name: 'onBreak' },
+    { name: 'reconciling', lastSeenAt: at(9, 30), blockEndedAt: at(9, 45) },
+  ]
+
+  it.each(['focusing', 'reflecting'])('is true while %s a block', (name) => {
+    expect(isBlockRunning({ name } as Phase, block)).toBe(true)
+  })
+
+  it.each(['idle', 'definingPurpose', 'blockComplete', 'choosingBreak', 'onBreak', 'reconciling'])(
+    'is false in %s, even with a block still active',
+    (name) => {
+      const phase = PHASES.find((candidate) => candidate.name === name)!
+      expect(isBlockRunning(phase, block)).toBe(false)
+    },
+  )
+
+  it('is false for a break, in every phase', () => {
+    for (const phase of PHASES) expect(isBlockRunning(phase, rest)).toBe(false)
+  })
+
+  it('is false with nothing active, in every phase', () => {
+    for (const phase of PHASES) expect(isBlockRunning(phase, null)).toBe(false)
+  })
+
+  /**
+   * The seam itself. `wantsAmbience` is the older name and the one the ambient
+   * tests use; it delegates here now, and this is what holds that shut. Two
+   * copies of this expression is how a break ends up silent but still blocked.
+   */
+  it('is the same question the ambience asks', () => {
+    for (const phase of PHASES) {
+      for (const active of [block, rest, null]) {
+        expect(wantsAmbience(phase, active)).toBe(isBlockRunning(phase, active))
+      }
+    }
   })
 })

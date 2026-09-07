@@ -35,15 +35,22 @@ import {
   unlockAudio,
 } from './audio'
 import type { ActiveSegment, AmbienceSelection, RoomId } from '@/domain/types'
-import type { Phase } from '@/domain/machine'
+import { isBlockRunning, type Phase } from '@/domain/machine'
 
 export function resolveAmbience(selection: AmbienceSelection, roomId: RoomId): AmbienceKind | null {
   if (selection === 'off') return null
   return selection === 'room' ? ROOMS[roomId].suggestedAmbience : selection
 }
 
+/**
+ * Sound is wanted exactly while a block is running, which is a fact about the
+ * session rather than about audio — so it is `isBlockRunning` that owns it, and
+ * this name survives only because it is what the rest of this module and its
+ * tests call the question. The extension that blocks websites asks the same
+ * one; see the docblock on `isBlockRunning` for why the two must agree.
+ */
 export const wantsAmbience = (phase: Phase, active: ActiveSegment | null): boolean =>
-  active?.kind === 'block' && (phase.name === 'focusing' || phase.name === 'reflecting')
+  isBlockRunning(phase, active)
 
 export type AmbienceControls = {
   available: boolean

@@ -1,3 +1,9 @@
+# Original brief
+
+> Historical input retained for context, not Mono's current specification. See
+> [the README](../README.md) for the product overview and
+> [the decision log](decisions.md) for later changes.
+
 We're going to bootstrap a new web application called Mono. 
 
 Mono is a companion to help you focus and get stuff done during the day. It is specific to the author's needs and may evolve as they change. 
