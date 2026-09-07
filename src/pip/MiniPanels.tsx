@@ -334,7 +334,7 @@ export function MiniBreakLength({
               'tnum rounded-lg border px-2.5 py-1.5 text-xs transition',
               minutes === d
                 ? 'border-rest bg-rest/15 text-rest'
-                : 'border-line text-body hover:bg-surface-raised hover:text-bright',
+                : 'border-muted/70 text-body hover:bg-surface-raised hover:text-bright',
             ].join(' ')}
           >
             {d}m

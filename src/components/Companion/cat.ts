@@ -17,7 +17,7 @@
  * wearing a costume.
  */
 
-import { SPRITE_H, type BodyName, type FaceName } from './frames'
+import { SPRITE_COLOURS, SPRITE_H, type BodyName, type FaceName } from './frames'
 import type { Phase } from '@/domain/machine'
 import type { ActiveSegment, Ms } from '@/domain/types'
 
@@ -314,21 +314,12 @@ export function markTierFor(blocksToday: number): 0 | 1 | 2 {
  * and ground carry the colour says the same thing about state while leaving
  * one recognisable creature on the screen.
  */
-const FUR = '#e6e1d6'
-const FUR_SHADE = '#a99f8c'
-const EYE = '#14141c'
-const GLINT = '#ffffff'
-
 export const paletteFor = (accent: string): Record<string, string> => ({
-  f: FUR,
-  s: FUR_SHADE,
-  e: EYE,
-  h: GLINT,
+  ...SPRITE_COLOURS,
   a: accent,
   n: accent,
-  // The two colours that do not follow the mood. A heart is a heart whatever
-  // the cat is doing, and `--color-commit` is the only red the app owns; paper
-  // is paper.
+  // The one colour that follows neither the mood nor the room's accent. A
+  // heart is a heart whatever the cat is doing, and `--color-commit` is the
+  // only red the app owns.
   p: 'var(--color-commit)',
-  w: '#faf7ef',
 })

@@ -49,9 +49,11 @@ import { dayBounds, formatClock, formatDuration } from '@/domain/time'
 import {
   commitmentSpan,
   type Commitment,
+  type CommitmentPatch,
   type Interval,
   type Ms,
   type PlannedBreak,
+  type PlannedBreakPatch,
   type Timeline,
   type TimelineEntry,
   type WorkRegion,
@@ -88,8 +90,8 @@ type Props = {
   onRemoveCommitment: (id: string) => void
   onAddBreak: (input: Omit<PlannedBreak, 'id'>) => void
   onAddCommitment: (input: Omit<Commitment, 'id'>) => void
-  onUpdateBreak: (id: string, patch: Partial<PlannedBreak>) => void
-  onUpdateCommitment: (id: string, patch: Partial<Commitment>) => void
+  onUpdateBreak: (id: string, patch: PlannedBreakPatch) => void
+  onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onSetRegions: (regions: WorkRegion[]) => void
 }
 
@@ -760,7 +762,7 @@ function styleFor(entry: TimelineEntry): RowStyle {
       return {
         label: entry.side === 'before' ? 'Getting ready' : 'Getting back',
         detail: entry.commitment.title,
-        text: 'text-commit/70',
+        text: 'text-commit/85',
         ring: 'ring-commit/30',
         bg: 'bg-commit/5',
         border: 'border-commit/30 border-dashed',

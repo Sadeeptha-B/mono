@@ -19,7 +19,7 @@
  * page carries a `<link>` to the font in both.
  */
 
-import { ROOMS } from '@/ambient/rooms'
+import { PALETTES } from '@/ambient/palette'
 import { applyRoomTheme } from '@/ambient/theme'
 import type { RoomId } from '@/domain/types'
 
@@ -107,10 +107,11 @@ export async function copyStylesInto(target: Document, source: Document): Promis
  * second of white in an always-on-top window on a dark desktop is the kind of
  * thing you feel rather than see. These inline fallback properties remain
  * authoritative after the stylesheet arrives, so room changes call this
- * function again; the stylesheet owns the semantic tokens and all descendants.
+ * function again; `applyRoomTheme` owns the root semantic tokens used by every
+ * descendant.
  */
 export function paint(target: Document, roomId: RoomId): void {
-  const palette = ROOMS[roomId].palette
+  const palette = PALETTES[roomId]
   applyRoomTheme(target, roomId)
   target.body.style.backgroundColor = palette.ink
   target.body.style.margin = '0'

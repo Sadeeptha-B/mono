@@ -3,7 +3,8 @@
  *
  * These live outside `prompts/` because most of Mono's decisions are now made
  * inline on the stage rather than in a dialog, and the two should look
- * identical wherever they appear.
+ * identical wherever they appear. Decorative edges use `line`; the boundary
+ * of anything clickable or focusable uses `muted/70`, which is held to 3:1.
  */
 
 import type { ButtonHTMLAttributes } from 'react'
@@ -11,7 +12,7 @@ import type { ButtonHTMLAttributes } from 'react'
 import { coerceBoundedMinutes } from './minutes'
 
 export const fieldClass =
-  'w-full rounded-lg border border-line bg-ink px-3.5 py-2.5 text-bright placeholder:text-muted/60 focus:border-deep focus:outline-none'
+  'w-full rounded-lg border border-muted/70 bg-ink px-3.5 py-2.5 text-bright placeholder:text-muted/90 focus:border-deep focus:outline-none'
 
 export const labelClass =
   'mb-1.5 block text-xs font-medium tracking-wide text-muted uppercase'
@@ -24,7 +25,7 @@ export const labelClass =
  * already.
  */
 export const headerControlClass =
-  'rounded-lg border border-line px-3 py-1.5 text-xs text-body transition hover:bg-surface-raised hover:text-bright'
+  'rounded-lg border border-muted/70 px-3 py-1.5 text-xs text-body transition hover:bg-surface-raised hover:text-bright'
 
 /**
  * The pencil on an editable block, pointing left.
@@ -66,7 +67,7 @@ export function GhostButton({
   return (
     <button
       {...props}
-      className={`rounded-lg border border-line px-4 py-2.5 text-sm text-body transition hover:bg-surface-raised hover:text-bright ${className}`}
+      className={`rounded-lg border border-muted/70 px-4 py-2.5 text-sm text-body transition hover:bg-surface-raised hover:text-bright ${className}`}
     >
       {children}
     </button>

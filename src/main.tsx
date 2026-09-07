@@ -13,7 +13,7 @@ const root = document.getElementById('root')
 if (!root) throw new Error('Missing #root')
 
 // Persist rehydrates synchronously, so the chosen room is available before
-// React paints and an Ember morning never flashes Mono black first.
+// React paints and a Hearth morning never flashes Mono black first.
 applyRoomTheme(document, useSession.getState().session.settings.roomId)
 
 /**

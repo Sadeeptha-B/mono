@@ -19,10 +19,12 @@ import {
   type ActiveSegment,
   type BlockKind,
   type Commitment,
+  type CommitmentPatch,
   type CompletedSegment,
   type Interval,
   type Ms,
   type PlannedBreak,
+  type PlannedBreakPatch,
   type Settings,
   type WorkRegion,
 } from './types'
@@ -30,11 +32,11 @@ import {
 export type MonoEvent =
   | { type: 'settings/changed'; at: Ms; patch: Partial<Settings> }
   | { type: 'commitment/added'; at: Ms; commitment: Commitment }
-  | { type: 'commitment/updated'; at: Ms; id: string; patch: Partial<Commitment> }
+  | { type: 'commitment/updated'; at: Ms; id: string; patch: CommitmentPatch }
   | { type: 'commitment/removed'; at: Ms; id: string }
   | { type: 'region/set'; at: Ms; regions: WorkRegion[] }
   | { type: 'break/planned'; at: Ms; plannedBreak: PlannedBreak }
-  | { type: 'break/updated'; at: Ms; id: string; patch: Partial<PlannedBreak> }
+  | { type: 'break/updated'; at: Ms; id: string; patch: PlannedBreakPatch }
   | { type: 'break/removed'; at: Ms; id: string }
   | {
       type: 'block/started'

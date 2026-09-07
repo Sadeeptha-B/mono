@@ -3,27 +3,31 @@
  *
  * There are three callers, and the reason there are three is timing rather than
  * variety. `main.tsx` runs this against the real document before React's first
- * paint, so an Ember, Tide or Moss session does not flash Mono while the tree
+ * paint, so a Hearth, Tide or Fern session does not flash Mono while the tree
  * mounts. `App` repeats it in a layout effect whenever the setting changes. The
  * mini window's `paint` composes it with the inline fallback a document whose
  * stylesheets have not arrived yet needs.
  *
- * What this deliberately does not do is write colours onto the body. The room
- * is a `data-room` attribute and the stylesheet holds the actual custom
- * properties, because an inline style outranks the sheet for the life of the
- * document rather than only until it loads — the room would then be stuck at
- * whatever was painted first. `paint` is allowed to break that rule because it
- * is dressing a document that may never receive a stylesheet at all, and it
- * takes the trade knowingly.
+ * The semantic properties are written on the root so every consumer — ordinary
+ * Tailwind utilities, SVG fills and the mini window — reads the same palette.
+ * `@theme` in `index.css` still declares Mono's literals because Tailwind needs
+ * the token names at build time and the document needs a dark first paint
+ * before this module runs. Non-default rooms have no second CSS copy.
  */
 
-import { ROOMS } from './rooms'
-import type { RoomId } from '@/domain/types'
+import { cssProperty, PALETTE_TOKENS, PALETTES } from './palette'
+import { isRoomId, type RoomId } from '@/domain/types'
 
 export function applyRoomTheme(target: Document, roomId: RoomId): void {
-  const room = ROOMS[roomId]
-  target.documentElement.dataset.room = roomId
+  // This runs before React's error UI exists. Treat a corrupted persisted id as
+  // Mono here even though normal callers carry the narrower RoomId type.
+  const safeRoomId = isRoomId(roomId) ? roomId : 'mono'
+  const palette = PALETTES[safeRoomId]
+  target.documentElement.dataset.room = safeRoomId
+  for (const token of PALETTE_TOKENS) {
+    target.documentElement.style.setProperty(cssProperty(token), palette[token])
+  }
 
   const meta = target.querySelector<HTMLMetaElement>('meta[name="theme-color"]')
-  meta?.setAttribute('content', room.palette.ink)
+  meta?.setAttribute('content', palette.ink)
 }

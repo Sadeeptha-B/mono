@@ -18,7 +18,22 @@
     "noUnusedParameters": true,
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true,
-    "noUncheckedSideEffectImports": true
+    "noUncheckedSideEffectImports": true,
+
+    // The same two the app and the extension are held to. This project used to
+    // cover config and scripts alone, where it hardly mattered; it now pulls
+    // application source in with them — the palette, the room ids, the sprite
+    // colours — and a second program checking those more loosely than the app
+    // does is a place for a bug to sit and be reported nowhere.
+    "exactOptionalPropertyTypes": true,
+    "noUncheckedIndexedAccess": true
   },
-  "include": ["vite.config.ts", "playwright.config.ts", "scripts/build-extension.ts", "scripts/icon-tile.ts"]
+  "include": [
+    "vite.config.ts",
+    "playwright.config.ts",
+    "scripts/build-extension.ts",
+    "scripts/gen-icons.ts",
+    "scripts/icon-tile.ts",
+    "scripts/preview-companion.ts"
+  ]
 }

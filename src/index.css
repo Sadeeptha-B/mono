@@ -5,50 +5,30 @@
   against near-black, and nothing else competing for attention. Deep and short
   blocks differ in weight rather than hue, and never by colour alone — the
   timeline labels every segment.
+
+  These Mono values mirror `ambient/palette.ts` because Tailwind needs literal
+  token declarations at build time. `applyRoomTheme` writes the selected
+  palette onto the document root at runtime; coloured rooms are not duplicated
+  here. A test keeps this one necessary build-time copy in sync.
 */
 @theme {
-  --color-ink: #08080b;
-  --color-surface: #101016;
-  --color-surface-raised: #17171f;
-  --color-line: #24242e;
+  --color-ink: #0a0b0f;
+  --color-surface: #14151b;
+  --color-surface-raised: #1e1f26;
+  --color-line: #32343f;
 
-  --color-muted: #6e6e80;
-  --color-body: #a8a8bb;
-  --color-bright: #f0f0f5;
+  --color-muted: #8d8883;
+  --color-body: #bcb8b3;
+  --color-bright: #f4f2f0;
 
-  --color-deep: #e8a33d;
-  --color-short: #7fa8d9;
-  --color-reflect: #b088d9;
-  --color-rest: #5cae8f;
-  --color-commit: #d96a6a;
+  --color-deep: #f0b14c;
+  --color-short: #65ade2;
+  --color-reflect: #ac8ed9;
+  --color-rest: #61ba91;
+  --color-commit: #e37c77;
 
   --font-display: 'Inter', ui-sans-serif, system-ui, sans-serif;
   --font-mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, monospace;
-}
-
-/* Curated dark rooms override the same semantic tokens, so every existing
-   utility and SVG fill changes together without learning about room names. */
-@layer base {
-  [data-room='ember'] {
-    --color-ink: #0d0908; --color-surface: #15100e; --color-surface-raised: #1e1613;
-    --color-line: #34251f; --color-muted: #8b7062; --color-body: #bfa797;
-    --color-bright: #fff2e8; --color-deep: #ed9b3b; --color-short: #7f9fc2;
-    --color-reflect: #b884c6; --color-rest: #70a87c; --color-commit: #d86f5f;
-  }
-
-  [data-room='tide'] {
-    --color-ink: #061014; --color-surface: #0b171c; --color-surface-raised: #102229;
-    --color-line: #1d3942; --color-muted: #67838c; --color-body: #a4bdc4;
-    --color-bright: #eaf7f8; --color-deep: #f0b65a; --color-short: #61b6d4;
-    --color-reflect: #aa8ddd; --color-rest: #63bd99; --color-commit: #df7878;
-  }
-
-  [data-room='moss'] {
-    --color-ink: #090d09; --color-surface: #101610; --color-surface-raised: #182018;
-    --color-line: #293429; --color-muted: #708171; --color-body: #a9b8a8;
-    --color-bright: #eff5ec; --color-deep: #d9a84e; --color-short: #7aa7b8;
-    --color-reflect: #aa8ac0; --color-rest: #6eae78; --color-commit: #d2736c;
-  }
 }
 
 @layer base {

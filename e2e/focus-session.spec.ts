@@ -1,5 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test'
 
+import { PALETTES } from '../src/ambient/palette.ts'
+
 /**
  * End-to-end coverage for the things unit tests cannot reach: that the derived
  * plan actually renders on the calendar, that decisions happen in place rather
@@ -28,6 +30,12 @@ async function openMono(page: Page, time: Date = TWO_PM) {
   // these your hours today?", and a substring match on "Today" — the default —
   // resolves to both it and the calendar's own heading.
   await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+}
+
+/** A palette hex as `getComputedStyle` hands it back. */
+const rgb = (hex: string): string => {
+  const channels = [1, 3, 5].map((start) => Number.parseInt(hex.slice(start, start + 2), 16))
+  return `rgb(${channels.join(', ')})`
 }
 
 /** The stage, to disambiguate from the same text on the calendar. */
@@ -1212,7 +1220,7 @@ test('an import replaces the opening questions, even one for the same day', asyn
   await goToStage(page, "Today's hours")
   await stage(page).getByLabel("Today's hours 1 end").fill('22:00')
 
-  await importSession(page, { version: 2, dayKey: '2026-08-20', events: [] })
+  await importSession(page, { version: 3, dayKey: '2026-08-20', events: [] })
 
   // Back to the first question, with nothing carried over from before.
   await expect(
@@ -1630,7 +1638,7 @@ test('the pop-out carries the running block, and answers for it', async ({ page 
     .frameLocator(MINI)
     .locator('body')
     .evaluate((el) => getComputedStyle(el).backgroundColor)
-  expect(painted).toBe('rgb(8, 8, 11)')
+  expect(painted).toBe(rgb(PALETTES.mono.ink))
 
   // One store, two documents: a click out here moves the session in there.
   await mini.getByRole('button', { name: 'End early' }).click()
@@ -1746,7 +1754,8 @@ test('a focus room persists and dresses the pop-out document', async ({ page }) 
   await expect(roomMenu.locator('[data-room-swatch]')).toHaveCount(4)
   await roomMenu.getByText('Tide', { exact: true }).click()
   await expect(page.locator('html')).toHaveAttribute('data-room', 'tide')
-  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', '#061014')
+  await expect(page.locator('meta[name="theme-color"]')).toHaveAttribute('content', PALETTES.tide.ink)
+  await expect(page.locator('body')).toHaveCSS('background-color', rgb(PALETTES.tide.ink))
   await page.keyboard.press('Escape')
 
   await page.reload()
@@ -1762,8 +1771,15 @@ test('ambience is silent by default and the mini control shares its mute', async
 
   await page.getByRole('button', { name: /^Room/ }).click()
   const roomMenu = page.getByRole('dialog', { name: 'Room and ambient sound' })
-  await expect(roomMenu.getByRole('radio', { name: 'Off', exact: true })).toBeChecked()
+  await expect(roomMenu.getByRole('button', { name: 'Ambient sound' })).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
   await roomMenu.getByText('Brown noise', { exact: true }).click()
+  await expect(roomMenu.getByRole('button', { name: 'Ambient sound' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
   await page.keyboard.press('Escape')
 
   await startBlock(page, 'Quiet work')
@@ -1771,6 +1787,70 @@ test('ambience is silent by default and the mini control shares its mute', async
   await expect(stage(page).getByRole('button', { name: 'Mute ambience' })).toBeVisible()
   await mini.getByRole('button', { name: 'Mute ambience' }).click()
   await expect(stage(page).getByRole('button', { name: 'Resume ambience' })).toBeVisible()
+})
+
+test('the room menu stays inside a narrow viewport and its speaker toggles sound', async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 320 })
+  await openMono(page)
+
+  const trigger = page.getByRole('button', { name: /^Room/ })
+  await trigger.click()
+  const roomMenu = page.getByRole('dialog', { name: 'Room and ambient sound' })
+  await expect(roomMenu.getByRole('radio', { name: 'Fern' })).toBeVisible()
+  const [bounds, triggerBounds] = await Promise.all([
+    roomMenu.boundingBox(),
+    trigger.boundingBox(),
+  ])
+  expect(bounds).not.toBeNull()
+  expect(triggerBounds).not.toBeNull()
+  expect(bounds!.x).toBeGreaterThanOrEqual(0)
+  expect(bounds!.y).toBeGreaterThanOrEqual(0)
+  expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(320)
+  expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(320)
+
+  // Fitting on screen is not the same as being placed. The panel is measured
+  // before it has been narrowed to its final width unless something makes it
+  // so, and a height read off a half-width column looks too tall to fit below
+  // the trigger — which sends the menu above it, then hard against the top
+  // edge, sitting on top of the button that opened it. This viewport has much
+  // more room below, so that is where it has to be.
+  expect(bounds!.y).toBeGreaterThanOrEqual(triggerBounds!.y + triggerBounds!.height)
+
+  const soundToggle = roomMenu.getByRole('button', { name: 'Ambient sound' })
+  const focusRooms = roomMenu.getByRole('group', { name: 'Focus room' })
+  const [toggleBounds, roomBounds] = await Promise.all([
+    soundToggle.boundingBox(),
+    focusRooms.boundingBox(),
+  ])
+  expect(toggleBounds).not.toBeNull()
+  expect(roomBounds).not.toBeNull()
+  expect(toggleBounds!.y + toggleBounds!.height).toBeLessThanOrEqual(roomBounds!.y)
+
+  await soundToggle.click()
+  await expect(roomMenu.getByRole('radio', { name: /Room sound/ })).toBeChecked()
+  await roomMenu.getByRole('button', { name: 'Ambient sound' }).click()
+  await expect(
+    roomMenu.getByRole('group', { name: 'Ambient sound' }).getByRole('radio', { checked: true }),
+  ).toHaveCount(0)
+})
+
+test('the room menu shows keyboard focus on its radio cards', async ({ page }) => {
+  await openMono(page)
+
+  const trigger = page.getByRole('button', { name: /^Room/ })
+  await trigger.click()
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('button', { name: 'Ambient sound' })).toBeFocused()
+
+  await page.keyboard.press('Tab')
+  const room = page.getByRole('radio', { name: 'Mono' })
+  await expect(room).toBeFocused()
+  await expect(room.locator('..')).toHaveCSS('outline-style', 'solid')
+
+  await page.keyboard.press('Tab')
+  const sound = page.getByRole('radio', { name: /Room sound/ })
+  await expect(sound).toBeFocused()
+  await expect(sound.locator('..')).toHaveCSS('outline-style', 'solid')
 })
 
 test('volume keeps drag steps local and journals only the committed value', async ({ page }) => {
@@ -1862,7 +1942,7 @@ test('a fully earned focus scene deliberately previews from the first tier again
     }).flat(),
   ]
   await openMono(page)
-  await importSession(page, { version: 2, dayKey: '2026-08-20', events })
+  await importSession(page, { version: 3, dayKey: '2026-08-20', events })
   await startBlock(page, 'Keep the room company')
 
   const companion = stage(page).getByRole('button', {
@@ -1884,7 +1964,7 @@ test('the finished day reads back as a postcard', async ({ page }) => {
   const ten = new Date(2026, 7, 20, 10, 0, 0).getTime()
   await openMono(page, night)
   await importSession(page, {
-    version: 2,
+    version: 3,
     dayKey: '2026-08-20',
     events: [
       { type: 'day/shaped', at: new Date(2026, 7, 20, 9, 0, 0).getTime() },

@@ -34,7 +34,7 @@ import type { DefaultRegion } from '@/domain/types'
  * around it: two pixels off each side is two pixels off the floor too.
  */
 const timeFieldClass =
-  'tnum min-w-0 flex-1 rounded-lg border border-line bg-ink px-2 py-2.5 text-bright focus:border-deep focus:outline-none @max-xs:px-1.5'
+  'tnum min-w-0 flex-1 rounded-lg border border-muted/70 bg-ink px-2 py-2.5 text-bright focus:border-deep focus:outline-none @max-xs:px-1.5'
 
 type Props = {
   regions: DefaultRegion[]

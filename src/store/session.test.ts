@@ -4,6 +4,7 @@ import { initialState } from '@/domain/events'
 import { DEFAULT_SETTINGS } from '@/domain/types'
 import { initialPhase } from '@/domain/machine'
 import { dayKey } from '@/domain/time'
+import { SCHEMA_VERSION } from './schema'
 
 type SessionModule = typeof import('./session')
 
@@ -73,7 +74,7 @@ describe('session import', () => {
   it('resets stale per-day state when importing an old idle session', () => {
     useSession.getState().importJSON(
       JSON.stringify({
-        version: 2,
+        version: SCHEMA_VERSION,
         events: [
           {
             type: 'region/set',
@@ -119,7 +120,7 @@ describe('session import', () => {
     expect(() =>
       useSession.getState().importJSON(
         JSON.stringify({
-          version: 2,
+          version: SCHEMA_VERSION,
           dayKey: dayKey(TODAY.getTime()),
           events: [
             { type: 'block/somethingNewer', at: at(TODAY, 10), payload: 1 },
@@ -142,7 +143,7 @@ describe('session import', () => {
     // than the default quietly winning back on the next load.
     const state = useSession.getState()
     const file = (events: unknown[]) =>
-      JSON.stringify({ version: 2, dayKey: dayKey(TODAY.getTime()), events })
+      JSON.stringify({ version: SCHEMA_VERSION, dayKey: dayKey(TODAY.getTime()), events })
 
     // A patch for a *different* setting, so the assertion below cannot pass by
     // the import having been dropped on the floor — `true` is the default, and
@@ -161,7 +162,7 @@ describe('session import', () => {
 
   it('imports ambient settings and leaves older logs silent', () => {
     const file = (patch: Record<string, unknown>) => JSON.stringify({
-      version: 2,
+      version: SCHEMA_VERSION,
       dayKey: dayKey(TODAY.getTime()),
       events: [{ type: 'settings/changed', at: at(TODAY, 10), patch }],
     })
@@ -175,11 +176,39 @@ describe('session import', () => {
     expect(useSession.getState().session.settings.ambience).toBe('off')
   })
 
+  it('keeps valid settings beside malformed imported fields', () => {
+    useSession.getState().importJSON(JSON.stringify({
+      version: SCHEMA_VERSION,
+      dayKey: dayKey(TODAY.getTime()),
+      events: [{
+        type: 'settings/changed',
+        at: at(TODAY, 10),
+        patch: {
+          deepMinutes: 0,
+          plannerPolicy: 'random',
+          notificationsEnabled: true,
+          roomId: 'elsewhere',
+          ambience: 'waves',
+          ambienceVolume: 0.25,
+        },
+      }],
+    }))
+
+    expect(useSession.getState().session.settings).toMatchObject({
+      roomId: DEFAULT_SETTINGS.roomId,
+      deepMinutes: DEFAULT_SETTINGS.deepMinutes,
+      plannerPolicy: DEFAULT_SETTINGS.plannerPolicy,
+      ambience: DEFAULT_SETTINGS.ambience,
+      notificationsEnabled: true,
+      ambienceVolume: 0.25,
+    })
+  })
+
   it('drops malformed imported payloads before replay', () => {
     expect(() =>
       useSession.getState().importJSON(
         JSON.stringify({
-          version: 2,
+          version: SCHEMA_VERSION,
           dayKey: dayKey(TODAY.getTime()),
           events: [
             {
@@ -198,6 +227,7 @@ describe('session import', () => {
     ).not.toThrow()
 
     const state = useSession.getState()
+    expect(state.events).toHaveLength(1)
     expect(state.session.settings.defaultRegions).toEqual(DEFAULT_SETTINGS.defaultRegions)
     expect(state.session.settings.shortMinutes).toBe(25)
     expect(selectRegions(state, TODAY.getTime())).toHaveLength(1)
@@ -252,9 +282,47 @@ describe('session rehydration', () => {
     expect(state.dayKey).toBe(dayKey(YESTERDAY.getTime()))
   })
 
-  it('rebuilds a running block from a current log', async () => {
+  it('clears the pre-release v2 store rather than carrying old room ids', async () => {
     seed({
       version: 2,
+      state: {
+        dayKey: dayKey(TODAY.getTime()),
+        events: [{
+          type: 'settings/changed',
+          at: at(TODAY, 9),
+          patch: { roomId: 'moss' },
+        }],
+      },
+    })
+
+    const { useSession: store } = await import('./session')
+    expect(store.getState().events).toEqual([])
+    expect(store.getState().session).toEqual(initialState)
+  })
+
+  it('sanitises a damaged current store before replay', async () => {
+    seed({
+      version: SCHEMA_VERSION,
+      state: {
+        dayKey: dayKey(TODAY.getTime()),
+        events: [{
+          type: 'settings/changed',
+          at: at(TODAY, 9),
+          patch: { roomId: 'elsewhere', ambienceVolume: 0.25 },
+        }],
+      },
+    })
+
+    const { useSession: store } = await import('./session')
+    expect(store.getState().session.settings).toMatchObject({
+      roomId: DEFAULT_SETTINGS.roomId,
+      ambienceVolume: 0.25,
+    })
+  })
+
+  it('rebuilds a running block from a current log', async () => {
+    seed({
+      version: SCHEMA_VERSION,
       state: {
         dayKey: dayKey(TODAY.getTime()),
         events: [

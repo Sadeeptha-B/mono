@@ -24,7 +24,15 @@ import {
   type ExportedShape,
   type PersistedShape,
 } from './schema'
-import type { Commitment, Ms, PlannedBreak, Settings, WorkRegion } from '@/domain/types'
+import type {
+  Commitment,
+  CommitmentPatch,
+  Ms,
+  PlannedBreak,
+  PlannedBreakPatch,
+  Settings,
+  WorkRegion,
+} from '@/domain/types'
 
 const STORAGE_KEY = 'mono.session'
 
@@ -146,10 +154,10 @@ type SessionStore = {
    * a new place. Note the trap in `readCommitmentEdit`: a patch is merged, so
    * clearing a margin means sending a zero, not omitting the field.
    */
-  updateCommitment: (id: string, patch: Partial<Commitment>) => void
+  updateCommitment: (id: string, patch: CommitmentPatch) => void
   removeCommitment: (id: string) => void
   planBreak: (input: Omit<PlannedBreak, 'id'>) => void
-  updateBreak: (id: string, patch: Partial<PlannedBreak>) => void
+  updateBreak: (id: string, patch: PlannedBreakPatch) => void
   removeBreak: (id: string) => void
   setRegions: (regions: WorkRegion[]) => void
   updateSettings: (patch: Partial<Settings>) => void
@@ -302,6 +310,15 @@ export const useSession = create<SessionStore>()(
       migrate: (persisted, from): PersistedShape => migratePersisted(persisted, from),
       onRehydrateStorage: () => (state) => {
         if (!state) return
+        // Zustand calls `migrate` only for an older version. Run the current
+        // schema boundary too so hand-edited or damaged storage cannot feed an
+        // unvalidated event directly into replay.
+        const recovered = migratePersisted(
+          { events: state.events, dayKey: state.dayKey },
+          SCHEMA_VERSION,
+        )
+        state.events = recovered.events
+        state.dayKey = recovered.dayKey
         state.session = replay(state.events)
         // Phase is not persisted — it is which dialog is open, and a stale
         // prompt should not survive a reload. But a *running* segment must,

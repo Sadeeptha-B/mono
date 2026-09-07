@@ -28,6 +28,7 @@ import type {
   ActiveSegment,
   BlockKind,
   Commitment,
+  CommitmentPatch,
   DefaultRegion,
   Ms,
   Settings,
@@ -65,7 +66,7 @@ type Props = {
   nextBlockKind: BlockKind | null
   costOf: (minutes: number) => { blocksLost: number; focusMinutesLost: number }
   onAddCommitment: (input: Omit<Commitment, 'id'>) => void
-  onUpdateCommitment: (id: string, patch: Partial<Commitment>) => void
+  onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onRemoveCommitment: (id: string) => void
   onDayShaped: () => void
   onEditHours: () => void

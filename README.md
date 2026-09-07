@@ -163,19 +163,22 @@ late stretch ends at 23:59 rather than running into tomorrow.
 
 ## Rooms, ambience and the companion
 
-The header's `Room` menu offers four curated dark rooms: Mono, Ember, Tide and
-Moss, with a palette swatch beside each choice. A room is one coordinated
+The header's `Room` menu offers four curated dark rooms: Mono, Hearth, Tide and
+Fern, with a palette swatch beside each choice. A room is one coordinated
 palette and pixel environment rather than a loose accent picker, and it follows
-the timer into the always-on-top window. Mono remains the default, so an
-existing browser opens exactly where it left off.
+the timer into the always-on-top window. The rooms are built from one shared
+lightness ramp turned to each one's own hue, so they differ in temperature
+rather than in how loud they are: Mono keeps half the colour of the others
+because it is the one that should disappear, while Hearth and Fern sit brighter
+than the rest, since at Tide's lightness honey turns to mud and leaf green to
+near-black. Mono is the default, and whichever room you pick is remembered.
 
 Ambient sound is off until it is explicitly chosen. Brown noise, pink noise
 and rain are synthesised locally with Web Audio; there are no streamed tracks
-or audio files. `Room sound` follows the current room's suggestion. It fades in
-only while a focus or priorities block is running and fades away for prompts
-and breaks. The timer's speaker icon controls a tab-local mute that is separate
-from the block-end chime. That mute governs automatic block ambience; choosing
-a sound while idle is an explicit request to hear its six-second preview.
+or audio files. The speaker at the top-right of the Room menu switches ambience
+off, or back on to `Room sound` — the current room's own suggestion — with the
+individual choices below it. It fades in only while a focus or priorities block
+is running and fades away for prompts and breaks. The timer's speaker icon controls a tab-local mute that is separate from the block-end chime. That mute governs automatic block ambience; choosing a sound while idle is an explicit request to hear its six-second preview.
 
 A pixel cat in a small room, in the corner of the stage. It changes with what
 Mono is doing, and during a block it walks the room from left to right as the

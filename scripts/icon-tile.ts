@@ -12,18 +12,17 @@
  * pictures of the thing in the corner of the app.
  */
 
-import { BODIES, FACES } from '../src/components/Companion/frames.ts'
+import { BODIES, FACES, SPRITE_COLOURS } from '../src/components/Companion/frames.ts'
+import { PALETTES } from '../src/ambient/palette.ts'
 
-const BG = '#08080b'
+/** The icon is the cat in the default room, so it takes Mono's own colours. */
+const BG = PALETTES.mono.ink
 
-/** Deep amber: the app's primary, and the accent the cat wears while working. */
 const COLOURS: Record<string, string> = {
-  f: '#e6e1d6',
-  s: '#a99f8c',
-  e: '#14141c',
-  h: '#ffffff',
-  a: '#e8a33d',
-  n: '#e8a33d',
+  ...SPRITE_COLOURS,
+  // Deep amber: the app's primary, and the accent the cat wears while working.
+  a: PALETTES.mono.deep,
+  n: PALETTES.mono.deep,
 }
 
 /**

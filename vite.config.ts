@@ -4,6 +4,8 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { VitePWA } from 'vite-plugin-pwa'
 
+import { PALETTES } from './src/ambient/palette.ts'
+
 /**
  * Which installed package a module belongs to, or nothing for our own source.
  *
@@ -29,6 +31,26 @@ export default defineConfig({
   // GitHub Pages serves this as a project site at /mono/, not the domain root.
   base: process.env.GITHUB_ACTIONS ? '/mono/' : '/',
   plugins: [
+    /**
+     * The `theme-color` in `index.html` is what the browser paints its own
+     * chrome with before any script runs, so it has to be Mono's ink as a
+     * literal in the markup. `applyRoomTheme` overwrites it with the chosen
+     * room's ink as soon as React mounts; this is only the value that shows
+     * during the gap, and it is injected rather than typed so it cannot fall
+     * behind the palette.
+     */
+    {
+      name: 'mono-theme-colour',
+      transformIndexHtml: {
+        order: 'pre' as const,
+        handler: (html: string) => {
+          if (!html.includes('%MONO_INK%')) {
+            throw new Error('index.html is missing %MONO_INK%.')
+          }
+          return html.replace('%MONO_INK%', PALETTES.mono.ink)
+        },
+      },
+    },
     react(),
     tailwindcss(),
     VitePWA({
@@ -42,8 +64,8 @@ export default defineConfig({
         description: 'A companion to help you focus and get stuff done.',
         start_url: '.',
         display: 'standalone',
-        background_color: '#0b0b0f',
-        theme_color: '#0b0b0f',
+        background_color: PALETTES.mono.ink,
+        theme_color: PALETTES.mono.ink,
         icons: [
           { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
           { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },

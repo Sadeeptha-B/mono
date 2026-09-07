@@ -267,7 +267,7 @@ const Strip = ({
   <a
     href={DAY_HASH}
     title={title}
-    className={`flex items-center gap-2 rounded-lg border border-line px-3 py-1.5 text-xs transition hover:bg-surface-raised ${tone}`}
+    className={`flex items-center gap-2 rounded-lg border border-muted/70 px-3 py-1.5 text-xs transition hover:bg-surface-raised ${tone}`}
   >
     {children}
   </a>
@@ -831,8 +831,9 @@ function sectionsFor(settings: Settings): Section[] {
             {settings.ambience === 'off'
               ? '.'
               : ` at ${Math.round(settings.ambienceVolume * 100)}%.`}
-            {' '}The speaker icon on the timer mutes it temporarily and does not silence
-            the completion chime.
+            {' '}The speaker at the top of the Room menu turns it off, or back on to
+            the room's own suggestion. The speaker icon on the timer mutes it
+            temporarily and does not silence the completion chime.
           </Setting>
           <Setting name="Pop the timer out when a block starts">
             Opens the always-on-top window for you as a block begins, rather than leaving

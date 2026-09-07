@@ -88,7 +88,7 @@ export function BreakDurationPanel({
               'tnum rounded-lg border px-4 py-2.5 text-sm transition',
               minutes === d
                 ? 'border-rest bg-rest/15 text-rest'
-                : 'border-line text-body hover:bg-surface-raised hover:text-bright',
+                : 'border-muted/70 text-body hover:bg-surface-raised hover:text-bright',
             ].join(' ')}
           >
             {d}m

@@ -13,6 +13,7 @@ import {
 import {
   DEFAULT_SETTINGS,
   minutesToMs,
+  ROOM_IDS,
   type Commitment,
   type Ms,
   type PlannedBreak,
@@ -587,7 +588,7 @@ describe('derivePlan invariants', () => {
     ),
     notificationsEnabled: fc.boolean(),
     soundEnabled: fc.boolean(),
-    roomId: fc.constantFrom('mono', 'ember', 'tide', 'moss'),
+    roomId: fc.constantFrom(...ROOM_IDS),
     ambience: fc.constantFrom('off', 'room', 'brown', 'pink', 'rain'),
     ambienceVolume: fc.double({ min: 0, max: 1, noNaN: true }),
     popOutOnStart: fc.boolean(),

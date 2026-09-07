@@ -255,7 +255,7 @@ function PolicyOption({
     <label
       className={[
         'flex cursor-pointer gap-3 rounded-lg border px-3.5 py-3 transition',
-        checked ? 'border-deep bg-deep/10' : 'border-line hover:bg-surface-raised',
+        checked ? 'border-deep bg-deep/10' : 'border-muted/70 hover:bg-surface-raised',
       ].join(' ')}
     >
       <input

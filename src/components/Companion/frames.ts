@@ -41,6 +41,23 @@ export type Grid = readonly string[]
 export const TRANSPARENT = '.'
 
 /**
+ * The parts of the cat that are the same in every room.
+ *
+ * Fur, shade, eyes, a glint and the paper a note is written on. Only the
+ * accent keys (`a`, `n`) and the heart (`p`) follow the room or the mood, so
+ * they are supplied by whoever is drawing rather than fixed here. Three places
+ * paint this sprite — the app, the icon generator and the contact sheet — and
+ * before this existed all three kept their own copy of these five values.
+ */
+export const SPRITE_COLOURS = {
+  f: '#e6e1d6',
+  s: '#a99f8c',
+  e: '#14141c',
+  h: '#ffffff',
+  w: '#faf7ef',
+} as const
+
+/**
  * Every posture the cat has.
  *
  * They are all the same animal seen from the front, so what separates them is

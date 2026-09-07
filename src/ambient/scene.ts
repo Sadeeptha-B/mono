@@ -7,9 +7,9 @@
  * merely because somebody copied the same mistake into a second renderer.
  */
 
-import type { TrailEntry } from '@/domain/dayProgress'
-import type { RoomId } from '@/domain/types'
-import type { RoomPalette } from './rooms'
+import type { TrailEntry } from '../domain/dayProgress.ts'
+import type { RoomId } from '../domain/types.ts'
+import type { RoomPalette } from './palette.ts'
 
 export const SCENE_W = 48
 export const SCENE_H = 24
@@ -71,7 +71,7 @@ export const ROOM_SCENERY: Record<RoomId, readonly RoomShape[]> = {
       stroke: 'muted', strokeWidth: 0.45,
     },
   ],
-  ember: [
+  hearth: [
     // A small hearth ledge stays left; the desk supporting the mug and books
     // occupies the widened side of the room.
     { kind: 'rect', tier: 0, x: 3, y: 14, width: 8, height: 1, fill: 'line' },
@@ -97,7 +97,7 @@ export const ROOM_SCENERY: Record<RoomId, readonly RoomShape[]> = {
     { kind: 'rect', tier: 3, x: 33, y: 9, width: 2, height: 2, fill: 'deep' },
     { kind: 'rect', tier: 3, x: 41, y: 7, width: 2, height: 3, fill: 'bright', opacity: 0.7 },
   ],
-  moss: [
+  fern: [
     { kind: 'rect', tier: 0, x: 30, y: 13, width: 15, height: 2, fill: 'line' },
     { kind: 'rect', tier: 1, x: 37, y: 10, width: 1, height: 4, fill: 'rest' },
     { kind: 'rect', tier: 1, x: 35, y: 13, width: 5, height: 3, fill: 'deep', opacity: 0.65 },

@@ -61,6 +61,7 @@ import {
   commitmentSpan,
   minutesToMs,
   type Commitment,
+  type CommitmentPatch,
   type DefaultRegion,
   type Ms,
   type WorkRegion,
@@ -97,7 +98,7 @@ export function DaySetupPanel({
   nextRegionStart: Ms | null
   commitments: readonly Commitment[]
   onAddCommitment: (input: Omit<Commitment, 'id'>) => void
-  onUpdateCommitment: (id: string, patch: Partial<Commitment>) => void
+  onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onRemoveCommitment: (id: string) => void
   onDone: () => void
 }) {
@@ -344,7 +345,7 @@ function CommitmentRow({
   return (
     <li
       className={`flex items-baseline gap-3 rounded-lg border px-3 py-2 ${
-        editing ? 'border-bright/60' : 'border-line'
+        editing ? 'border-bright/60' : 'border-muted/70'
       }`}
     >
       <span className="tnum shrink-0 text-xs text-commit">

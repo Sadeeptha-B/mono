@@ -2607,3 +2607,52 @@ its local-storage adapter rehydrates synchronously before publishing. The first
 reload message is now asserted to be the restored running block; any future
 asynchronous persistence must gate publishing on hydration instead of emitting
 an anonymous idle first.
+
+**2026-09-07 — Rooms use one identity list and one runtime palette.**
+
+`ROOM_IDS` is the ordered list and union for the four rooms; exhaustive records
+provide their palette spec, label/sound metadata and scenery. The two pre-release
+ids were renamed from `ember` and `moss` to `hearth` and `fern`. Schema v3
+clears v2 browser storage rather than retaining aliases. Imported and recovered
+settings keep every valid field while ignoring malformed siblings.
+
+`ambient/palette.ts` builds all twelve semantic tokens from a shared OKLCH
+lightness/chroma model and per-room hue, lift and deliberate accent overrides.
+Hearth and Fern lift their walls, muted text and non-overridden accents together;
+otherwise normal-size text falls below AA. Gamut mapping preserves lightness and
+hue by reducing chroma.
+
+Runtime consumers read that palette directly. `applyRoomTheme` writes every
+semantic custom property to the document root before React paints and whenever
+the room changes; it also updates browser chrome. The PWA manifest, icon
+generator, PiP fallback and companion preview import the same values. Only
+Mono's literals remain in the stylesheet because Tailwind needs token names and
+a dark default at build time; a test keeps that twelve-value mirror exact.
+Changing Mono's ink or deep accent also requires regenerating committed icons.
+
+Contrast tests cover primary and muted text, accent text on its tinted chips,
+the quieter commitment-margin recipe, and functional control boundaries.
+Decorative `line` may remain subtle; interactive boundaries use `muted/70`.
+The companion's fixed fur, shade, eye, glint and paper colours live beside its
+sprite frames and are shared by all renderers.
+
+
+**2026-09-07 — The Room menu is viewport-positioned, not header-positioned.**
+
+Header actions wrap differently on the day and guide pages. While open, the
+menu measures the trigger at its final width, prefers the space below, flips
+above when necessary, and caps its height to the viewport with internal
+scrolling. It observes content size because enabling sound adds the volume
+slider, and recomputes on captured scroll because the desktop columns scroll
+inside the page. Unchanged placements do not set React state.
+
+The top-right speaker writes the existing `off` or `room` ambience setting;
+the timer speaker remains a separate session mute. Sound choices stay operable
+while off and explain the unselected-radio state. Visually hidden radio inputs
+surface focus on their cards so keyboard focus remains visible.
+
+**2026-09-07 — Update patches cannot rename entities.**
+
+Update patches cannot contain an entity id: identity belongs to the event's
+target id. The reducer spreads patches onto entities, so accepting an id there
+could rename one and orphan every later event that still names the original.

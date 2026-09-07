@@ -8,10 +8,10 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { previewAmbience, setLiveAmbienceVolume, unlockAudio } from './audio'
-import { ambienceLabel, ROOM_IDS, ROOMS, type AmbienceKind } from './rooms'
+import { ambienceLabel, ROOMS, type AmbienceKind } from './rooms'
 import { labelClass } from '@/components/ui'
 import { useSession } from '@/store/session'
-import type { Settings } from '@/domain/types'
+import { ROOM_IDS, type AmbienceSelection, type Settings } from '@/domain/types'
 
 export function RoomControls({ idPrefix }: { idPrefix: string }) {
   const settings = useSession((state) => state.session.settings)
@@ -23,6 +23,8 @@ export function RoomControls({ idPrefix }: { idPrefix: string }) {
   const committedVolume = useRef(settings.ambienceVolume)
   const set = <K extends keyof Settings>(key: K, value: Settings[K]) =>
     updateSettings({ [key]: value } as Partial<Settings>)
+  const soundOn = settings.ambience !== 'off'
+  const soundToggleTitle = soundOn ? 'Turn ambient sound off' : 'Turn ambient sound on'
 
   // A range emits an input event for every pixel it crosses. Settings are an
   // append-only journal, so sending those events through `updateSettings`
@@ -54,90 +56,133 @@ export function RoomControls({ idPrefix }: { idPrefix: string }) {
     set('ambienceVolume', next)
   }
 
+  const chooseAmbience = (choice: AmbienceSelection) => {
+    const resolved: AmbienceKind | null =
+      choice === 'off'
+        ? null
+        : choice === 'room'
+          ? ROOMS[settings.roomId].suggestedAmbience
+          : choice
+    set('ambience', choice)
+    if (
+      active?.kind === 'block' &&
+      (phase.name === 'focusing' || phase.name === 'reflecting')
+    ) {
+      void unlockAudio()
+    } else {
+      void previewAmbience(resolved, volume)
+    }
+  }
+
   return (
     <div className="space-y-4">
-      <fieldset>
-        <legend className={labelClass}>Focus room</legend>
-        <div className="grid grid-cols-2 gap-2">
-          {ROOM_IDS.map((id) => {
-            const room = ROOMS[id]
-            const checked = settings.roomId === id
-            return (
-              <label
-                key={id}
-                className={[
-                  'cursor-pointer rounded-lg border px-3 py-2.5 transition',
-                  checked
-                    ? 'border-deep bg-deep/10'
-                    : 'border-line hover:bg-surface-raised',
-                ].join(' ')}
-              >
-                <input
-                  type="radio"
-                  name={`${idPrefix}-focus-room`}
-                  checked={checked}
-                  onChange={() => set('roomId', id)}
-                  className="sr-only"
-                />
-                <span
-                  className={`flex items-center gap-2 text-sm ${checked ? 'text-bright' : 'text-body'}`}
-                >
-                  <span
-                    aria-hidden="true"
-                    data-room-swatch={id}
-                    className="h-2.5 w-2.5 shrink-0 rounded-full border border-bright/20"
-                    style={{ backgroundColor: room.indicator }}
-                  />
-                  {room.label}
-                </span>
-              </label>
-            )
-          })}
+      <div>
+        <div className="mb-1.5 flex min-h-8 items-center justify-between gap-3">
+          <span
+            id={`${idPrefix}-focus-room-label`}
+            className="text-xs font-medium tracking-wide text-muted uppercase"
+          >
+            Focus room
+          </span>
+          <button
+            type="button"
+            aria-label="Ambient sound"
+            aria-pressed={soundOn}
+            title={soundToggleTitle}
+            onClick={() => chooseAmbience(soundOn ? 'off' : 'room')}
+            className={[
+              'grid h-8 w-8 shrink-0 place-items-center rounded-lg border border-muted/70 transition',
+              soundOn
+                ? 'bg-deep/10 text-deep hover:bg-deep/20'
+                : 'text-muted hover:bg-surface-raised hover:text-body',
+            ].join(' ')}
+          >
+            <svg
+              viewBox="0 0 20 20"
+              className="h-4 w-4"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden
+            >
+              <path d="M3.5 8h3l4-3.5v11l-4-3.5h-3z" />
+              {soundOn ? (
+                <path d="M13.5 7a4 4 0 0 1 0 6m2-8a7 7 0 0 1 0 10" />
+              ) : (
+                <path d="m14 8 3 4m0-4-3 4" />
+              )}
+            </svg>
+          </button>
         </div>
-      </fieldset>
+
+        <fieldset aria-labelledby={`${idPrefix}-focus-room-label`}>
+          <div className="grid grid-cols-2 gap-2">
+            {ROOM_IDS.map((id) => {
+              const room = ROOMS[id]
+              const checked = settings.roomId === id
+              return (
+                <label
+                  key={id}
+                  className={[
+                    'cursor-pointer rounded-lg border px-3 py-2.5 transition has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-deep',
+                    checked
+                      ? 'border-deep bg-deep/10'
+                      : 'border-muted/70 hover:bg-surface-raised',
+                  ].join(' ')}
+                >
+                  <input
+                    type="radio"
+                    name={`${idPrefix}-focus-room`}
+                    checked={checked}
+                    onChange={() => set('roomId', id)}
+                    className="sr-only"
+                  />
+                  <span
+                    className={`flex items-center gap-2 text-sm ${checked ? 'text-bright' : 'text-body'}`}
+                  >
+                    <span
+                      aria-hidden="true"
+                      data-room-swatch={id}
+                      className="h-2.5 w-2.5 shrink-0 rounded-full border border-bright/20"
+                      style={{ backgroundColor: room.palette[room.indicator] }}
+                    />
+                    {room.label}
+                  </span>
+                </label>
+              )
+            })}
+          </div>
+        </fieldset>
+      </div>
 
       <fieldset>
         <legend className={labelClass}>Ambient sound</legend>
         <div className="grid grid-cols-2 gap-2">
-          {(['off', 'room', 'brown', 'pink', 'rain'] as const).map((choice) => {
-            const resolved: AmbienceKind | null =
-              choice === 'off'
-                ? null
-                : choice === 'room'
-                  ? ROOMS[settings.roomId].suggestedAmbience
-                  : choice
+          {(['room', 'brown', 'pink', 'rain'] as const).map((choice) => {
+            const resolved: AmbienceKind =
+              choice === 'room' ? ROOMS[settings.roomId].suggestedAmbience : choice
             const label =
-              choice === 'off'
-                ? 'Off'
-                : choice === 'room'
-                  ? `Room sound — ${ambienceLabel(resolved!)}`
-                  : ambienceLabel(choice)
+              choice === 'room'
+                ? `Room sound — ${ambienceLabel(resolved)}`
+                : ambienceLabel(choice)
             const checked = settings.ambience === choice
             return (
               <label
                 key={choice}
                 className={[
-                  'cursor-pointer rounded-lg border px-3 py-2 text-xs transition',
+                  'cursor-pointer rounded-lg border px-3 py-2 text-xs transition has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-deep',
                   checked
                     ? 'border-deep bg-deep/10 text-bright'
-                    : 'border-line text-body hover:bg-surface-raised',
+                    : 'border-muted/70 text-body hover:bg-surface-raised',
                 ].join(' ')}
               >
                 <input
                   type="radio"
                   name={`${idPrefix}-ambient-sound`}
                   checked={checked}
-                  onChange={() => {
-                    set('ambience', choice)
-                    if (
-                      active?.kind === 'block' &&
-                      (phase.name === 'focusing' || phase.name === 'reflecting')
-                    ) {
-                      void unlockAudio()
-                    } else {
-                      void previewAmbience(resolved, volume)
-                    }
-                  }}
+                  onChange={() => chooseAmbience(choice)}
                   className="sr-only"
                 />
                 {label}
@@ -146,7 +191,17 @@ export function RoomControls({ idPrefix }: { idPrefix: string }) {
           })}
         </div>
 
-        {settings.ambience !== 'off' && (
+        {/* With `off` moved out to the speaker there is no checked radio while
+            ambience is silent, and four untouched options read as a question
+            nobody has answered rather than a setting that has a value. Naming
+            the state costs a line and says where its switch went. */}
+        {!soundOn && (
+          <p className="mt-2 text-xs text-muted">
+            Off — choose a sound, or use the speaker above.
+          </p>
+        )}
+
+        {soundOn && (
           <div className="mt-3 text-xs text-muted">
             <div className="flex items-baseline justify-between gap-2">
               <label id={`${idPrefix}-ambience-volume-label`} htmlFor={`${idPrefix}-ambience-volume`}>

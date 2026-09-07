@@ -1,23 +1,19 @@
 /**
- * Mono's four coordinated focus rooms.
+ * Mono's four coordinated focus rooms: what each one is called, which sound it
+ * suggests and which of its own colours the menu shows as its swatch.
  *
- * This is the single non-CSS source for room identity: settings labels, the
- * browser chrome, picture-in-picture's first paint, suggested sound and scene
- * selection all read it. The CSS declarations mirror these palettes because
- * Tailwind utilities need real custom properties in a stylesheet.
+ * Colour itself is next door in `palette.ts`. This file names rooms; that one
+ * decides what they look like, and `applyRoomTheme` exposes its tokens as CSS
+ * properties.
  *
- * Adding a room touches five files, and the order matters less than the fact
- * that missing one of them fails quietly rather than loudly:
+ * Adding a room touches four exhaustive declarations:
  *
- *  1. `domain/types.ts` — widen the `RoomId` union.
- *  2. Here — the label, description, swatch, full palette and suggested sound.
- *  3. `store/schema.ts` — the id list in `sanitiseSettingsPatch`. This is the
- *     one that bites: an unlisted room makes an imported settings event look
- *     malformed, so the whole patch is dropped and the user silently lands back
- *     on Mono with no error anywhere.
- *  4. `index.css` — all twelve tokens under the new `data-room` selector. A
- *     test parses this file and requires it to equal the palette above.
- *  5. `ambient/scene.ts` — the room's own scenery at tiers 1, 2 and 3.
+ *  1. `domain/types.ts` — add the id to `ROOM_IDS`. That tuple is the union
+ *     and the menu order. The persisted-settings check reads the same tuple.
+ *  2. `palette.ts` — the room's hue and how much of the shared chroma curve it
+ *     takes.
+ *  3. Here — the label, description, suggested sound and swatch token.
+ *  4. `ambient/scene.ts` — the room's own scenery at tiers 1, 2 and 3.
  *
  * Then run `npm run companion` and look at it. Palette contrast, occlusion and
  * whether an earned tier reads as *earned* are not things a test can see.
@@ -28,31 +24,19 @@
  * read as four cats rather than one cat in four rooms.
  */
 
-import type { RoomId } from '@/domain/types'
+// The extension is load-bearing: the companion contact sheet imports this
+// module under plain Node, which does not resolve extensionless specifiers.
+import { PALETTES, type RoomPalette } from './palette.ts'
+import type { RoomId } from '../domain/types.ts'
 
 export type AmbienceKind = 'brown' | 'pink' | 'rain'
-
-export type RoomPalette = {
-  ink: string
-  surface: string
-  raised: string
-  line: string
-  muted: string
-  body: string
-  bright: string
-  deep: string
-  short: string
-  reflect: string
-  rest: string
-  commit: string
-}
 
 export type Room = {
   id: RoomId
   label: string
   detail: string
-  /** A distinct quick-menu swatch; drawn from this room's own palette. */
-  indicator: string
+  /** Which of this room's own tokens the quick-menu swatch shows. */
+  indicator: keyof RoomPalette
   suggestedAmbience: AmbienceKind
   palette: RoomPalette
 }
@@ -61,54 +45,36 @@ export const ROOMS: Record<RoomId, Room> = {
   mono: {
     id: 'mono',
     label: 'Mono',
-    detail: 'Near-black, quiet and familiar.',
-    indicator: '#a8a8bb',
+    detail: 'Graphite near-black, quiet and familiar.',
+    indicator: 'body',
     suggestedAmbience: 'brown',
-    palette: {
-      ink: '#08080b', surface: '#101016', raised: '#17171f', line: '#24242e',
-      muted: '#6e6e80', body: '#a8a8bb', bright: '#f0f0f5', deep: '#e8a33d',
-      short: '#7fa8d9', reflect: '#b088d9', rest: '#5cae8f', commit: '#d96a6a',
-    },
+    palette: PALETTES.mono,
   },
-  ember: {
-    id: 'ember',
-    label: 'Ember',
-    detail: 'Warm charcoal and lamplight.',
-    indicator: '#ed9b3b',
+  hearth: {
+    id: 'hearth',
+    label: 'Hearth',
+    detail: 'Honey-lit wood, cosy and close.',
+    indicator: 'deep',
     suggestedAmbience: 'pink',
-    palette: {
-      ink: '#0d0908', surface: '#15100e', raised: '#1e1613', line: '#34251f',
-      muted: '#8b7062', body: '#bfa797', bright: '#fff2e8', deep: '#ed9b3b',
-      short: '#7f9fc2', reflect: '#b884c6', rest: '#70a87c', commit: '#d86f5f',
-    },
+    palette: PALETTES.hearth,
   },
   tide: {
     id: 'tide',
     label: 'Tide',
     detail: 'Blue-black, cool and rain-lit.',
-    indicator: '#61b6d4',
+    indicator: 'short',
     suggestedAmbience: 'rain',
-    palette: {
-      ink: '#061014', surface: '#0b171c', raised: '#102229', line: '#1d3942',
-      muted: '#67838c', body: '#a4bdc4', bright: '#eaf7f8', deep: '#f0b65a',
-      short: '#61b6d4', reflect: '#aa8ddd', rest: '#63bd99', commit: '#df7878',
-    },
+    palette: PALETTES.tide,
   },
-  moss: {
-    id: 'moss',
-    label: 'Moss',
-    detail: 'Deep green with a softer edge.',
-    indicator: '#6eae78',
+  fern: {
+    id: 'fern',
+    label: 'Fern',
+    detail: 'Cool forest green, calm and leafy.',
+    indicator: 'rest',
     suggestedAmbience: 'brown',
-    palette: {
-      ink: '#090d09', surface: '#101610', raised: '#182018', line: '#293429',
-      muted: '#708171', body: '#a9b8a8', bright: '#eff5ec', deep: '#d9a84e',
-      short: '#7aa7b8', reflect: '#aa8ac0', rest: '#6eae78', commit: '#d2736c',
-    },
+    palette: PALETTES.fern,
   },
 }
-
-export const ROOM_IDS = Object.keys(ROOMS) as RoomId[]
 
 export const ambienceLabel = (kind: AmbienceKind): string =>
   kind === 'brown' ? 'Brown noise' : kind === 'pink' ? 'Pink noise' : 'Rain'

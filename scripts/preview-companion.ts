@@ -34,11 +34,14 @@ import {
   MARKINGS,
   NOTE,
   SPARK,
+  SPRITE_COLOURS,
   SPRITE_H,
   SPRITE_W,
   type FaceName,
 } from '../src/components/Companion/frames.ts'
-import { ROOM_IDS, ROOMS, type RoomPalette } from '../src/ambient/rooms.ts'
+import type { RoomPalette } from '../src/ambient/palette.ts'
+import { ROOMS } from '../src/ambient/rooms.ts'
+import { ROOM_IDS } from '../src/domain/types.ts'
 import {
   GROUND_H,
   GROUND_Y,
@@ -71,18 +74,17 @@ const stamp = (base: Grid, layer: Grid, x: number, y: number): string[] => {
   return rows.map((row) => row.join(''))
 }
 
-const paint = (accent: string): Record<string, string> => ({
-  f: '#e6e1d6',
-  s: '#a99f8c',
-  e: '#14141c',
-  h: '#ffffff',
+// `cat.ts` resolves the heart through `var(--color-commit)`; there is no
+// document here, so the room's own commit colour is passed in instead.
+const paint = (accent: string, commit: string): Record<string, string> => ({
+  ...SPRITE_COLOURS,
   a: accent,
   n: accent,
-  p: '#d96a6a',
-  w: '#faf7ef',
+  p: commit,
 })
 
 const TRAVEL = SCENE_W - SPRITE_W
+const TRAIL_ROTATION = ['deep', 'short', 'reflect', 'break', 'gap'] as const satisfies readonly TrailKind[]
 
 type MoodName =
   | 'idle'
@@ -204,7 +206,7 @@ const STATE_SHEET: Shot[] = [
     sceneTier: 2, markTier: 1, progress: 0.5, note: true,
   },
   {
-    label: 'Moss rest - complete', mood: 'resting', face: 'blink', room: 'moss',
+    label: 'Fern rest - complete', mood: 'resting', face: 'blink', room: 'fern',
     sceneTier: 3, markTier: 2, progress: null,
   },
 ]
@@ -213,18 +215,18 @@ const STATE_SHEET: Shot[] = [
 const INTERACTION_SHEET: Shot[] = [
   {
     label: 'focus tap 1 - room tier 1', mood: 'focusing', face: 'happy',
-    room: 'ember', sceneTier: 1, markTier: 0, progress: 0.5, note: true,
+    room: 'hearth', sceneTier: 1, markTier: 0, progress: 0.5, note: true,
   },
   {
     label: 'focus tap 2 - room + mark', mood: 'focusing', face: 'happy',
-    room: 'ember', sceneTier: 2, markTier: 1, progress: 0.5, note: true,
+    room: 'hearth', sceneTier: 2, markTier: 1, progress: 0.5, note: true,
   },
   {
     label: 'focus tap 3 - full preview', mood: 'focusing', face: 'happy',
-    room: 'ember', sceneTier: 3, markTier: 2, progress: 0.5, note: true,
+    room: 'hearth', sceneTier: 3, markTier: 2, progress: 0.5, note: true,
   },
   {
-    label: 'earned state - full trail', mood: 'idle', face: 'open', room: 'ember',
+    label: 'earned state - full trail', mood: 'idle', face: 'open', room: 'hearth',
     sceneTier: 3, markTier: 2, progress: null,
     trail: ['deep', 'short', 'reflect', 'break', 'gap', 'deep'],
   },
@@ -251,7 +253,7 @@ const INTERACTION_SHEET: Shot[] = [
     sceneTier: 3, markTier: 2, progress: null,
     trail: Array.from(
       { length: 32 },
-      (_, index): TrailKind => ['deep', 'short', 'reflect', 'break', 'gap'][index % 5]!,
+      (_, index): TrailKind => TRAIL_ROTATION[index % TRAIL_ROTATION.length]!,
     ),
   },
 ]
@@ -354,7 +356,7 @@ const drawShot = (shot: Shot, index: number, top: number) => {
   const oy = top + Math.floor(index / COLS) * CELL_H + PAD
   const walked = shot.progress === null ? TRAVEL / 2 : shot.progress * TRAVEL
   const accent = palette[mood.accent]
-  const colours = paint(accent)
+  const colours = paint(accent, palette.commit)
   const lift = shot.lift ?? 0
 
   beginScene(ox, oy)
@@ -438,7 +440,7 @@ const drawMark = (
   const mood = MOODS[name]
   const palette = ROOMS[roomId].palette
   const frame = stamp(BODIES[mood.body], FACES[faceFor(name)], mood.face.x, mood.face.y)
-  const colours = paint(palette[mood.accent])
+  const colours = paint(palette[mood.accent], palette.commit)
   const top = markCropTop(mood)
 
   for (let y = top; y < top + MARK_CROP.h; y += 1) {

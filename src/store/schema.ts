@@ -17,7 +17,16 @@
 
 import { reduce, replay, type MonoEvent, type SessionState } from '@/domain/events'
 import { dayKey } from '@/domain/time'
-import type { Commitment, Ms, PlannedBreak, Settings, WorkRegion } from '@/domain/types'
+import {
+  isRoomId,
+  type Commitment,
+  type CommitmentPatch,
+  type Ms,
+  type PlannedBreak,
+  type PlannedBreakPatch,
+  type Settings,
+  type WorkRegion,
+} from '@/domain/types'
 
 /** What `localStorage` holds, and what an export wraps with its version. */
 export type PersistedShape = { events: MonoEvent[]; dayKey: string | null }
@@ -27,7 +36,7 @@ export type ExportedShape = PersistedShape & { version: number }
  * The schema the event log is written in. Bumped only when old logs need
  * rewriting, and every bump needs a branch in `migratePersisted`.
  */
-export const SCHEMA_VERSION = 2
+export const SCHEMA_VERSION = 3
 
 /**
  * Read an export. Throws only when the file is not a Mono export, or comes
@@ -69,15 +78,32 @@ export function readImport(
  * through into this one.
  */
 export function migratePersisted(persisted: unknown, from: number): PersistedShape {
-  if (from === SCHEMA_VERSION && isPersisted(persisted)) return persisted
+  if (from === SCHEMA_VERSION && isPersisted(persisted)) {
+    return {
+      events: persisted.events
+        .filter(isEventShaped)
+        .map(sanitiseImportedEvent)
+        .filter(isPresent),
+      dayKey: typeof persisted.dayKey === 'string' ? persisted.dayKey : null,
+    }
+  }
 
   // v1 -> v2: a single `dayEndsAt` became a list of work regions. The faithful
   // translation is one region running from the default start to whatever end
   // time the user had chosen.
   if (from === 1 && isPersisted(persisted)) {
-    const events = persisted.events.filter(isEventShaped).map(migrateDayEndsAt)
+    const events = persisted.events
+      .filter(isEventShaped)
+      .map(migrateDayEndsAt)
+      .map(sanitiseImportedEvent)
+      .filter(isPresent)
     return { events, dayKey: persisted.dayKey ?? inferDayKey(events) }
   }
+
+  // v2 contained the pre-release `ember` and `moss` room ids. There is no
+  // shipped data to migrate, so start developer browsers clean rather than
+  // carrying compatibility aliases into the room model.
+  if (from === 2) return { events: [], dayKey: null }
 
   // Anything older or unreadable is discarded rather than crashing on boot.
   return { events: [], dayKey: null }
@@ -268,68 +294,65 @@ const sanitiseBlockKind = (value: unknown): 'deep' | 'short' | 'reflect' | null 
 function sanitiseSettingsPatch(value: unknown): Partial<Settings> | null {
   if (!isRecord(value)) return null
 
+  // Settings are independent preferences. Preserve every readable field in an
+  // imported or recovered patch instead of losing it because one sibling is bad.
   const patch: Partial<Settings> = {}
 
   if ('deepMinutes' in value) {
     const deepMinutes = sanitisePositiveMinutes(value.deepMinutes)
-    if (deepMinutes === null) return null
-    patch.deepMinutes = deepMinutes
+    if (deepMinutes !== null) patch.deepMinutes = deepMinutes
   }
   if ('shortMinutes' in value) {
     const shortMinutes = sanitisePositiveMinutes(value.shortMinutes)
-    if (shortMinutes === null) return null
-    patch.shortMinutes = shortMinutes
+    if (shortMinutes !== null) patch.shortMinutes = shortMinutes
   }
   if ('reflectMinutes' in value) {
     const reflectMinutes = sanitisePositiveMinutes(value.reflectMinutes)
-    if (reflectMinutes === null) return null
-    patch.reflectMinutes = reflectMinutes
+    if (reflectMinutes !== null) patch.reflectMinutes = reflectMinutes
   }
   if ('defaultRegions' in value) {
     const defaultRegions = sanitiseDefaultRegions(value.defaultRegions)
-    if (defaultRegions === null) return null
-    patch.defaultRegions = defaultRegions
+    if (defaultRegions !== null) patch.defaultRegions = defaultRegions
   }
   if ('plannerPolicy' in value) {
-    if (value.plannerPolicy !== 'prefer-deep' && value.plannerPolicy !== 'maximise-focus') {
-      return null
+    if (value.plannerPolicy === 'prefer-deep' || value.plannerPolicy === 'maximise-focus') {
+      patch.plannerPolicy = value.plannerPolicy
     }
-    patch.plannerPolicy = value.plannerPolicy
   }
   if ('notificationsEnabled' in value) {
-    if (typeof value.notificationsEnabled !== 'boolean') return null
-    patch.notificationsEnabled = value.notificationsEnabled
+    if (typeof value.notificationsEnabled === 'boolean') {
+      patch.notificationsEnabled = value.notificationsEnabled
+    }
   }
   if ('soundEnabled' in value) {
-    if (typeof value.soundEnabled !== 'boolean') return null
-    patch.soundEnabled = value.soundEnabled
+    if (typeof value.soundEnabled === 'boolean') patch.soundEnabled = value.soundEnabled
   }
   if ('roomId' in value) {
-    if (!['mono', 'ember', 'tide', 'moss'].includes(String(value.roomId))) return null
-    patch.roomId = value.roomId as Settings['roomId']
+    if (isRoomId(value.roomId)) patch.roomId = value.roomId
   }
   if ('ambience' in value) {
-    if (!['off', 'room', 'brown', 'pink', 'rain'].includes(String(value.ambience))) return null
-    patch.ambience = value.ambience as Settings['ambience']
+    if (['off', 'room', 'brown', 'pink', 'rain'].includes(String(value.ambience))) {
+      patch.ambience = value.ambience as Settings['ambience']
+    }
   }
   if ('ambienceVolume' in value) {
     if (
-      typeof value.ambienceVolume !== 'number' ||
-      !Number.isFinite(value.ambienceVolume) ||
-      value.ambienceVolume < 0 ||
-      value.ambienceVolume > 1
-    ) return null
-    patch.ambienceVolume = value.ambienceVolume
+      typeof value.ambienceVolume === 'number' &&
+      Number.isFinite(value.ambienceVolume) &&
+      value.ambienceVolume >= 0 &&
+      value.ambienceVolume <= 1
+    ) {
+      patch.ambienceVolume = value.ambienceVolume
+    }
   }
   // Absent from every log written before the mini window existed, which needs
   // no migration: a patch that was never appended cannot be replayed, so those
   // days simply fold to the default.
   if ('popOutOnStart' in value) {
-    if (typeof value.popOutOnStart !== 'boolean') return null
-    patch.popOutOnStart = value.popOutOnStart
+    if (typeof value.popOutOnStart === 'boolean') patch.popOutOnStart = value.popOutOnStart
   }
 
-  return patch
+  return Object.keys(patch).length === 0 ? null : patch
 }
 
 function sanitiseCommitment(value: unknown): Commitment | null {
@@ -359,10 +382,10 @@ function sanitiseCommitment(value: unknown): Commitment | null {
   }
 }
 
-function sanitiseCommitmentPatch(value: unknown): Partial<Commitment> | null {
+function sanitiseCommitmentPatch(value: unknown): CommitmentPatch | null {
   if (!isRecord(value)) return null
 
-  const patch: Partial<Commitment> = {}
+  const patch: CommitmentPatch = {}
   if ('title' in value) {
     const title = sanitiseString(value.title)
     if (title === null) return null
@@ -389,13 +412,13 @@ function sanitiseCommitmentPatch(value: unknown): Partial<Commitment> | null {
     patch.recoverMin = recoverMin
   }
 
-  return patch
+  return Object.keys(patch).length === 0 ? null : patch
 }
 
-function sanitiseBreakPatch(value: unknown): Partial<PlannedBreak> | null {
+function sanitiseBreakPatch(value: unknown): PlannedBreakPatch | null {
   if (!isRecord(value)) return null
 
-  const patch: Partial<PlannedBreak> = {}
+  const patch: PlannedBreakPatch = {}
   if ('startsAt' in value) {
     const startsAt = sanitiseNumber(value.startsAt)
     if (startsAt === null) return null
@@ -407,7 +430,7 @@ function sanitiseBreakPatch(value: unknown): Partial<PlannedBreak> | null {
     patch.durationMin = durationMin
   }
 
-  return patch
+  return Object.keys(patch).length === 0 ? null : patch
 }
 
 function sanitisePlannedBreak(value: unknown): PlannedBreak | null {

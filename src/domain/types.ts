@@ -32,8 +32,25 @@ export type BlockKind = 'deep' | 'short' | 'reflect'
  */
 export type PlannerPolicy = 'prefer-deep' | 'maximise-focus'
 
-/** A curated visual environment. Rooms keep colour, sound and scenery coherent. */
-export type RoomId = 'mono' | 'ember' | 'tide' | 'moss'
+/**
+ * A curated visual environment. Rooms keep colour, sound and scenery coherent.
+ *
+ * This tuple is both the union and the menu order. The palette, metadata,
+ * scenery and persisted-input guard are exhaustive over the derived union, so
+ * adding a room fails type-checking until its coordinated pieces exist.
+ */
+export const ROOM_IDS = ['mono', 'hearth', 'tide', 'fern'] as const
+
+export type RoomId = (typeof ROOM_IDS)[number]
+
+/**
+ * Whether a value names a room this build actually has.
+ *
+ * Used only at an external-data boundary. Live events are type-safe, while an
+ * imported JSON file can contain any string.
+ */
+export const isRoomId = (value: unknown): value is RoomId =>
+  (ROOM_IDS as readonly unknown[]).includes(value)
 
 /**
  * `room` follows the selected room's suggestion; the named sounds deliberately
@@ -135,6 +152,9 @@ export type Commitment = {
   recoverMin?: Minutes
 }
 
+/** Fields an edit may change; identity belongs to the event's target id. */
+export type CommitmentPatch = Partial<Omit<Commitment, 'id'>>
+
 /**
  * A break the user pinned onto the timeline. Breaks are never planned
  * automatically — the derived plan shows maximum available focus, and the user
@@ -145,6 +165,9 @@ export type PlannedBreak = {
   startsAt: Ms
   durationMin: Minutes
 }
+
+/** Fields an edit may change; identity belongs to the event's target id. */
+export type PlannedBreakPatch = Partial<Omit<PlannedBreak, 'id'>>
 
 // -----------------------------------------------------------------------------
 // Session history and active work

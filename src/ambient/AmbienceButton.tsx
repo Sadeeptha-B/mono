@@ -28,7 +28,7 @@ export function AmbienceButton({ ambience }: { ambience: AmbienceControls }) {
       // Matches GhostButton's current text-sm + px-4 + py-2.5 footprint so the
       // icon and adjacent action sit on one baseline. Revisit this size if that
       // shared button padding changes.
-      className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-lg border border-line text-body transition hover:bg-surface-raised hover:text-bright"
+      className="grid h-[42px] w-[42px] shrink-0 place-items-center rounded-lg border border-muted/70 text-body transition hover:bg-surface-raised hover:text-bright"
     >
       <svg
         viewBox="0 0 20 20"

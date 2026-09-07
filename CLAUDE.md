@@ -82,6 +82,14 @@ npm run build:ext:dev # extension with localhost origins for manual development
   app. Build its section tree from one `Settings` snapshot rather than a second
   list of individual fields. Update it when behaviour changes — but leave the
   companion's small delights undocumented on purpose.
+- **Colour has one source.** `src/ambient/palette.ts` builds every room's
+  twelve tokens from one lightness ramp and a per-room hue, chroma and lift, in
+  OKLCH. Runtime theming, room metadata, PWA metadata and generated art read it
+  directly. Only Mono's `@theme` literals in `index.css` are duplicated because
+  Tailwind needs build-time token declarations; a test keeps that small mirror
+  exact. Never hand-pick a hex. Run `npm run icons` after changing Mono's ink or
+  amber; a test compares the favicon with the generator. `ROOM_IDS` in
+  `src/domain/types.ts` is the only ordered list of rooms.
 - **Companion sprite art is text**, one character per pixel. Room and trail
   geometry is shared DOM-free data in `src/ambient/scene.ts`, rendered as SVG
   by the app and directly by the contact-sheet generator. Keep scene/trail
