@@ -223,7 +223,9 @@ export function BreakComposer({
         }}
       >
         <div className="grid grid-cols-2 gap-3">
-          <div>
+          {/* Match the shared commitment pair: native time inputs retain an
+              intrinsic minimum on iOS unless the grid item may shrink. */}
+          <div className="min-w-0">
             <label className={labelClass} htmlFor="break-time">
               From
             </label>

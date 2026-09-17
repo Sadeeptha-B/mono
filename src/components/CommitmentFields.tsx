@@ -207,8 +207,11 @@ export function CommitmentFields({
         className={`${fieldClass} ${large ? 'py-3 text-lg' : ''}`}
       />
 
+      {/* Both grid items explicitly release their content-based minimum. WebKit's
+          native time and number controls otherwise keep their intrinsic width
+          on a phone and the duration field paints back across the time field. */}
       <div className="mt-3 grid max-w-xs grid-cols-2 gap-3">
-        <div>
+        <div className="min-w-0">
           <label className={labelClass} htmlFor={`${idPrefix}-time`}>
             At
           </label>

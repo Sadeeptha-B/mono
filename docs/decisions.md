@@ -2656,3 +2656,54 @@ surface focus on their cards so keyboard focus remains visible.
 Update patches cannot contain an entity id: identity belongs to the event's
 target id. The reducer spreads patches onto entities, so accepting an id there
 could rename one and orphan every later event that still names the original.
+
+
+**2026-09-07 — A room is a hue, not a brightness.**
+
+Hearth and Fern were raised off the shared lightness ramp — 0.045 and 0.065 in
+OKLCH — and read as louder than Mono and Tide rather than warmer and cooler than
+them. Nothing rises alone: lighter walls need a lighter `muted` to sit on them
+and lighter accents to sit on that, so a lift carried the whole room up and every
+token arrived brighter than its counterpart next door.
+
+The lift was standing in for chroma. It was added because a warm room looked like
+mud and a green one like black with a hint of something, but the dial that fixes
+that is how much of the hue the walls take, not how high they sit. Hearth kept
+the hue it always had, 68, and moved on chroma alone. Fern was the one room that
+genuinely wanted a different hue, moving from a leaf green at 155 to a cool pine
+at 165 that survives ink's lightness for the same reason Tide's blue does. Both
+are now flat on the base ramp at chroma 0.7.
+
+So `lift` and `mutedLift` are gone from `RoomSpec`, along with Hearth's and
+Fern's accent overrides, which existed only to opt out of a lift. Every room's
+accents are now the shared five, which is what the model always claimed: an
+accent's hue is its meaning, and the same instrument should sound the same in
+all four rooms. Tide keeps the one remaining override. An override now replaces
+a shared accent outright rather than opting out of a generic lightness bump.
+
+Chroma turned out to be nearly free at these lightnesses — the four rooms sit
+within two percent of each other on every structural ratio, edges against walls
+and panels against panels. So it sets how loudly a room says its hue without
+touching how bright it is, and the amount that counts as restrained depends on
+the hue in the opposite direction to the obvious guess. Blue reads as just dark,
+so Tide is understated at a full 1.0; a brown and a green are not, and land in
+the same register at 0.7. Equal restraint takes unequal numbers, which is what
+made Hearth and Fern read as overt when they matched Tide's figure.
+
+The rooms are meant to imply their subject rather than be it. An earlier pass
+here raised Hearth and Fern's chroma to make their hues unmistakable, which was
+the wrong goal: a room that states its colour competes with the work in it.
+
+Every contrast test passed unchanged and with more margin, because darker walls
+only help text. The Room menu's swatches still resolve to four distinct colours:
+they name four different tokens, so shared accent values do not collide.
+
+**2026-09-17 — Native form controls may not set a grid column's minimum.**
+
+The time-and-duration rows looked sound in Chromium's responsive mode and
+overlapped on iOS Safari. WebKit's native time and number controls retain an
+intrinsic minimum width; `width: 100%` alone does not let either the replaced
+control or its grid-item wrapper shrink to the track. Shared fields now carry
+an explicit zero minimum and the wrappers in both commitment and break rows do
+the same. Keep both halves: removing either can restore the overlap on a phone
+without making it visible in desktop responsive testing.

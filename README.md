@@ -168,10 +168,14 @@ Fern, with a palette swatch beside each choice. A room is one coordinated
 palette and pixel environment rather than a loose accent picker, and it follows
 the timer into the always-on-top window. The rooms are built from one shared
 lightness ramp turned to each one's own hue, so they differ in temperature
-rather than in how loud they are: Mono keeps half the colour of the others
-because it is the one that should disappear, while Hearth and Fern sit brighter
-than the rest, since at Tide's lightness honey turns to mud and leaf green to
-near-black. Mono is the default, and whichever room you pick is remembered.
+rather than in how loud they are: every room's walls, edges and text sit at the
+same lightness, and only the hue moves. Each one implies its subject rather than
+announcing it — Tide is a room you would call black before you called it blue,
+and Hearth and Fern are held to that same restraint. Getting there takes less
+colour in a brown or a green than in a blue, so those two carry less of their hue
+than Tide carries of its own, and Mono carries least of all because it is the one
+that should disappear. Mono is the default, and whichever room you pick is
+remembered.
 
 Ambient sound is off until it is explicitly chosen. Brown noise, pink noise
 and rain are synthesised locally with Web Audio; there are no streamed tracks

@@ -835,6 +835,44 @@ test('the commitment form accepts typing while the clock is running', async ({ p
   await expect(composerTitle).toHaveValue('Design review')
 })
 
+test('time and duration fields stay inside their columns on a narrow phone', async ({
+  page,
+}) => {
+  // iOS gives its native time and number controls an intrinsic minimum width.
+  // A full-width input is not enough there: the grid item and the replaced
+  // control both have to be allowed to shrink or the duration paints across
+  // the time field. Chromium does not reproduce that native-control quirk, so
+  // assert the CSS contract that prevents it as well as today's geometry.
+  await page.setViewportSize({ width: 320, height: 844 })
+  await openMono(page)
+
+  const expectPairToFit = async (timeLabel: string, durationLabel: string) => {
+    const time = page.getByLabel(timeLabel, { exact: true })
+    const duration = page.getByLabel(durationLabel, { exact: true })
+    const [timeBox, durationBox] = await Promise.all([
+      time.boundingBox(),
+      duration.boundingBox(),
+    ])
+
+    expect(timeBox).not.toBeNull()
+    expect(durationBox).not.toBeNull()
+    expect(timeBox!.x + timeBox!.width).toBeLessThanOrEqual(durationBox!.x)
+    await expect(time).toHaveCSS('min-width', '0px')
+    await expect(duration).toHaveCSS('min-width', '0px')
+    await expect(time.locator('..')).toHaveCSS('min-width', '0px')
+    await expect(duration.locator('..')).toHaveCSS('min-width', '0px')
+  }
+
+  await expectPairToFit('At', 'For (minutes)')
+
+  await shapeDay(page)
+  await calendar(page).getByRole('button', { name: '+ Commitment' }).click()
+  await expectPairToFit('At', 'For (minutes)')
+
+  await calendar(page).getByRole('button', { name: '+ Break' }).click()
+  await expectPairToFit('From', 'For (minutes)')
+})
+
 test('the calendar edits itself in place, without covering the day', async ({ page }) => {
   await openMono(page)
   await addStandup(page)

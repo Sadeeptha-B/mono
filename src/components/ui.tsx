@@ -12,7 +12,7 @@ import type { ButtonHTMLAttributes } from 'react'
 import { coerceBoundedMinutes } from './minutes'
 
 export const fieldClass =
-  'w-full rounded-lg border border-muted/70 bg-ink px-3.5 py-2.5 text-bright placeholder:text-muted/90 focus:border-deep focus:outline-none'
+  'min-w-0 w-full max-w-full rounded-lg border border-muted/70 bg-ink px-3.5 py-2.5 text-bright placeholder:text-muted/90 focus:border-deep focus:outline-none'
 
 export const labelClass =
   'mb-1.5 block text-xs font-medium tracking-wide text-muted uppercase'
@@ -129,7 +129,11 @@ export function MinutesInput({
   const coerce = (raw: string) => onText(coerceBoundedMinutes(raw, fallback, min, max))
 
   return (
-    <div>
+    // Native number controls keep an intrinsic minimum width in iOS Safari.
+    // This wrapper is often a grid item beside a time input, so both it and
+    // the input need permission to shrink inside their half of the row. The
+    // input gets that from `fieldClass`; `min-w-0` here releases the grid item.
+    <div className="min-w-0">
       <label className={labelClass} htmlFor={id}>
         {label}
       </label>

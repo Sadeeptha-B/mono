@@ -13,8 +13,9 @@
  * own hue and scaled by its chroma multiplier. Chroma peaks at `line` — the
  * token that draws the room's edges — and falls almost to nothing at `bright`,
  * so surfaces carry the hue while text stays neutral enough to read. The five
- * accents are the opposite: their hue *is* their meaning, so it barely moves
- * between rooms, and a room adjusts their lightness rather than their identity.
+ * accents are the opposite: their hue *is* their meaning, so they are shared
+ * outright, and a room that wants a different one replaces it rather than
+ * shading it.
  *
  * Everything is specified in OKLCH and converted here, because that is the
  * whole reason this file exists. Equal steps in OKLCH lightness look like equal
@@ -22,24 +23,41 @@
  * neither of which is true of the hex values it emits. A palette that looks
  * arithmetic in these numbers looks even on screen.
  *
- * Two consequences worth knowing before changing a number:
+ * Three consequences worth knowing before changing a number:
  *
- *  - **Lightness, not chroma, is what makes a warm room pleasant.** Dropping a
- *    warm room's chroma until it stops being garish makes it drab rather than
- *    calm. Tide is the only coloured room that works sitting on the base ramp,
- *    because a dark blue still reads as blue; the same lightness turns honey
- *    into mud and a leaf green into black with a hint of something. Hearth and
- *    Fern are lifted instead, and carry *more* chroma than Tide, not less.
- *  - **Text accents follow lifted walls.** `muted` and non-overridden accents
- *    rise with Hearth and Fern so normal-size text keeps AA contrast. `body`
- *    and `bright` are already near the top of the ramp and stay put.
- *  - **An accent override includes its final lightness.** Overrides are used
- *    where adding the generic lift would change the intended hue/chroma at the
- *    sRGB gamut boundary.
+ *  - **Every room sits on the same ramp. A room is a hue, not a brightness.**
+ *    Hearth and Fern used to be raised off it, by 0.045 and 0.065, so that a
+ *    warm room would stop looking like mud and a green one like black with a
+ *    hint of something. It worked and it cost them their calm, because nothing
+ *    rises alone: lighter walls need a lighter `muted` to sit on them and
+ *    lighter accents to sit on that, so the whole room came up together and read
+ *    as louder than Mono and Tide rather than warmer or cooler than them. Flat
+ *    on the ramp they are quiet again, and every contrast test gained margin
+ *    rather than losing it, because darker walls can only help text.
+ *  - **Chroma is the dial the lift was standing in for, and it is nearly free.**
+ *    Moving a room's chroma barely moves any token's luminance — the four rooms
+ *    sit within two percent of each other on every structural ratio, edges
+ *    against walls and panels against panels alike — so it sets how loudly a
+ *    room says its hue without touching how bright it is. A room here is meant
+ *    to imply its subject rather than announce it, and how much chroma that
+ *    takes depends on the hue, in the opposite direction to the obvious guess.
+ *    Blue is the one colour that reads as *just dark*: Tide holds a full 1.0 and
+ *    is still a room you would call black before you called it blue. A brown or
+ *    a green announces itself at far less, so Hearth and Fern sit at 0.7 to be
+ *    as understated as Tide already is. Equal restraint takes unequal numbers.
+ *    Mono takes half, because it is the one room that should disappear
+ *    altogether. Hearth kept the hue it always had and only ever needed this
+ *    dial; Fern was the one room that genuinely wanted a different one, moving
+ *    from a leaf green at 155 to a cool pine at 165 that stays green at ink's
+ *    lightness where a spring green does not.
+ *  - **An accent override replaces the shared accent outright**, hue, lightness
+ *    and chroma together. The five accents are otherwise identical in every
+ *    room, which is the point of them: their hue is their meaning, and the same
+ *    instrument should sound the same in all four rooms.
  *
  * The sRGB values are gamut-clipped by reducing chroma at a fixed lightness and
- * hue, which is what keeps a lift from quietly turning into a hue shift when a
- * requested colour falls outside the display.
+ * hue, which is what keeps a colour the display cannot show from quietly
+ * arriving as a different one.
  */
 
 // A relative, type-only import on purpose: `vite.config.ts` and the icon
@@ -103,14 +121,6 @@ type RoomSpec = {
   hue: number
   /** How much of the shared chroma curve this room's surfaces take. */
   chroma: number
-  /**
-   * Raises the surface ramp for a room that reads as black at base lightness,
-   * and with it every accent the room has not overridden — text on lighter walls
-   * has to rise too or the pair loses its contrast.
-   */
-  lift?: number
-  /** Raises `muted` to keep it clear of the lifted walls behind it. */
-  mutedLift?: number
   /** Mono splits its temperature: cool shadows, faintly warm greys. */
   textHue?: number
   textChroma?: number
@@ -125,21 +135,17 @@ type RoomSpec = {
  */
 export const ROOM_SPECS: Record<RoomId, RoomSpec> = {
   mono: { hue: 278, chroma: 0.5, textHue: 70, textChroma: 0.3, accentChroma: 1.08 },
-  hearth: {
-    hue: 68,
-    chroma: 0.95,
-    lift: 0.045,
-    mutedLift: 0.05,
-    accents: { deep: [80, 0.84, 0.132] },
-  },
+  // The hue is the one this room always had; what it could not carry was that
+  // hue at strength on walls this dark, which is what the lift was hiding. The
+  // room should suggest lamplit wood rather than be brown, so it takes less of
+  // its hue than Tide takes of blue and reads warm rather than wooden.
+  hearth: { hue: 68, chroma: 0.7 },
   tide: { hue: 228, chroma: 1, accents: { deep: [76, 0.815, 0.126] } },
-  fern: {
-    hue: 155,
-    chroma: 1.25,
-    lift: 0.065,
-    mutedLift: 0.065,
-    accents: { deep: [76, 0.81, 0.126], rest: [176, 0.787, 0.088] },
-  },
+  // Pine shade rather than leaf, and the one room that genuinely wanted a
+  // different hue. Past 160 is the cool half of the green, and it survives ink's
+  // lightness where a spring green does not. It takes the same restrained share
+  // of its hue as Hearth: a green suggested rather than a green stated.
+  fern: { hue: 165, chroma: 0.7 },
 }
 
 /** sRGB's transfer function. Left of the knee it is linear, including below zero. */
@@ -202,22 +208,19 @@ const clipped = (lightness: number, chroma: number, hue: number): string => {
 }
 
 const buildPalette = (spec: RoomSpec): RoomPalette => {
-  const lift = spec.lift ?? 0
   const textHue = spec.textHue ?? spec.hue
   const textChroma = spec.textChroma ?? spec.chroma
   const tokens: Partial<RoomPalette> = {}
 
   for (const [name, lightness, chroma] of SURFACES) {
-    tokens[name] = clipped(lightness + lift, chroma * spec.chroma, spec.hue)
+    tokens[name] = clipped(lightness, chroma * spec.chroma, spec.hue)
   }
   for (const [name, lightness, chroma] of TEXT) {
-    const raised = name === 'muted' ? (spec.mutedLift ?? 0) : 0
-    tokens[name] = clipped(lightness + raised, chroma * textChroma, textHue)
+    tokens[name] = clipped(lightness, chroma * textChroma, textHue)
   }
   for (const [name, hue, lightness, chroma] of ACCENTS) {
-    const override = spec.accents?.[name]
-    const [h, l, c] = override ?? [hue, lightness, chroma]
-    tokens[name] = clipped(override ? l : l + lift, c * (spec.accentChroma ?? 1), h)
+    const [h, l, c] = spec.accents?.[name] ?? [hue, lightness, chroma]
+    tokens[name] = clipped(l, c * (spec.accentChroma ?? 1), h)
   }
 
   if (!isCompletePalette(tokens)) {

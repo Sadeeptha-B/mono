@@ -53,7 +53,7 @@ export const ROOMS: Record<RoomId, Room> = {
   hearth: {
     id: 'hearth',
     label: 'Hearth',
-    detail: 'Honey-lit wood, cosy and close.',
+    detail: 'Wood-black, cosy and lamplit.',
     indicator: 'deep',
     suggestedAmbience: 'pink',
     palette: PALETTES.hearth,
@@ -69,7 +69,7 @@ export const ROOMS: Record<RoomId, Room> = {
   fern: {
     id: 'fern',
     label: 'Fern',
-    detail: 'Cool forest green, calm and leafy.',
+    detail: 'Pine-black, cool and still.',
     indicator: 'rest',
     suggestedAmbience: 'brown',
     palette: PALETTES.fern,

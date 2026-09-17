@@ -90,9 +90,9 @@ browsers that matter; picture-in-picture exists in neither Firefox nor Safari.
     chip: a running timer, a break panel's selected option, and the `Not
     saving` warning if you can provoke it. A test holds these to AA in the
     abstract; whether Hearth and Fern still look like *rooms* rather than four
-    variations on one, now that their accents rise with their walls, is only
-    answerable by looking. `npm run companion` shows every room and tier at
-    once.
+    variations on one, now that every room shares one lightness ramp and differs
+    only in hue, is only answerable by looking. `npm run companion` shows every
+    room and tier at once.
 
 ## The end of the day
 
