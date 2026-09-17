@@ -31,6 +31,7 @@
   "include": [
     "vite.config.ts",
     "playwright.config.ts",
+    "playwright.dev.config.ts",
     "scripts/build-extension.ts",
     "scripts/gen-icons.ts",
     "scripts/icon-tile.ts",

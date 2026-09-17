@@ -2707,3 +2707,35 @@ control or its grid-item wrapper shrink to the track. Shared fields now carry
 an explicit zero minimum and the wrappers in both commitment and break rows do
 the same. Keep both halves: removing either can restore the overlap on a phone
 without making it visible in desktop responsive testing.
+
+**2026-09-17 — Browser tests have fast feedback and production-proof paths.**
+
+The browser suite had become the default check for every user-facing change,
+even when a single local interaction was all that moved. Its self-contained
+production build and preview remain valuable: they exercise the exact bundle,
+service worker, and lazy chunks that CI deploys. They are also fixed overhead
+when iterating on one component. `npm run test:e2e` therefore keeps its existing
+production-backed behavior and remains CI's authoritative browser gate, while
+`npm run test:e2e:dev -- [filters]` runs the same specs against a reusable Vite
+development server on port 5173 for quick local and targeted feedback.
+The development config spreads the production settings into one object and
+then replaces `webServer`; passing both objects to `defineConfig` would append
+the Vite server to the production preview and pay for both. Server reuse is
+intentionally port-based, so a process from another checkout on 5173 would be
+the application under test.
+
+The two paths deliberately share browser settings and assertions. A resilience
+test that blocks the guide recognizes both the hashed production chunk and
+Vite's source-module request, so development speed does not buy weaker
+coverage. Use the full production suite for cross-cutting behavior, build,
+PWA, lazy-loading, harness, and release changes.
+
+Vitest now defaults to Node. Only the three suites that use browser globals opt
+into jsdom at file level; a global Jest DOM setup and its unused matcher package
+were removed. This keeps the unit suite's default honest without changing its
+coverage. The formerly monolithic browser spec is also divided by behavior,
+with common Mono interactions in `e2e/support/mono.ts`; test names and
+assertions remain the compatibility boundary when reorganizing it again. The
+guide-load recovery tests named in the earlier deferred-view decision moved
+from `e2e/focus-session.spec.ts` to
+`e2e/persistence-and-resilience.spec.ts` during that split.

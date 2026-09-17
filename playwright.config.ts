@@ -24,9 +24,10 @@ export default defineConfig({
   reporter: process.env.CI
     ? ([['github'], ['html', { open: 'never' }]] as const)
     : 'list',
-  // The suite is 64 short, fully independent specs against a paused clock, so
-  // it is bounded by how many browsers can run at once. Playwright's default of
-  // half the cores leaves half of a four-core runner idle for no reason.
+  // The suite is made of short, fully independent specs against a paused
+  // clock, so it is bounded by how many browsers can run at once. Playwright's
+  // default of half the cores leaves half of a four-core runner idle for no
+  // reason.
   ...(process.env.CI ? { workers: 4 } : {}),
   use: {
     baseURL: 'http://localhost:4173',

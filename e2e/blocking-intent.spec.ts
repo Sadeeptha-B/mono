@@ -1,5 +1,3 @@
-import { expect, test, type Page } from '@playwright/test'
-
 /**
  * What Mono publishes for the site-blocking extension.
  *
@@ -17,6 +15,14 @@ import { expect, test, type Page } from '@playwright/test'
  * most: a reload in the middle of a block re-arming a worker that has been
  * killed and knows nothing.
  */
+
+import { expect, test, type Page } from '@playwright/test'
+import {
+  openMono as sharedOpenMono,
+  shapeDay,
+  stage,
+  startBlock,
+} from './support/mono'
 
 const TWO_PM = new Date(2026, 7, 20, 14, 0, 0)
 const DEEP_MS = 45 * 60_000
@@ -39,9 +45,8 @@ declare global {
 }
 
 async function openMono(page: Page, time: Date = TWO_PM) {
-  await page.clock.install({ time: new Date(time.getTime() - 1000) })
-  await page.clock.pauseAt(time)
-
+  // Register before the shared helper navigates so this hears the initial
+  // publish Mono makes while its modules are being evaluated.
   await page.addInitScript(() => {
     window.__monoIntents = []
     window.addEventListener('message', (event: MessageEvent<unknown>) => {
@@ -54,23 +59,10 @@ async function openMono(page: Page, time: Date = TWO_PM) {
     })
   })
 
-  await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+  await sharedOpenMono(page, time)
 }
 
 const intents = (page: Page) => page.evaluate(() => window.__monoIntents ?? [])
-
-const stage = (page: Page) => page.getByRole('main')
-
-async function shapeDay(page: Page) {
-  await stage(page).getByRole('button', { name: 'Start the day' }).click()
-}
-
-async function startBlock(page: Page, purpose: string) {
-  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
-  await page.getByLabel('Purpose for this block').fill(purpose)
-  await page.getByRole('button', { name: 'Start', exact: true }).click()
-}
 
 /** The most recent intent, which is the only one a listener would be acting on. */
 const latest = async (page: Page): Promise<Intent | undefined> => (await intents(page)).at(-1)

@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+
 /**
  * The popup's transaction boundary.
  *

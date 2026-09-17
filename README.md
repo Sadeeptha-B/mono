@@ -10,9 +10,14 @@ Local-first: everything lives in your browser. No account, no server, no sync.
 npm install
 npm run dev        # http://localhost:5173
 npm test           # unit + property tests
+npm run test:e2e:dev -- [filters] # Playwright against Vite for fast, targeted feedback
 npm run test:e2e   # Playwright, builds and previews first
 npm run build      # production bundle + service worker
 ```
+
+Use `test:e2e:dev` while iterating on localized UI work. `test:e2e` remains the
+production-faithful browser check: it builds the app, serves the bundle, and is
+the suite CI runs before deployment.
 
 Documentation is split by audience and ownership:
 

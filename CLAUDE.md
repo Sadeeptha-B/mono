@@ -58,6 +58,7 @@ e2e/             Playwright.
 ```bash
 npm run dev        # http://localhost:5173
 npm test           # vitest
+npm run test:e2e:dev -- [filters] # playwright against Vite; accepts file/grep filters
 npm run test:e2e   # playwright; builds and previews first
 npm run typecheck
 npm run build
@@ -106,6 +107,11 @@ npm run build:ext:dev # extension with localhost origins for manual development
   worker harness and its failure injection rather than replacing Chrome with
   loose spies. Installed DNR, permission, alarm, and document-targeting behavior
   still requires the real-browser checks in `docs/manual-qa.md`.
-- **Before finishing:** `npm run typecheck`, `npm test`, and `npm run test:e2e`
-  if anything user-facing moved. Add a dated entry to the log at the bottom of
-  `docs/decisions.md` for anything a future reader would be puzzled by.
+- **Before finishing:** always run `npm run typecheck` and `npm test`. For a
+  localized UI change, run the narrow relevant Playwright coverage through
+  `npm run test:e2e:dev -- [filters]`. Run the complete production-backed
+  `npm run test:e2e` for cross-cutting session, storage, or clock behavior;
+  boot, build, PWA, or lazy-loading changes; test-harness changes; and releases.
+  CI still runs that complete production suite before deployment. Add a dated
+  entry to the log at the bottom of `docs/decisions.md` for anything a future
+  reader would be puzzled by.

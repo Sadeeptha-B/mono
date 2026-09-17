@@ -111,8 +111,10 @@ export default defineConfig({
   },
   test: {
     globals: true,
-    environment: 'jsdom',
-    setupFiles: ['./src/test/setup.ts'],
+    // Most of Mono's tests exercise pure domain, contract and extension code.
+    // Keep their runner as light as the code under test; the three files that
+    // genuinely use browser globals opt into jsdom with file-level directives.
+    environment: 'node',
     // Playwright owns e2e/; vitest must not try to run those specs.
     exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
   },
