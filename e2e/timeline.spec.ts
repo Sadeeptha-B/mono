@@ -13,42 +13,147 @@ import {
   shapeDay,
 } from './support/mono'
 
-test('time and duration fields stay inside their columns on a narrow phone', async ({
+const framedTime = (surface: ReturnType<typeof stage>, label: string) => {
+  const input = surface.getByLabel(label, { exact: true })
+  const frame = input.locator('xpath=ancestor::*[@data-time-input-frame][1]')
+  return { input, frame }
+}
+
+test('time and duration fields stay contained and stack on a narrow phone', async ({
   page,
 }) => {
-  // iOS gives its native time and number controls an intrinsic minimum width.
-  // A full-width input is not enough there: the grid item and the replaced
-  // control both have to be allowed to shrink or the duration paints across
-  // the time field. Chromium does not reproduce that native-control quirk, so
-  // assert the CSS contract that prevents it as well as today's geometry.
+  // WebKit can draw the native time control wider than the input's reported
+  // box, which makes two non-overlapping DOM rectangles a false reassurance.
+  // The invariant we can test in every engine is structural: on a phone these
+  // controls do not share a row at all.
   await page.setViewportSize({ width: 320, height: 844 })
-  await openMono(page)
+  await openMono(page, new Date(2026, 7, 20, 12, 58, 0))
 
-  const expectPairToFit = async (timeLabel: string, durationLabel: string) => {
-    const time = page.getByLabel(timeLabel, { exact: true })
-    const duration = page.getByLabel(durationLabel, { exact: true })
-    const [timeBox, durationBox] = await Promise.all([
-      time.boundingBox(),
+  // The clock is widest around noon. The Stage companion must scale inside
+  // the width flexbox actually gives it rather than spilling left over the
+  // clock while the wrapper itself reports a non-overlapping rectangle.
+  const clock = stage(page).locator('[data-clock]')
+  const cat = stage(page).getByRole('button', { name: /Pet Mono/ })
+  const [clockBox, catBox, companionBox] = await Promise.all([
+    clock.boundingBox(),
+    cat.boundingBox(),
+    cat.locator('..').boundingBox(),
+  ])
+  expect(clockBox).not.toBeNull()
+  expect(catBox).not.toBeNull()
+  expect(companionBox).not.toBeNull()
+  expect(clockBox!.x + clockBox!.width).toBeLessThanOrEqual(catBox!.x)
+  expect(catBox!.x).toBeGreaterThanOrEqual(companionBox!.x - 1)
+  expect(catBox!.x + catBox!.width).toBeLessThanOrEqual(
+    companionBox!.x + companionBox!.width + 1,
+  )
+
+  const expectPairToStack = async (
+    surface: ReturnType<typeof stage>,
+    timeLabel: string,
+    durationLabel: string,
+  ) => {
+    const { input: time, frame } = framedTime(surface, timeLabel)
+    const duration = surface.getByLabel(durationLabel, { exact: true })
+    const [frameBox, durationBox, surfaceBox] = await Promise.all([
+      frame.boundingBox(),
       duration.boundingBox(),
+      surface.boundingBox(),
     ])
 
-    expect(timeBox).not.toBeNull()
+    expect(frameBox).not.toBeNull()
     expect(durationBox).not.toBeNull()
-    expect(timeBox!.x + timeBox!.width).toBeLessThanOrEqual(durationBox!.x)
-    await expect(time).toHaveCSS('min-width', '0px')
-    await expect(duration).toHaveCSS('min-width', '0px')
-    await expect(time.locator('..')).toHaveCSS('min-width', '0px')
-    await expect(duration.locator('..')).toHaveCSS('min-width', '0px')
+    expect(surfaceBox).not.toBeNull()
+    expect(frameBox!.y + frameBox!.height).toBeLessThanOrEqual(durationBox!.y)
+
+    // The visual padding lives on a clipping frame rather than the temporal
+    // input. This is the part Chromium cannot reproduce but can keep us from
+    // regressing: padded `width: 100%` time inputs overflow on iOS Safari 26.
+    await expect(time).toHaveCSS('padding-left', '0px')
+    await expect(time).toHaveCSS('padding-right', '0px')
+    await expect(frame).toHaveCSS('overflow', 'hidden')
+
+    // The visible boxes still line up after moving the time field's padding to
+    // its frame; stacking must not trade overlap for a ragged form.
+    expect(Math.abs(frameBox!.x - durationBox!.x)).toBeLessThanOrEqual(1)
+    expect(Math.abs(frameBox!.width - durationBox!.width)).toBeLessThanOrEqual(1)
+    expect(frameBox!.x).toBeGreaterThanOrEqual(surfaceBox!.x - 1)
+    expect(frameBox!.x + frameBox!.width).toBeLessThanOrEqual(
+      surfaceBox!.x + surfaceBox!.width + 1,
+    )
+    expect(durationBox!.x).toBeGreaterThanOrEqual(surfaceBox!.x - 1)
+    expect(durationBox!.x + durationBox!.width).toBeLessThanOrEqual(
+      surfaceBox!.x + surfaceBox!.width + 1,
+    )
   }
 
-  await expectPairToFit('At', 'For (minutes)')
+  await expectPairToStack(stage(page), 'At', 'For (minutes)')
+
+  // The frame owns the visual padding, but that padding is not a dead strip.
+  // A mouse focuses without forcing the desktop picker open; a touch asks for
+  // the picker because the whole visible control is its tap target.
+  const stageTime = framedTime(stage(page), 'At')
+  await stageTime.input.evaluate((input) => {
+    const field = input as HTMLInputElement
+    field.showPicker = () => {
+      field.dataset.pickerCalls = String(Number(field.dataset.pickerCalls ?? 0) + 1)
+    }
+  })
+  await stageTime.frame.click({ position: { x: 2, y: 2 } })
+  await expect(stageTime.input).toBeFocused()
+  await expect(stageTime.input).not.toHaveAttribute('data-picker-calls')
+
+  await stageTime.frame.dispatchEvent('pointerdown', { pointerType: 'touch' })
+  await stageTime.frame.dispatchEvent('click')
+  await expect(stageTime.input).toHaveAttribute('data-picker-calls', '1')
 
   await shapeDay(page)
   await calendar(page).getByRole('button', { name: '+ Commitment' }).click()
-  await expectPairToFit('At', 'For (minutes)')
+  await expectPairToStack(calendar(page), 'At', 'For (minutes)')
 
   await calendar(page).getByRole('button', { name: '+ Break' }).click()
-  await expectPairToFit('From', 'For (minutes)')
+  await expectPairToStack(calendar(page), 'From', 'For (minutes)')
+
+  // The phone owns one vertical scroll surface: the document. A horizontal
+  // clip on the calendar would make its other axis compute to `auto`, even
+  // when it happened not to overflow in Chromium today.
+  await expect(calendar(page)).toHaveCSS('overflow-y', 'visible')
+
+  const sideways = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  )
+  expect(sideways).toBeLessThanOrEqual(0)
+})
+
+test('time and duration fields share a row when the surface has room', async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 844 })
+  await openMono(page)
+
+  const expectPairToShareRow = async (
+    surface: ReturnType<typeof stage>,
+    timeLabel: string,
+    durationLabel: string,
+  ) => {
+    const { frame } = framedTime(surface, timeLabel)
+    const [timeFrameBox, durationBox] = await Promise.all([
+      frame.boundingBox(),
+      surface.getByLabel(durationLabel, { exact: true }).boundingBox(),
+    ])
+
+    expect(timeFrameBox).not.toBeNull()
+    expect(durationBox).not.toBeNull()
+    expect(Math.abs(timeFrameBox!.y - durationBox!.y)).toBeLessThanOrEqual(1)
+    expect(timeFrameBox!.x + timeFrameBox!.width).toBeLessThanOrEqual(durationBox!.x)
+  }
+
+  await expectPairToShareRow(stage(page), 'At', 'For (minutes)')
+
+  await shapeDay(page)
+  await calendar(page).getByRole('button', { name: '+ Commitment' }).click()
+  await expectPairToShareRow(calendar(page), 'At', 'For (minutes)')
+
+  await calendar(page).getByRole('button', { name: '+ Break' }).click()
+  await expectPairToShareRow(calendar(page), 'From', 'For (minutes)')
 })
 
 test('the calendar edits itself in place, without covering the day', async ({ page }) => {
@@ -378,9 +483,10 @@ test('a wide screen keeps the two columns and scrolls inside them', async ({ pag
 test('a time field is never drawn narrower than it can render', async ({ page }) => {
   // Chrome renders a `time` input's own text and icon, and below a fixed width
   // it clips `09:00 AM` to `09:00 A` — no wrap, no ellipsis, nothing in the
-  // DOM to assert on. So the guard is arithmetic: measure what one of these
-  // needs, then check what each surface actually gives it. Settings on a phone
-  // is the tightest of the three, being a dialog inside a screen.
+  // DOM to assert on. So the guard is arithmetic: measure what an unpadded
+  // native control needs, then check what each working-hours surface actually
+  // gives its input. Settings on a phone is the tightest of the three, being a
+  // dialog inside a screen.
   for (const width of [320, 360, 768]) {
     await page.setViewportSize({ width, height: 740 })
     await openMono(page)
@@ -390,7 +496,7 @@ test('a time field is never drawn narrower than it can render', async ({ page })
       probe.type = 'time'
       probe.value = '09:00'
       probe.style.cssText =
-        'position:absolute;left:-9999px;width:auto;padding:10px 8px;border:1px solid;font:inherit'
+        'position:absolute;left:-9999px;width:auto;padding:0;border:0;font:inherit'
       document.body.appendChild(probe)
       const natural = probe.getBoundingClientRect().width
       probe.remove()
@@ -398,7 +504,9 @@ test('a time field is never drawn narrower than it can render', async ({ page })
     })
 
     await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    const field = await page.getByLabel('Working hours 1 start').boundingBox()
+    const settingsInput = page.getByLabel('Working hours 1 start')
+    await expect(settingsInput).toHaveCSS('padding-left', '0px')
+    const field = await settingsInput.boundingBox()
     expect(field, `settings at ${width}`).not.toBeNull()
     expect(field!.width, `settings at ${width}`).toBeGreaterThanOrEqual(needed - 1)
     await page.keyboard.press('Escape')
@@ -408,5 +516,15 @@ test('a time field is never drawn narrower than it can render', async ({ page })
     expect(stageField!.width, `the hours question at ${width}`).toBeGreaterThanOrEqual(
       needed - 1,
     )
+
+    await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
+    const calendarField = await calendar(page)
+      .getByLabel("Today's hours 1 start")
+      .boundingBox()
+    expect(calendarField, `the calendar hours editor at ${width}`).not.toBeNull()
+    expect(
+      calendarField!.width,
+      `the calendar hours editor at ${width}`,
+    ).toBeGreaterThanOrEqual(needed - 1)
   }
 })

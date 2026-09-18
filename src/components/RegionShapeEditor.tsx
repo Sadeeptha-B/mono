@@ -15,26 +15,8 @@
 
 import { useRef } from 'react'
 
-import { GhostButton, labelClass } from './ui'
+import { GhostButton, labelClass, TimeInput } from './ui'
 import type { DefaultRegion } from '@/domain/types'
-
-/**
- * `fieldClass` with tighter horizontal padding, spelled out rather than
- * appended to it.
- *
- * Tailwind resolves a `px-3.5 px-2.5` collision by stylesheet order, not by the
- * order the classes appear in the string, so overriding one padding utility
- * with another silently does nothing. Two of these plus a "to" and a remove
- * button have to fit in a 22rem column, and the padding is where the room is.
- *
- * There is a hard floor under this. A `time` input renders its own text and its
- * own icon, so below about 123px at this padding Chrome simply clips `09:00 AM`
- * to `09:00 A` — no wrap, no ellipsis, no warning. That is what the `@max-xs`
- * variants below are for, and why they trim the padding as well as the room
- * around it: two pixels off each side is two pixels off the floor too.
- */
-const timeFieldClass =
-  'tnum min-w-0 flex-1 rounded-lg border border-muted/70 bg-ink px-2 py-2.5 text-bright focus:border-deep focus:outline-none @max-xs:px-1.5'
 
 type Props = {
   regions: DefaultRegion[]
@@ -104,14 +86,15 @@ export function RegionShapeEditor({
                 with it. Trimming pixels runs out below about 18rem — settings
                 on a 320px phone — and two clipped fields side by side are worse
                 than one under the other, so at that width they stop being a
-                row. The × stays beside them, centred on the pair. */}
+                row. The × stays beside them, centred on the pair. Compact
+                `TimeInput` frames keep the tighter padding without putting it
+                back on either native temporal control. */}
             <div className="flex min-w-0 flex-1 items-center gap-2 @max-xs:gap-1.5 @max-2xs:flex-col @max-2xs:items-stretch">
-              <input
-                type="time"
+              <TimeInput
+                variant="compact"
                 aria-label={`${label} ${index + 1} start`}
                 value={region.start}
                 onChange={(e) => update(index, { start: e.target.value })}
-                className={timeFieldClass}
               />
               {/* Twenty pixels the fields need in a dialog on a phone, spent on
                   a word that is decoration: both inputs carry their own label,
@@ -119,12 +102,11 @@ export function RegionShapeEditor({
               <span aria-hidden className="text-xs text-muted @max-xs:hidden">
                 to
               </span>
-              <input
-                type="time"
+              <TimeInput
+                variant="compact"
                 aria-label={`${label} ${index + 1} end`}
                 value={region.end}
                 onChange={(e) => update(index, { end: e.target.value })}
-                className={timeFieldClass}
               />
             </div>
             <button

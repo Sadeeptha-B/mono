@@ -552,7 +552,7 @@ export function App() {
         </header>
 
         <div className="grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[1fr_22rem]">
-          <main className="mono-scroll flex flex-col rounded-2xl border border-line bg-surface p-5 sm:p-8 lg:min-h-0 lg:overflow-y-auto">
+          <main className="mono-scroll min-w-0 flex flex-col rounded-2xl border border-line bg-surface p-5 sm:p-8 lg:min-h-0 lg:overflow-y-auto">
             {/* The clock and the companion share a line, and on a phone they
                 are within a few pixels of not fitting on one. Both give ground
                 rather than one of them wrapping under the other. */}
@@ -566,6 +566,7 @@ export function App() {
                   history={session.history}
                   roomId={session.settings.roomId}
                   dayProgress={dayProgress}
+                  canShrink
                 />
               )}
             </div>

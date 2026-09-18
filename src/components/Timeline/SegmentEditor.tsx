@@ -39,7 +39,7 @@ import {
   type CommitmentDraft,
 } from '../CommitmentFields'
 import { hoursToSave, TodayHoursFields, useHoursDraft } from '../TodayHours'
-import { fieldClass, GhostButton, labelClass, MinutesInput, PrimaryButton } from '../ui'
+import { GhostButton, labelClass, MinutesInput, PrimaryButton, TimeInput } from '../ui'
 import { BREAK_MINUTES, parseBoundedMinutes } from '../minutes'
 import { nextHalfHour, wallClockOn } from '@/domain/time'
 import {
@@ -222,20 +222,18 @@ export function BreakComposer({
           onSubmit({ startsAt, durationMin })
         }}
       >
-        <div className="grid grid-cols-2 gap-3">
-          {/* Match the shared commitment pair: native time inputs retain an
-              intrinsic minimum on iOS unless the grid item may shrink. */}
+        {/* Match the shared commitment pair: the native time control gets a
+            complete row on phones and only shares one on wider screens. */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div className="min-w-0">
             <label className={labelClass} htmlFor="break-time">
               From
             </label>
-            <input
+            <TimeInput
               id="break-time"
-              type="time"
               autoFocus
               value={time}
               onChange={(e) => setTime(e.target.value)}
-              className={`${fieldClass} tnum`}
             />
           </div>
           <MinutesInput

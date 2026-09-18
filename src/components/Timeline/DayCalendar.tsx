@@ -181,7 +181,13 @@ export function DayCalendar({
   }, [orphaned])
 
   return (
-    <aside className="flex flex-col rounded-2xl border border-line bg-surface lg:h-full lg:min-h-0">
+    // This aside is a direct grid item. Its automatic min-content width lets a
+    // native time control widen the entire page before the framed input gets a
+    // chance to contain it; `min-w-0` makes the grid track the actual boundary.
+    // Do not put one-axis overflow on this panel: `overflow-x: hidden` makes the
+    // other axis compute to `auto`, turning the whole calendar into a scroller
+    // on phones where the document deliberately owns vertical scrolling.
+    <aside className="min-w-0 flex flex-col rounded-2xl border border-line bg-surface lg:h-full lg:min-h-0">
       <header className="flex flex-wrap items-center justify-between gap-y-1 border-b border-line px-4 py-3">
         <h2 className="text-xs font-medium tracking-widest text-muted uppercase">Today</h2>
         {/* Toggles, not launchers: the panel they open is right below them and

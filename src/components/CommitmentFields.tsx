@@ -35,7 +35,7 @@
 import { useState, type Ref } from 'react'
 import { format } from 'date-fns'
 
-import { fieldClass, labelClass, MinutesInput } from './ui'
+import { fieldClass, labelClass, MinutesInput, TimeInput } from './ui'
 import { COMMITMENT_MINUTES, MARGIN_MINUTES, parseBoundedMinutes } from './minutes'
 import { wallClockOn } from '@/domain/time'
 import type { Commitment, Ms } from '@/domain/types'
@@ -207,20 +207,19 @@ export function CommitmentFields({
         className={`${fieldClass} ${large ? 'py-3 text-lg' : ''}`}
       />
 
-      {/* Both grid items explicitly release their content-based minimum. WebKit's
-          native time and number controls otherwise keep their intrinsic width
-          on a phone and the duration field paints back across the time field. */}
-      <div className="mt-3 grid max-w-xs grid-cols-2 gap-3">
+      {/* A native iOS time control can keep painting at its preferred width even
+          after its input box has been shrunk. Giving it the whole row on a
+          phone avoids depending on WebKit's internal control geometry; wider
+          screens still keep the compact pair. */}
+      <div className="mt-3 grid max-w-sm grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="min-w-0">
           <label className={labelClass} htmlFor={`${idPrefix}-time`}>
             At
           </label>
-          <input
+          <TimeInput
             id={`${idPrefix}-time`}
-            type="time"
             value={draft.time}
             onChange={(e) => patch({ time: e.target.value })}
-            className={`${fieldClass} tnum`}
           />
         </div>
         <MinutesInput

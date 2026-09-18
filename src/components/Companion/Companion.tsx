@@ -36,6 +36,8 @@ type Props = {
    * something this component could work out for itself.
    */
   className?: string
+  /** The Stage yields on a phone; the fixed-size mini window does not. */
+  canShrink?: boolean
 }
 
 export function Companion({
@@ -45,7 +47,8 @@ export function Companion({
   history,
   roomId,
   dayProgress,
-  className = 'h-16 w-28 sm:h-28 sm:w-56 lg:h-32 lg:w-64',
+  className = 'aspect-[2/1] w-28 max-w-full sm:w-56 lg:w-64',
+  canShrink = false,
 }: Props) {
   const day = dayKey(now)
 
@@ -72,7 +75,14 @@ export function Companion({
   const note = active?.kind === 'block' ? active.purpose : null
 
   return (
-    <div className="flex shrink-0 flex-col items-end gap-1.5">
+    // The Stage shares one narrow row between the clock and this scene, while
+    // the mini window owns a fixed-width copy. Only the former yields: on the
+    // smallest phone the scene scales in both dimensions and the sentence gets
+    // three reserved lines, rather than either one widening or shifting the
+    // page.
+    <div
+      className={`flex flex-col items-end gap-1.5 ${canShrink ? 'min-w-0' : 'shrink-0'}`}
+    >
       <PixelCat
         phase={phase}
         progress={progress}
@@ -87,9 +97,15 @@ export function Companion({
         className={className}
       />
 
-      {/* Reserved whether or not there is anything to say, so the cat does not
-          shuffle up and down the stage as the day moves through its phases. */}
-      <p className="h-4 pr-1 text-xs text-muted">{says}</p>
+      {/* The narrow Stage reserves three lines because its sentence may wrap;
+          everywhere else the original single line remains enough. */}
+      <p
+        className={`max-w-full pr-1 text-right text-xs leading-4 text-muted ${
+          canShrink ? 'min-h-12 min-[375px]:min-h-4' : 'h-4'
+        }`}
+      >
+        {says}
+      </p>
     </div>
   )
 }

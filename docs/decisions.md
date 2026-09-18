@@ -2739,3 +2739,44 @@ assertions remain the compatibility boundary when reorganizing it again. The
 guide-load recovery tests named in the earlier deferred-view decision moved
 from `e2e/focus-session.spec.ts` to
 `e2e/persistence-and-resilience.spec.ts` during that split.
+
+**2026-09-17 — Phone time-and-duration fields stack instead of negotiating a native minimum.**
+
+The zero-minimum fix recorded above changed the input and grid-item boxes, but
+not iOS Safari's internal time control: the outer rectangles could be disjoint
+while the native renderer still painted into the duration field. That also made
+the Chromium regression a test of the proposed CSS rather than of the visible
+failure. On phone-sized viewports the fields now occupy separate rows; from
+`sm` upward they remain a pair. The regression asserts that structural layout,
+which does not depend on emulating an operating-system control.
+
+**2026-09-17 — Padding belongs around an iOS temporal input, not on it.**
+
+Stacking stopped the time and duration controls competing for one row, but the
+time control itself still exceeded the stage. This is WebKit bug 301648: on
+iOS 26, temporal inputs with both padding and `width: 100%` calculate their
+width incorrectly, while desktop Safari does not reproduce it. Mono had that
+exact combination in `fieldClass`. `TimeInput` now puts the border, background,
+padding and overflow boundary on a frame and leaves the native input unpadded;
+the picker stays native without participating in the broken width calculation.
+The working-hours editor uses the same component's compact frame rather than
+keeping a second padded temporal input. Clicking frame padding focuses the
+input; after a touch gesture it also opens the picker, so the workaround does
+not reduce the tap target without changing desktop mouse behaviour.
+Both top-level panels also release their automatic min-content width because
+they are direct grid items; otherwise a native control or the clock-and-cat row
+can widen the page before a child gets a chance to yield. The companion now
+does yield on the Stage: its scene scales in both dimensions and its sentence
+gets three reserved lines through the narrow phone range. The scene's 2:1 box
+is capped by the width the row actually grants it, rather than stepping to a
+second fixed size with one pixel to spare. The mini window keeps the fixed
+companion it had before because it does not share the Stage's grid.
+
+Containment stops at the framed input. Putting `overflow-x: hidden` on the
+calendar looked like a useful final boundary, but CSS makes its vertical
+overflow compute to `auto`, which quietly creates a second phone scroll
+container and contradicts the single-scroll rule above. The regression holds
+the frame inside its field cell and panel, the whole document inside the
+viewport, the calendar's vertical overflow open, the mobile stack, and the
+two-column arrangement when there is room. A physical iOS Safari check remains
+the authority for native-control paint because Chromium cannot reproduce it.

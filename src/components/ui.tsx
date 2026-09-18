@@ -7,7 +7,13 @@
  * of anything clickable or focusable uses `muted/70`, which is held to 3:1.
  */
 
-import type { ButtonHTMLAttributes } from 'react'
+import {
+  useRef,
+  type ButtonHTMLAttributes,
+  type InputHTMLAttributes,
+  type MouseEvent,
+  type PointerEvent,
+} from 'react'
 
 import { coerceBoundedMinutes } from './minutes'
 
@@ -71,6 +77,73 @@ export function GhostButton({
     >
       {children}
     </button>
+  )
+}
+
+/**
+ * A native time field whose box does not depend on the input's own padding.
+ *
+ * iOS Safari 26 miscalculates `width: 100%` on temporal inputs when the input
+ * itself has padding. The ordinary `fieldClass` combines exactly those two
+ * declarations, so a time control can extend past a form even when every grid
+ * item is allowed to shrink. The frame owns the visual box and clips it; the
+ * native input keeps its picker but has no padding to enter that WebKit path.
+ * The frame forwards a click from its padding to the input, so separating the
+ * visual box does not make the native picker's tap target any smaller.
+ */
+export function TimeInput({
+  variant = 'field',
+  ...props
+}: Omit<InputHTMLAttributes<HTMLInputElement>, 'className' | 'type'> & {
+  /**
+   * Working-hour ranges use the same boundary with denser spacing. Its
+   * `@max-xs` adjustment requires an ancestor marked `@container`.
+   */
+  variant?: 'field' | 'compact'
+}) {
+  const input = useRef<HTMLInputElement>(null)
+  const lastPointerType = useRef<string | null>(null)
+  const frameClass =
+    variant === 'compact'
+      ? 'min-w-0 flex-1 px-2 @max-xs:px-1.5'
+      : 'w-full px-3.5'
+
+  const activateFromFrame = (event: MouseEvent<HTMLDivElement>) => {
+    const field = input.current
+    const fromTouch = lastPointerType.current === 'touch'
+    lastPointerType.current = null
+    if (!field || event.target === field || field.disabled) return
+
+    field.focus()
+    // A desktop pointer keeps the native distinction between clicking the
+    // text and clicking empty frame space. A touch has no such precision: the
+    // entire visible control is its tap target, so explicitly open the picker.
+    if (!fromTouch) return
+
+    try {
+      field.showPicker()
+    } catch {
+      // Focus is the fallback where a browser does not expose `showPicker`, or
+      // refuses it despite this handler running directly from a user gesture.
+    }
+  }
+
+  return (
+    <div
+      data-time-input-frame
+      onPointerDown={(event: PointerEvent<HTMLDivElement>) => {
+        lastPointerType.current = event.pointerType
+      }}
+      onClick={activateFromFrame}
+      className={`${frameClass} max-w-full overflow-hidden rounded-lg border border-muted/70 bg-ink py-2.5 focus-within:border-deep`}
+    >
+      <input
+        {...props}
+        ref={input}
+        type="time"
+        className="tnum block min-w-0 w-full max-w-full border-0 bg-transparent p-0 text-bright focus:outline-none"
+      />
+    </div>
   )
 }
 

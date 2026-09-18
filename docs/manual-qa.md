@@ -19,7 +19,20 @@ Three of these are worth stating plainly, because each is easy to assume away:
   that message is section six below.
 
 Work through the section that matches what you touched. Chrome and Edge are the
-browsers that matter; picture-in-picture exists in neither Firefox nor Safari.
+browsers that matter for the pop-out and extension; iOS Safari is also a
+supported boundary for the main app's layout and native form controls.
+
+## iOS Safari form controls
+
+Playwright can preserve the structure around a native field but cannot render
+the iOS control that caused these regressions. On a physical device running the
+current iOS Safari, use the narrowest supported phone in both portrait and
+landscape. Check the commitment question, the calendar's commitment and break
+editors, and every working-hours surface. Each time and duration field must stay
+inside its own panel. Tap both the centre and the padded edge of each time box;
+the whole visible box must open the picker. Opening and dismissing it must not
+move the page sideways, and the calendar must extend with the document rather
+than gain its own vertical scroll. Repeat once with larger browser text enabled.
 
 ## The timer
 
