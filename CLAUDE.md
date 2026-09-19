@@ -34,8 +34,8 @@ Both are explained in `docs/decisions.md`. Neither is negotiable.
    the whole future on every call. Never add a stored schedule, never let it
    read the clock, never give planned entries random ids.
 2. **Timers are absolute timestamps, never accumulated ticks.** Segments carry
-   `endsAt`; the UI renders `endsAt - Date.now()`. Never write
-   `remaining -= 1`.
+   `startedAt` and `endsAt`; the UI derives either time remaining or time
+   elapsed from those timestamps and `Date.now()`. Never write `remaining -= 1`.
 
 ## Layout
 

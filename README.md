@@ -46,7 +46,8 @@ schedule; every deviation — a break taken, a commitment added, a block abandon
 so they cannot disagree.
 
 **Timers are absolute timestamps, never accumulated ticks.** Every segment
-carries an absolute `endsAt`, and the UI renders `endsAt - Date.now()`. The
+carries `startedAt` and `endsAt`; the UI renders remaining time from
+`endsAt - Date.now()` or elapsed time from `Date.now() - startedAt`. The
 one-second tick in [src/hooks/useNow.ts](src/hooks/useNow.ts) exists only to
 trigger a re-render, so a throttled or skipped tick makes the display briefly
 stale but never wrong.
@@ -73,9 +74,13 @@ There is a third surface, and it is deliberately somewhere else. **Pop out**
 opens the timer as an always-on-top window — Chromium's document
 picture-in-picture — that stays above whatever you switched to. It is a
 reduction of the stage rather than a mirror of the app: it shows the phase, the
-countdown, the purpose, the cat, and the controls for whatever Mono is currently
+timer, the purpose, the cat, and the controls for whatever Mono is currently
 asking. The one question it declines is the day's shape, which needs the
 calendar beside it; that one it hands back to the tab.
+
+Click the running timer on the stage or in the pop-out to switch between time
+remaining and time spent in the current block or break. Both views switch
+together, and the guide's header follows the same choice.
 
 It arrives on its own when a block starts, which is a setting and is on by
 default: a block is time you spend somewhere else, and an ambient timer is what

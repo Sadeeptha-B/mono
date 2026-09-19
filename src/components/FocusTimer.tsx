@@ -1,11 +1,12 @@
 /**
  * The current-state timer.
  *
- * Remaining time is always `endsAt - now`, never an accumulated counter, so a
- * missed or throttled tick makes this briefly stale but never wrong.
+ * The two faces read absolute segment timestamps, never an accumulated counter,
+ * so a missed or throttled tick makes either briefly stale but never wrong.
  */
 
-import { formatTimer } from '@/domain/time'
+import { timerFace } from './timerFace'
+import type { TimerMode } from '@/domain/time'
 import type { ActiveSegment } from '@/domain/types'
 import type { Phase } from '@/domain/machine'
 
@@ -13,6 +14,8 @@ type Props = {
   now: number
   active: ActiveSegment | null
   phase: Phase
+  timerMode: TimerMode
+  onToggleTimerMode: () => void
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -21,7 +24,7 @@ const KIND_LABEL: Record<string, string> = {
   reflect: 'Working out priorities',
 }
 
-export function FocusTimer({ now, active, phase }: Props) {
+export function FocusTimer({ now, active, phase, timerMode, onToggleTimerMode }: Props) {
   if (!active) {
     return (
       <div className="text-muted">
@@ -33,8 +36,7 @@ export function FocusTimer({ now, active, phase }: Props) {
     )
   }
 
-  const remaining = active.endsAt - now
-  const overrun = remaining < 0
+  const face = timerFace(active, now, timerMode)
   const label =
     active.kind === 'break' ? 'Break' : (KIND_LABEL[active.blockKind] ?? 'Block')
 
@@ -53,20 +55,24 @@ export function FocusTimer({ now, active, phase }: Props) {
         <span className={`text-xs font-medium tracking-widest uppercase ${tone}`}>
           {label}
         </span>
-        {overrun && (
-          <span className="text-xs text-commit">over by {formatTimer(-remaining)}</span>
+        {face.overrun && (
+          <span className="text-xs text-commit">over by {face.overBy}</span>
         )}
       </div>
 
-      <div
-        className={`tnum mt-1 text-5xl font-light sm:text-6xl ${overrun ? 'text-commit' : 'text-bright'}`}
-        // No live region. Even a polite one queues an announcement per change,
-        // and this changes every second — a screen reader would read out all
-        // 45 minutes of a block. The phase panels announce the moments that
-        // matter; the digits are here to be read, not narrated.
+      <button
+        type="button"
+        onClick={onToggleTimerMode}
+        aria-label={face.buttonLabel}
+        className={`tnum mt-1 cursor-pointer rounded-sm text-left text-5xl font-light hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bright sm:text-6xl ${face.overrun ? 'text-commit' : 'text-bright'}`}
+        // The focused button has a stable name; a ticking accessible name could
+        // be announced every second. The non-interactive sibling below exposes
+        // the current reading on demand without making it a live region.
       >
-        {formatTimer(Math.abs(remaining))}
-      </div>
+        {face.reading}
+      </button>
+      <span className="sr-only">{face.reading}</span>
+      <div className="mt-0.5 text-xs text-muted">{face.modeLabel}</div>
 
       {active.kind === 'block' && active.purpose && (
         <p className="mt-3 max-w-sm text-lg leading-snug text-body">{active.purpose}</p>

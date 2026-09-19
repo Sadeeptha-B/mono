@@ -28,10 +28,11 @@ import { useMemo, type ReactNode } from 'react'
 
 import { PixelCat } from '../Companion/PixelCat'
 import { StorageWarning } from '../StorageWarning'
+import { timerFace } from '../timerFace'
 import { EditGlyph, headerControlClass } from '../ui'
 import { PopOutButton } from '@/pip/PopOutButton'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
-import { formatTimer } from '@/domain/time'
+import type { TimerMode } from '@/domain/time'
 import { DAY_HASH } from '@/hooks/useRoute'
 import { useSession } from '@/store/session'
 import { RoomMenu } from '@/ambient/RoomMenu'
@@ -44,11 +45,13 @@ type Section = { id: string; title: string; body: ReactNode }
 export function GuidePage({
   now,
   active,
+  timerMode,
   onOpenSettings,
   mini,
 }: {
   now: Ms
   active: ActiveSegment | null
+  timerMode: TimerMode
   onOpenSettings: () => void
   /** The mini window, offered from here too — the header carries the timer. */
   mini: MiniWindowControls
@@ -59,7 +62,7 @@ export function GuidePage({
   const deep = settings.deepMinutes
   const short = settings.shortMinutes
 
-  // The page re-renders every second so the header strip can count down, and
+  // The page re-renders every second so the header strip can show the time, and
   // this is several hundred elements of prose. Built once per settings change,
   // it is the same element tree on every tick, and React skips the subtree.
   const sections = useMemo(() => sectionsFor(settings), [settings])
@@ -101,7 +104,7 @@ export function GuidePage({
             {/* A page invites you to stay, so whatever the timer would be
                 saying stays in sight — including when it is waiting on you. */}
             <StorageWarning onOpenSettings={onOpenSettings} />
-            <HeaderStatus active={active} now={now} phase={phase} />
+            <HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />
             <RoomMenu idPrefix="guide-header" />
             <PopOutButton mini={mini} />
             <button type="button" onClick={onOpenSettings} className={headerControlClass}>
@@ -195,7 +198,7 @@ export function GuidePage({
  * A running block is the usual case, but Mono also *asks* things, and a
  * question the user cannot see is a question they will not answer — the guide
  * would quietly cost them the decision it was explaining. So a phase that is
- * waiting on an answer says so here, and outranks the countdown: when a block
+ * waiting on an answer says so here, and outranks the timer: when a block
  * has just ended, "Block done" is the truth and a timer counting past zero is
  * merely a number.
  */
@@ -210,10 +213,12 @@ function HeaderStatus({
   active,
   now,
   phase,
+  timerMode,
 }: {
   active: ActiveSegment | null
   now: Ms
   phase: Phase
+  timerMode: TimerMode
 }) {
   const waiting = WAITING[phase.name]
 
@@ -228,15 +233,16 @@ function HeaderStatus({
 
   if (!active) return null
 
-  const remaining = active.endsAt - now
+  const face = timerFace(active, now, timerMode)
   const kind = active.kind === 'break' ? 'break' : active.blockKind
 
   return (
     <Strip tone={TONE[kind]} title="Back to the timer">
       <span className="tracking-widest uppercase">{RUNNING_LABEL[kind]}</span>
       <span className="tnum text-bright">
-        {remaining < 0 ? `+${formatTimer(-remaining)}` : formatTimer(remaining)}
+        {face.overrun && timerMode === 'remaining' && '+'}{face.reading}
       </span>
+      <span className="text-muted">{face.modeLabel.toLowerCase()}</span>
     </Strip>
   )
 }
@@ -459,6 +465,10 @@ function sectionsFor(settings: Settings): Section[] {
             one session and both windows are looking at it.
           </P>
           <P>
+            You can resize the window. If it becomes awkwardly small or large, use{' '}
+            <Em>Reset size</Em> in its footer to bring it back to its compact opening size.
+          </P>
+          <P>
             The one thing it will not do is the shape of your day. Hours and commitments
             are questions about the whole day, and the whole day does not fit in a window
             that size — so it says so and points you back to the tab, where the calendar
@@ -677,7 +687,7 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="Focusing"
-              asks="The timer counts down and your purpose sits under it. This is the one state Mono has nothing to say in."
+              asks="The timer shows time remaining by default. Click it to see time focused so far, and click again to switch back. Your choice carries into later blocks and breaks. Your purpose sits under it."
               choices={[
                 [
                   'End early',
@@ -701,7 +711,7 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="On a break"
-              asks="A break runs on a timer like anything else and lands in your history as a break."
+              asks="A break runs on a timer like anything else. Click the timer to see elapsed break time. It lands in your history as a break."
               choices={[['Back to work', 'Ends the break early and returns you to the plan.']]}
             />
             <Step

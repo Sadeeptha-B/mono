@@ -112,7 +112,7 @@ test('the ticker does not republish the same block every second', async ({ page 
 
   const before = (await intents(page)).length
   await page.clock.fastForward(10_000)
-  await expect(stage(page).getByText('44:50')).toBeVisible()
+  await expect(stage(page).getByRole('button', { name: /Show elapsed time$/ })).toHaveText('44:50')
 
   // Ten ticks, and the block has not changed. A listener that had to filter out
   // forty-five identical messages a minute would be one someone eventually
@@ -142,7 +142,12 @@ test('abandoning a block stops blocking immediately', async ({ page }) => {
   await page.clock.fastForward(5 * 60_000)
   await stage(page).getByRole('button', { name: 'End early' }).click()
 
-  expect(await latest(page)).toMatchObject({ running: false, stoppedSegmentId: expect.any(String) })
+  // postMessage delivers the published intent on a later task, after the
+  // click has already updated the stage. Wait for that delivery, not another tick.
+  await expect.poll(() => latest(page)).toMatchObject({
+    running: false,
+    stoppedSegmentId: expect.any(String),
+  })
 })
 
 test('a break is not a block', async ({ page }) => {

@@ -93,10 +93,10 @@ nothing to migrate, and nothing that can survive a day it should not have.
 
 ### 2. Timers are absolute timestamps, never accumulated ticks
 
-Every segment carries an absolute `endsAt`, and the UI renders
-`endsAt - Date.now()`. The one-second tick exists *only* to trigger a
-re-render. A throttled, delayed or entirely skipped tick therefore makes the
-display briefly stale but never wrong.
+Every segment carries absolute `startedAt` and `endsAt` timestamps. The UI
+renders `endsAt - Date.now()` or `Date.now() - startedAt`. The one-second tick
+exists *only* to trigger a re-render. A throttled, delayed or entirely skipped
+tick therefore makes the display briefly stale but never wrong.
 
 Never introduce a `remaining -= 1` counter.
 
@@ -2780,3 +2780,54 @@ the frame inside its field cell and panel, the whole document inside the
 viewport, the calendar's vertical overflow open, the mobile stack, and the
 two-column arrangement when there is room. A physical iOS Safari check remains
 the authority for native-control paint because Chromium cannot reproduce it.
+
+**2026-09-19 — The timer face is a shared view choice.**
+
+Clicking the running time switches between remaining and elapsed time in the
+stage and the pop-out together, and the guide header follows it. The choice
+lives in the app's transient UI state: it carries across segments and midnight
+while the app stays open, then returns to countdown on reload. Saving a display
+preference in the event log would turn a view choice into part of the day's
+history. Shared display words keep the three surfaces from drifting apart.
+
+Remaining time rounds up so a fresh block reads its full duration; elapsed
+time rounds down so it never claims a second before it has passed. Both come
+from the segment's absolute timestamps, and elapsed time stops at its
+scheduled end. A break says elapsed break time rather than calling it focus;
+time past the end is labelled over rather than remaining.
+
+The focused button names its mode and switch action without the ticking
+digits. Changing a focused accessible name every second can narrate the whole
+block even without a live region. A non-interactive, non-live sibling keeps
+the current reading available to screen readers on demand.
+
+**2026-09-20 — The mini window has a preferred size, not drag bounds.**
+
+The 470×210 opening hint follows the compact wide window chosen after seeing
+it in use. A window below 320×200 or above 520×420 offers `Reset size`, which
+returns it to that opening size. Document PiP owns the user's drag bounds, and
+programmatic `resizeBy` requires a gesture inside that window, so a resize
+event cannot clamp the window while it is dragged. The content still scrolls
+at smaller sizes, and Chrome still remembers a size the user chose until they
+reset it. A room-derived muted outline makes its edge legible beside other
+dark windows without adding a new palette value.
+
+**2026-09-20 (review follow-up) — The rescue control stays outside the scrollport.**
+
+The preferred range is checked on each axis: narrower than 320, shorter than
+200, wider than 520, or taller than 420 offers `Reset size`. A short PiP window
+used to put that footer below its own scrollport, making the control invisible
+until the user scrolled to find it. The content alone now scrolls; the timing and
+reset control remain at the bottom of the viewport. The outer border lives on
+the non-scrolling outer frame, so a space-taking scrollbar cannot pull its edge
+inward. The 470×210 opening hint stays as chosen despite its tight vertical fit;
+questions that need more room use the inner scroll area.
+
+**2026-09-20 (later) — The preferred height floor follows the fixed footer.**
+
+The 200px lower height bound offered `Reset size` after only a 10px trim from
+the chosen 210px opening. With the footer visible outside the scroll area, that
+was noise rather than a useful cue. The preferred floor is now 160px. It remains
+a preference threshold rather than the smallest height at which Mono works;
+the inner content can scroll below it while the footer stays available at
+practical PiP sizes.
