@@ -31,7 +31,8 @@ import {
   FREE_BREAK,
 } from '@/components/breakCost'
 import { fieldClass, GhostButton, PrimaryButton } from '@/components/ui'
-import { formatClock, formatDuration, formatTimer } from '@/domain/time'
+import { timerFace } from '@/components/timerFace'
+import { formatClock, formatDuration, type TimerMode } from '@/domain/time'
 import type { ActiveSegment, BlockKind, Ms } from '@/domain/types'
 import type { DayProgress } from '@/domain/dayProgress'
 
@@ -62,16 +63,25 @@ const Row = ({ children }: { children: ReactNode }) => (
 )
 
 /**
- * The countdown, which is the reason the window exists.
+ * The timer, which is the reason the window exists.
  *
- * `endsAt - now` like every other clock in Mono, never an accumulated counter,
- * so a tick this window misses makes it briefly stale and never wrong.
+ * Both faces read absolute timestamps, never an accumulated counter, so a
+ * tick this window misses makes either briefly stale and never wrong.
  */
-export function MiniTimer({ now, active }: { now: Ms; active: ActiveSegment | null }) {
+export function MiniTimer({
+  now,
+  active,
+  timerMode,
+  onToggleTimerMode,
+}: {
+  now: Ms
+  active: ActiveSegment | null
+  timerMode: TimerMode
+  onToggleTimerMode: () => void
+}) {
   if (!active) return <div className="tnum text-4xl font-light text-line">--:--</div>
 
-  const remaining = active.endsAt - now
-  const overrun = remaining < 0
+  const face = timerFace(active, now, timerMode)
   const label = active.kind === 'break' ? 'Break' : (KIND_LABEL[active.blockKind] ?? 'Block')
 
   return (
@@ -82,19 +92,23 @@ export function MiniTimer({ now, active }: { now: Ms; active: ActiveSegment | nu
         >
           {label}
         </span>
-        {overrun && (
-          <span className="text-[10px] text-commit">over by {formatTimer(-remaining)}</span>
+        {face.overrun && (
+          <span className="text-[10px] text-commit">over by {face.overBy}</span>
         )}
       </div>
 
-      {/* No live region, for the same reason the stage's timer has none: a
-          polite one queues an announcement per second and would read out the
-          whole block. */}
-      <div
-        className={`tnum text-4xl leading-none font-light ${overrun ? 'text-commit' : 'text-bright'}`}
+      {/* Keep the focused button's name stable. The hidden sibling exposes the
+          changing reading on demand without announcing every tick. */}
+      <button
+        type="button"
+        onClick={onToggleTimerMode}
+        aria-label={face.buttonLabel}
+        className={`tnum cursor-pointer rounded-sm text-left text-4xl leading-none font-light hover:opacity-80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bright ${face.overrun ? 'text-commit' : 'text-bright'}`}
       >
-        {formatTimer(Math.abs(remaining))}
-      </div>
+        {face.reading}
+      </button>
+      <span className="sr-only">{face.reading}</span>
+      <div className="mt-0.5 text-[10px] text-muted">{face.modeLabel}</div>
 
       {active.kind === 'block' && active.purpose && (
         <p className="mt-2 line-clamp-2 text-sm leading-snug text-body">{active.purpose}</p>

@@ -36,11 +36,14 @@ import type {
 } from '@/domain/types'
 import type { DayProgress } from '@/domain/dayProgress'
 import type { AmbienceControls } from '@/ambient/useAmbience'
+import type { TimerMode } from '@/domain/time'
 
 type Props = {
   now: Ms
   phase: Phase
   active: ActiveSegment | null
+  timerMode: TimerMode
+  onToggleTimerMode: () => void
   settings: Settings
   dayProgress: DayProgress
   /** The one App-owned answer for postcard and companion visibility. */
@@ -160,7 +163,13 @@ export function Stage(props: Props) {
     case 'reflecting':
       return (
         <div>
-          <FocusTimer now={now} active={active} phase={phase} />
+          <FocusTimer
+            now={now}
+            active={active}
+            phase={phase}
+            timerMode={props.timerMode}
+            onToggleTimerMode={props.onToggleTimerMode}
+          />
           <div className="mt-6 flex flex-wrap gap-2">
             <GhostButton type="button" onClick={props.onAbandon}>
               End early
@@ -191,7 +200,13 @@ export function Stage(props: Props) {
     case 'onBreak':
       return (
         <div>
-          <FocusTimer now={now} active={active} phase={phase} />
+          <FocusTimer
+            now={now}
+            active={active}
+            phase={phase}
+            timerMode={props.timerMode}
+            onToggleTimerMode={props.onToggleTimerMode}
+          />
           <div className="mt-6">
             <GhostButton type="button" onClick={props.onEndBreak}>
               Back to work

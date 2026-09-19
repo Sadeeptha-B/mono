@@ -9,7 +9,7 @@
  */
 
 import { format, isValid, parse } from 'date-fns'
-import type { DefaultRegion, Interval, Ms, WorkRegion } from './types'
+import type { ActiveSegment, DefaultRegion, Interval, Ms, WorkRegion } from './types'
 
 /** Stable identity for a local calendar day, e.g. "2026-08-20". */
 export type DayKey = string
@@ -111,7 +111,24 @@ export function formatDuration(ms: Ms): string {
 
 /** "12:34" / "1:02:33" — the counting-down timer face. */
 export function formatTimer(ms: Ms): string {
-  const totalSeconds = Math.max(0, Math.ceil(ms / 1000))
+  return formatTimerSeconds(Math.max(0, Math.ceil(ms / 1000)))
+}
+
+/** Elapsed time shows only whole seconds actually spent in the segment. */
+export function formatElapsedTimer(ms: Ms): string {
+  return formatTimerSeconds(Math.max(0, Math.floor(ms / 1000)))
+}
+
+export type TimerMode = 'remaining' | 'elapsed'
+
+/** Both timer surfaces use the same absolute instants and the same rounding. */
+export function timerReading(active: ActiveSegment, now: Ms, mode: TimerMode): string {
+  return mode === 'remaining'
+    ? formatTimer(Math.abs(active.endsAt - now))
+    : formatElapsedTimer(Math.min(now, active.endsAt) - active.startedAt)
+}
+
+function formatTimerSeconds(totalSeconds: number): string {
   const hours = Math.floor(totalSeconds / 3600)
   const minutes = Math.floor((totalSeconds % 3600) / 60)
   const seconds = totalSeconds % 60

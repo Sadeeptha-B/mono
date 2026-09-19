@@ -42,6 +42,8 @@ test('plans the runway on a time axis and charges a break against the plan', asy
   // Ten minutes in, the countdown reflects it.
   await page.clock.fastForward('10:00')
   await expect(stage(page).getByText('35:00')).toBeVisible()
+  await stage(page).getByRole('button', { name: /Show elapsed time$/ }).click()
+  await expect(stage(page).getByRole('button', { name: /Show time remaining$/ })).toHaveText('10:00')
 
   // Run out the rest of the block.
   await page.clock.fastForward('35:00')
@@ -57,7 +59,10 @@ test('plans the runway on a time axis and charges a break against the plan', asy
   await expect(stage(page).getByText(/Costs you|It's free/)).toBeVisible()
 
   await page.getByRole('button', { name: 'Start break' }).click()
-  await expect(stage(page).getByText('Break')).toBeVisible()
+  await expect(stage(page).getByText('Break', { exact: true })).toBeVisible()
+  // The chosen face carries into the break and labels its time honestly.
+  await expect(stage(page).getByText('Break elapsed')).toBeVisible()
+  await expect(stage(page).getByRole('button', { name: /Show time remaining$/ })).toHaveText('0:00')
 
   // The finished block is on the calendar, with the purpose it was given.
   await expect(calendar(page).getByText('Write the planner tests')).toBeVisible()
@@ -140,6 +145,15 @@ test('the guide is a page of its own, and keeps a running block in sight', async
   await page.getByRole('link', { name: 'Back to today', exact: true }).click()
   await expect(stage(page).getByText('Write the planner tests')).toBeVisible()
   await expect(stage(page).getByText('35:00')).toBeVisible()
+
+  await stage(page).getByRole('button', { name: /Show elapsed time$/ }).click()
+  await page.getByRole('link', { name: 'Guide', exact: true }).click()
+  await expect(page.getByTitle('Back to the timer')).toContainText('10:00')
+  await expect(page.getByTitle('Back to the timer').getByText('focused')).toBeVisible()
+  await page.clock.fastForward('05:00')
+  await expect(page.getByTitle('Back to the timer')).toContainText('15:00')
+  await page.getByRole('link', { name: 'Back to today', exact: true }).click()
+  await expect(stage(page).getByRole('button', { name: /Show time remaining$/ })).toHaveText('15:00')
 })
 
 test('settings open from the guide, which quotes them', async ({ page }) => {

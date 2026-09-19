@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
   dayKey,
   formatDuration,
+  formatElapsedTimer,
   formatTimer,
   isWithinRegions,
   nextRegionStart,
   regionsForDay,
+  timerReading,
   wallClockOn,
 } from './time'
 
@@ -152,5 +154,32 @@ describe('formatTimer', () => {
 
   it('rounds up, so the face reads 45:00 for a full block rather than 44:59', () => {
     expect(formatTimer(45 * 60_000 - 1)).toBe('45:00')
+  })
+})
+
+describe('timerReading', () => {
+  const block = {
+    kind: 'block' as const,
+    id: 'focus',
+    blockKind: 'deep' as const,
+    purpose: 'Write',
+    startedAt: at(14),
+    endsAt: at(14, 45),
+  }
+
+  it('counts elapsed whole seconds from the start while remaining time rounds up', () => {
+    expect(timerReading(block, at(14), 'elapsed')).toBe('0:00')
+    expect(timerReading(block, at(14) + 999, 'elapsed')).toBe('0:00')
+    expect(timerReading(block, at(14) + 999, 'remaining')).toBe('45:00')
+    expect(timerReading(block, at(14, 10) + 1000, 'elapsed')).toBe('10:01')
+  })
+
+  it('does not count time after the scheduled end as focused time', () => {
+    expect(timerReading(block, at(15), 'elapsed')).toBe('45:00')
+    expect(timerReading(block, at(15), 'remaining')).toBe('15:00')
+  })
+
+  it('formats long elapsed segments with hours', () => {
+    expect(formatElapsedTimer(3600_999)).toBe('1:00:00')
   })
 })

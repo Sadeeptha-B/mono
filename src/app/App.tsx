@@ -5,16 +5,18 @@
  * current phase, the calendar shows all of it against the clock, and the
  * companion shows the mood — so none of them can disagree with the others.
  *
- * Two pieces of UI state live up here rather than where they are used. The
- * calendar's open editor, because the stage opens the hours one too and there
- * must only ever be one of it; and the settings panel, because it is the one
- * thing reachable from both routes.
+ * Some UI state lives up here rather than where it is used. The calendar's
+ * open editor, because the stage opens the hours one too and there must only
+ * ever be one of it; the settings panel, because it is reachable from both
+ * routes; and the timer face, because a click in the stage or PiP must update
+ * both views.
  *
- * Both of those, and which opening question is on screen, describe *this*
- * session and this moment in it. So each one is adjusted during render against
- * something that says the moment has moved on — the session `generation`, and
- * the phase — rather than in an effect that would paint the stale answer for a
- * frame first.
+ * The editor, settings panel, and opening question describe *this* session
+ * and this moment in it. Each is adjusted during render against something that
+ * says the moment has moved on — the session `generation`, and the phase —
+ * rather than in an effect that would paint the stale answer for a frame first.
+ * The timer face is a view preference and deliberately survives both changes;
+ * a reload starts it at remaining time again.
  */
 
 import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
@@ -60,6 +62,7 @@ import { paint } from '@/pip/styles'
 import { breakCost, countPlannedFocus, derivePlan } from '@/domain/planner'
 import { dayProgressFor } from '@/domain/dayProgress'
 import { dayKey, formatDuration, isWithinRegions, nextRegionStart } from '@/domain/time'
+import type { TimerMode } from '@/domain/time'
 import { useSession, useStorageHealth, toPlanInput, selectRegions } from '@/store/session'
 import type { BlockKind } from '@/domain/types'
 
@@ -168,6 +171,9 @@ export function App() {
   const mini = useMiniWindow()
 
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [timerMode, setTimerMode] = useState<TimerMode>('remaining')
+  const toggleTimerMode = () =>
+    setTimerMode((mode) => (mode === 'remaining' ? 'elapsed' : 'remaining'))
   const guide = useDeferred(() => import('@/components/Guide/GuidePage'))
   const [composer, setComposer] = useState<Composer | null>(null)
   const [setupStage, setSetupStage] = useState<SetupStageId>(FIRST_SETUP_STAGE)
@@ -444,6 +450,8 @@ export function App() {
         now={now}
         phase={phase}
         active={session.active}
+        timerMode={timerMode}
+        onToggleTimerMode={toggleTimerMode}
         history={session.history}
         settings={session.settings}
         dayProgress={dayProgress}
@@ -493,6 +501,7 @@ export function App() {
           <guide.view.GuidePage
             now={now}
             active={session.active}
+            timerMode={timerMode}
             onOpenSettings={openSettings}
             mini={mini}
           />
@@ -592,6 +601,8 @@ export function App() {
                 now={now}
                 phase={phase}
                 active={session.active}
+                timerMode={timerMode}
+                onToggleTimerMode={toggleTimerMode}
                 settings={session.settings}
                 dayProgress={dayProgress}
                 dayDone={dayDone}

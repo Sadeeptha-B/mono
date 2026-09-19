@@ -38,14 +38,16 @@ than gain its own vertical scroll. Repeat once with larger browser text enabled.
 
 1. Start a block, background the tab for five minutes, come back. The remaining
    time must be correct and no block silently completed.
+   Switch to elapsed time first and check that it also advances by five minutes.
 2. Start a block and sleep the machine across its end. You should get the
    "You were away" prompt with the right elapsed span.
 
 ## The pop-out window
 
 3. Start a block, pop out, then bury the tab behind something else for five
-   minutes. The countdown must still move every second and the cat must still
-   walk. This is the one that decides whether the feature works at all.
+   minutes. The timer must still move every second in either mode and the cat
+   must still walk. This is the one that decides whether the feature works at all.
+   Click the time in each window and check that both show the same mode.
 4. Close the mini window from its own control rather than Mono's. The app must
    carry on, and `Pop out` must open a fresh one.
 5. Drag the mini window to a second monitor and resize it, then start another

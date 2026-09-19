@@ -34,6 +34,7 @@ import { miniViewFor, type MiniFacts } from './view'
 import { GhostButton } from '@/components/ui'
 import { AmbienceButton } from '@/ambient/AmbienceButton'
 import { formatClock, formatDuration } from '@/domain/time'
+import type { TimerMode } from '@/domain/time'
 import type { Phase } from '@/domain/machine'
 import type { DayProgress } from '@/domain/dayProgress'
 import type { AmbienceControls } from '@/ambient/useAmbience'
@@ -49,6 +50,8 @@ type Props = {
   now: Ms
   phase: Phase
   active: ActiveSegment | null
+  timerMode: TimerMode
+  onToggleTimerMode: () => void
   history: readonly CompletedSegment[]
   settings: Settings
   dayProgress: DayProgress
@@ -155,7 +158,12 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
     case 'running':
       return (
         <div>
-          <MiniTimer now={now} active={active} />
+          <MiniTimer
+            now={now}
+            active={active}
+            timerMode={props.timerMode}
+            onToggleTimerMode={props.onToggleTimerMode}
+          />
           <div className="mt-3 flex flex-wrap gap-2">
             {view.segment === 'break' ? (
               <GhostButton type="button" onClick={props.onEndBreak}>

@@ -150,6 +150,48 @@ test('the pop-out carries the running block, and answers for it', async ({ page 
   await expect(page.getByRole('button', { name: 'Pop out' })).toBeVisible()
 })
 
+test('the stage and pop-out switch the same timer between remaining and elapsed time', async ({ page }) => {
+  await stubMiniWindow(page)
+  await openMono(page)
+  await shapeDay(page)
+  await startBlock(page, 'Write the migration')
+
+  const mini = page.frameLocator(MINI)
+  const stageTimer = stage(page).getByRole('button', { name: /Show elapsed time$/ })
+  await expect(stageTimer).toHaveText('45:00')
+  await expect(mini.getByRole('button', { name: /Show elapsed time$/ })).toHaveText('45:00')
+
+  await stageTimer.click()
+  const stageElapsed = stage(page).getByRole('button', { name: /Show time remaining$/ })
+  const miniElapsed = mini.getByRole('button', { name: /Show time remaining$/ })
+  const stageReading = stageElapsed.locator('xpath=following-sibling::span[1]')
+  const miniReading = miniElapsed.locator('xpath=following-sibling::span[1]')
+  await expect(stageElapsed).toHaveText('0:00')
+  await expect(miniElapsed).toHaveText('0:00')
+  await expect(stageReading).toHaveClass('sr-only')
+  await expect(stageReading).toHaveText('0:00')
+  await expect(miniReading).toHaveClass('sr-only')
+  await expect(miniReading).toHaveText('0:00')
+  await expect(stageElapsed).toHaveAttribute(
+    'aria-label',
+    'Timer showing elapsed time. Show time remaining',
+  )
+
+  await page.clock.fastForward('10:00')
+  await expect(stageElapsed).toHaveText('10:00')
+  await expect(miniElapsed).toHaveText('10:00')
+  await expect(stageReading).toHaveText('10:00')
+  await expect(miniReading).toHaveText('10:00')
+  await expect(stageElapsed).toHaveAttribute(
+    'aria-label',
+    'Timer showing elapsed time. Show time remaining',
+  )
+
+  await miniElapsed.click()
+  await expect(stage(page).getByRole('button', { name: /Show elapsed time$/ })).toHaveText('35:00')
+  await expect(mini.getByRole('button', { name: /Show elapsed time$/ })).toHaveText('35:00')
+})
+
 test('the pop-out asks the day to be shaped rather than asking for it', async ({
   page,
 }) => {

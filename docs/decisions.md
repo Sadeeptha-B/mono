@@ -93,10 +93,10 @@ nothing to migrate, and nothing that can survive a day it should not have.
 
 ### 2. Timers are absolute timestamps, never accumulated ticks
 
-Every segment carries an absolute `endsAt`, and the UI renders
-`endsAt - Date.now()`. The one-second tick exists *only* to trigger a
-re-render. A throttled, delayed or entirely skipped tick therefore makes the
-display briefly stale but never wrong.
+Every segment carries absolute `startedAt` and `endsAt` timestamps. The UI
+renders `endsAt - Date.now()` or `Date.now() - startedAt`. The one-second tick
+exists *only* to trigger a re-render. A throttled, delayed or entirely skipped
+tick therefore makes the display briefly stale but never wrong.
 
 Never introduce a `remaining -= 1` counter.
 
@@ -2780,3 +2780,23 @@ the frame inside its field cell and panel, the whole document inside the
 viewport, the calendar's vertical overflow open, the mobile stack, and the
 two-column arrangement when there is room. A physical iOS Safari check remains
 the authority for native-control paint because Chromium cannot reproduce it.
+
+**2026-09-19 — The timer face is a shared view choice.**
+
+Clicking the running time switches between remaining and elapsed time in the
+stage and the pop-out together, and the guide header follows it. The choice
+lives in the app's transient UI state: it carries across segments and midnight
+while the app stays open, then returns to countdown on reload. Saving a display
+preference in the event log would turn a view choice into part of the day's
+history. Shared display words keep the three surfaces from drifting apart.
+
+Remaining time rounds up so a fresh block reads its full duration; elapsed
+time rounds down so it never claims a second before it has passed. Both come
+from the segment's absolute timestamps, and elapsed time stops at its
+scheduled end. A break says elapsed break time rather than calling it focus;
+time past the end is labelled over rather than remaining.
+
+The focused button names its mode and switch action without the ticking
+digits. Changing a focused accessible name every second can narrate the whole
+block even without a live region. A non-interactive, non-live sibling keeps
+the current reading available to screen readers on demand.
