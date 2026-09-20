@@ -54,13 +54,22 @@ than gain its own vertical scroll. Repeat once with larger browser text enabled.
    block. It must come back where you left it, at the size you left it —
    Chromium reuses the last placement unless a site opts out, and Mono
    deliberately does not, so this is the whole of the multi-monitor story.
+   In a fresh browser profile with no remembered PiP placement, opening at
+   470×210 should not show `Reset size`.
 6. Sleep the machine across a block end with the window open. "You were away"
    must appear in both, and answering it in either must resolve both.
 7. Open it in each room. The window is dressed before it is shown, so it must
    never appear as Mono and then change; check a room other than Mono in
    particular, since that is the flash this is guarding against.
 8. Resize it below the size it opens at. The contents are built to survive being
-   made much smaller than the opening hint, and nothing should clip or overlap.
+   made much smaller than the opening hint. Controls should remain reachable
+   without overlapping the footer: the content scrolls while the timing footer
+   stays visible. A small trim to 180px height should not show `Reset size`.
+   Narrower than 320, shorter than 160, wider than 520, or taller than 420,
+   `Reset size` should appear without scrolling and return the viewport to about
+   470×210. Check that the outer border remains at the window edge when the
+   content has a scrollbar, and that it stands out against similarly dark
+   windows in every room.
 9. Throttle the network hard, or block the stylesheet, and pop out. The inline
    fallback must give a readable window rather than black text on ink — the
    window is allowed to be plain, never invisible.

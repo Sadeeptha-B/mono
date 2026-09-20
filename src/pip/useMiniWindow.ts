@@ -18,18 +18,10 @@
 import { useCallback, useRef, useState } from 'react'
 
 import { copyStylesInto, paint } from './styles'
+import { MINI_WINDOW_SIZE } from './size'
 import { alsoTickFrom } from '@/hooks/useNow'
 import { recheckPendingUpdate } from '@/pwa/registerServiceWorker'
 import { useSession } from '@/store/session'
-
-/**
- * Roughly a phone's notification, and resizable from there.
- *
- * Chromium clamps this to what it thinks is reasonable, and the user can drag
- * it to any size afterwards, so it is an opening position rather than a layout
- * assumption — the content is built to survive being made much smaller.
- */
-const SIZE = { width: 400, height: 320 }
 
 /** Whether this browser has the API at all. Chromium does; nothing else yet. */
 export const supportsMiniWindow = (): boolean =>
@@ -86,7 +78,7 @@ export function useMiniWindow(): MiniWindowControls {
     void (async () => {
       let pip: Window
       try {
-        pip = await api.requestWindow(SIZE)
+        pip = await api.requestWindow(MINI_WINDOW_SIZE)
       } catch {
         // Refused, or dismissed. An ordinary answer to "may I have a window",
         // not a failure worth reporting.

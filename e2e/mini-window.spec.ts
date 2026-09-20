@@ -37,7 +37,7 @@ async function stubMiniWindow(page: Page) {
       get window() {
         return open
       },
-      async requestWindow() {
+      async requestWindow({ width, height }: { width: number; height: number }) {
         // Faithful to the algorithm, which is the opposite of what it looks
         // like it should be: a second request does not fail, it *closes the
         // window that is open* and hands back a replacement. Mono's own guards
@@ -50,7 +50,7 @@ async function stubMiniWindow(page: Page) {
         const frame = document.createElement('iframe')
         frame.id = 'mono-mini'
         frame.style.cssText =
-          'position:fixed;right:0;bottom:0;width:400px;height:320px;border:0;z-index:9999'
+          `position:fixed;right:0;bottom:0;width:${width}px;height:${height}px;border:0;z-index:9999`
         document.body.append(frame)
 
         const win = frame.contentWindow as Window
@@ -66,6 +66,13 @@ async function stubMiniWindow(page: Page) {
             open = null
             win.dispatchEvent(new Event('pagehide'))
             frame.remove()
+          },
+        })
+        Object.defineProperty(win, 'resizeBy', {
+          configurable: true,
+          value: (width: number, height: number) => {
+            frame.style.width = `${win.innerWidth + width}px`
+            frame.style.height = `${win.innerHeight + height}px`
           },
         })
         open = win
@@ -232,6 +239,74 @@ test('a pop-out closed from its own window is noticed', async ({ page }) => {
   // And the app is left in a state that can open another one.
   await page.getByRole('button', { name: 'Pop out' }).click()
   await expect(page.frameLocator(MINI).getByText('Ready for 45 minutes')).toBeVisible()
+})
+
+test('an awkwardly sized pop-out offers to return to its opening size', async ({ page }) => {
+  await stubMiniWindow(page)
+  await openMono(page)
+  await shapeDay(page)
+  await startBlock(page, 'Write the migration')
+
+  const frame = page.locator(MINI)
+  const mini = page.frameLocator(MINI)
+  const reset = mini.getByRole('button', { name: 'Reset size' })
+  await expect(frame).toHaveCSS('width', '470px')
+  await expect(frame).toHaveCSS('height', '210px')
+  await expect(reset).toHaveCount(0)
+  const openingOverflow = await mini.locator('.mono-scroll').evaluate(
+    (scroller) => scroller.scrollHeight - scroller.clientHeight,
+  )
+  expect(openingOverflow).toBeLessThanOrEqual(2)
+
+  await frame.evaluate((el) => {
+    el.style.width = '600px'
+    el.style.height = '500px'
+  })
+  await expect(reset).toBeVisible()
+  await reset.click()
+  await expect(frame).toHaveCSS('width', '470px')
+  await expect(frame).toHaveCSS('height', '210px')
+  await expect(reset).toHaveCount(0)
+
+  // A small trim from the chosen opening height is still within the preferred
+  // range, so it should not offer a rescue action prematurely.
+  await frame.evaluate((el) => {
+    el.style.height = '180px'
+  })
+  await expect(reset).toHaveCount(0)
+  await frame.evaluate((el) => {
+    el.style.height = '210px'
+  })
+
+  // A visible locator is not enough here: Playwright can scroll a clipped
+  // button into view before clicking it. Check its actual onscreen rectangle
+  // before any click at the short sizes that previously buried the footer.
+  for (const [width, height] of [[400, 150], [340, 120], [320, 100]]) {
+    await frame.evaluate((el, size) => {
+      el.style.width = `${size.width}px`
+      el.style.height = `${size.height}px`
+    }, { width, height })
+    await expect(reset).toBeVisible()
+    const bounds = await reset.evaluate((button) => {
+      const rect = button.getBoundingClientRect()
+      return {
+        top: rect.top,
+        bottom: rect.bottom,
+        height: button.ownerDocument.defaultView!.innerHeight,
+      }
+    })
+    expect(bounds.top).toBeGreaterThanOrEqual(0)
+    expect(bounds.bottom).toBeLessThanOrEqual(bounds.height)
+  }
+  const shortWindowOverflow = await mini.locator('.mono-scroll').evaluate(
+    (scroller) => scroller.scrollHeight - scroller.clientHeight,
+  )
+  expect(shortWindowOverflow).toBeGreaterThan(0)
+
+  await reset.click()
+  await expect(frame).toHaveCSS('width', '470px')
+  await expect(frame).toHaveCSS('height', '210px')
+  await expect(reset).toHaveCount(0)
 })
 
 test('a block starting brings the pop-out with it, by default', async ({ page }) => {

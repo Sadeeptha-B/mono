@@ -2800,3 +2800,34 @@ The focused button names its mode and switch action without the ticking
 digits. Changing a focused accessible name every second can narrate the whole
 block even without a live region. A non-interactive, non-live sibling keeps
 the current reading available to screen readers on demand.
+
+**2026-09-20 — The mini window has a preferred size, not drag bounds.**
+
+The 470×210 opening hint follows the compact wide window chosen after seeing
+it in use. A window below 320×200 or above 520×420 offers `Reset size`, which
+returns it to that opening size. Document PiP owns the user's drag bounds, and
+programmatic `resizeBy` requires a gesture inside that window, so a resize
+event cannot clamp the window while it is dragged. The content still scrolls
+at smaller sizes, and Chrome still remembers a size the user chose until they
+reset it. A room-derived muted outline makes its edge legible beside other
+dark windows without adding a new palette value.
+
+**2026-09-20 (review follow-up) — The rescue control stays outside the scrollport.**
+
+The preferred range is checked on each axis: narrower than 320, shorter than
+200, wider than 520, or taller than 420 offers `Reset size`. A short PiP window
+used to put that footer below its own scrollport, making the control invisible
+until the user scrolled to find it. The content alone now scrolls; the timing and
+reset control remain at the bottom of the viewport. The outer border lives on
+the non-scrolling outer frame, so a space-taking scrollbar cannot pull its edge
+inward. The 470×210 opening hint stays as chosen despite its tight vertical fit;
+questions that need more room use the inner scroll area.
+
+**2026-09-20 (later) — The preferred height floor follows the fixed footer.**
+
+The 200px lower height bound offered `Reset size` after only a 10px trim from
+the chosen 210px opening. With the footer visible outside the scroll area, that
+was noise rather than a useful cue. The preferred floor is now 160px. It remains
+a preference threshold rather than the smallest height at which Mono works;
+the inner content can scroll below it while the footer stays available at
+practical PiP sizes.

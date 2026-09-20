@@ -465,6 +465,10 @@ function sectionsFor(settings: Settings): Section[] {
             one session and both windows are looking at it.
           </P>
           <P>
+            You can resize the window. If it becomes awkwardly small or large, use{' '}
+            <Em>Reset size</Em> in its footer to bring it back to its compact opening size.
+          </P>
+          <P>
             The one thing it will not do is the shape of your day. Hours and commitments
             are questions about the whole day, and the whole day does not fit in a window
             that size — so it says so and points you back to the tab, where the calendar
