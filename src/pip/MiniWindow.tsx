@@ -72,7 +72,7 @@ type Props = {
   onConfirmBreak: (minutes: number) => void
   onCancelBreak: () => void
   onEndBreak: () => void
-  onResolveAway: (outcome: 'completed' | 'abandoned') => void
+  onResolveAway: (result: 'completed' | 'abandoned') => void
 }
 
 export function MiniWindow(props: Props) {

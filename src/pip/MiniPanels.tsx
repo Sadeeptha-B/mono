@@ -396,7 +396,7 @@ export function MiniAway({
   blockEndedAt: Ms
   now: Ms
   kind: 'block' | 'break'
-  onResolve: (outcome: 'completed' | 'abandoned') => void
+  onResolve: (result: 'completed' | 'abandoned') => void
 }) {
   const awayFor = formatDuration(now - blockEndedAt)
 

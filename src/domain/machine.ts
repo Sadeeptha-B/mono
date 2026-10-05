@@ -98,7 +98,7 @@ export type Action =
   | { type: 'endBreak'; at: Ms }
   | { type: 'cancelBreakChoice'; at: Ms }
   | { type: 'awayDetected'; at: Ms; lastSeenAt: Ms }
-  | { type: 'resolveAway'; at: Ms; outcome: 'completed' | 'abandoned' }
+  | { type: 'resolveAway'; at: Ms; result: 'completed' | 'abandoned' }
 
 export type Deps = { newId: () => string }
 
@@ -268,7 +268,7 @@ export function transition(
           events.push({ type: 'break/ended', at: active.endsAt })
         } else if (active) {
           events.push({
-            type: action.outcome === 'completed' ? 'block/completed' : 'block/abandoned',
+            type: action.result === 'completed' ? 'block/completed' : 'block/abandoned',
             // Credit the block at its planned end, not now — the user was not
             // still working during the hours the laptop was shut.
             at: active.endsAt,

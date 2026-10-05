@@ -184,7 +184,7 @@ export type CompletedSegment =
       /** When it actually ended, which is not always `plannedEndsAt`. */
       endedAt: Ms
       plannedEndsAt: Ms
-      outcome: 'completed' | 'abandoned'
+      result: 'completed' | 'abandoned'
     }
   | {
       kind: 'break'

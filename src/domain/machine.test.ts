@@ -138,7 +138,7 @@ describe('not being able to name a purpose', () => {
     expect(session.history[0]).toMatchObject({
       kind: 'block',
       blockKind: 'reflect',
-      outcome: 'completed',
+      result: 'completed',
     })
   })
 
@@ -150,7 +150,7 @@ describe('not being able to name a purpose', () => {
     ])
 
     expect(phase.name).toBe('definingPurpose')
-    expect(session.history[0]).toMatchObject({ outcome: 'abandoned', endedAt: at(14, 2) })
+    expect(session.history[0]).toMatchObject({ result: 'abandoned', endedAt: at(14, 2) })
   })
 })
 
@@ -182,7 +182,7 @@ describe('finishing a block', () => {
       afterReflection: false,
     })
     expect(session.active).toBeNull()
-    expect(session.history[0]).toMatchObject({ outcome: 'completed' })
+    expect(session.history[0]).toMatchObject({ result: 'completed' })
   })
 
   it('offers a short block next when that is all that fits', () => {
@@ -201,7 +201,7 @@ describe('finishing a block', () => {
 
     expect(phase).toEqual({ name: 'choosingBreak' })
     expect(session.active).toBeNull()
-    expect(session.history[0]).toMatchObject({ outcome: 'completed' })
+    expect(session.history[0]).toMatchObject({ result: 'completed' })
   })
 
   it('runs the break for the chosen duration', () => {
@@ -259,7 +259,7 @@ describe('abandoning', () => {
     expect(phase).toEqual({ name: 'idle' })
     expect(session.active).toBeNull()
     expect(session.history[0]).toMatchObject({
-      outcome: 'abandoned',
+      result: 'abandoned',
       purpose: 'Write the planner',
       startedAt: at(14),
       endedAt: at(14, 12),
@@ -313,18 +313,18 @@ describe('coming back after being away', () => {
     const { session } = run([
       ...focusing,
       { type: 'awayDetected', at: at(16), lastSeenAt: at(14, 20) },
-      { type: 'resolveAway', at: at(16), outcome: 'completed' },
+      { type: 'resolveAway', at: at(16), result: 'completed' },
     ])
 
     const block = session.history.find((s) => s.kind === 'block')
-    expect(block).toMatchObject({ outcome: 'completed', endedAt: at(14, 45) })
+    expect(block).toMatchObject({ result: 'completed', endedAt: at(14, 45) })
   })
 
   it('records the unaccounted stretch so the day adds up', () => {
     const { session } = run([
       ...focusing,
       { type: 'awayDetected', at: at(16), lastSeenAt: at(14, 20) },
-      { type: 'resolveAway', at: at(16), outcome: 'completed' },
+      { type: 'resolveAway', at: at(16), result: 'completed' },
     ])
 
     expect(session.history.find((s) => s.kind === 'away')).toMatchObject({
@@ -337,12 +337,12 @@ describe('coming back after being away', () => {
     const { phase, session } = run([
       ...focusing,
       { type: 'awayDetected', at: at(16), lastSeenAt: at(14, 20) },
-      { type: 'resolveAway', at: at(16), outcome: 'abandoned' },
+      { type: 'resolveAway', at: at(16), result: 'abandoned' },
     ])
 
     expect(phase).toEqual({ name: 'idle' })
     expect(session.history.find((s) => s.kind === 'block')).toMatchObject({
-      outcome: 'abandoned',
+      result: 'abandoned',
     })
   })
 
@@ -477,7 +477,7 @@ describe('the event log', () => {
     })
 
     expect(session.history).toHaveLength(1)
-    expect(session.history[0]).toMatchObject({ id: 'a', outcome: 'abandoned' })
+    expect(session.history[0]).toMatchObject({ id: 'a', result: 'abandoned' })
     expect(session.active).toMatchObject({ id: 'b' })
   })
 })

@@ -724,7 +724,7 @@ function styleFor(entry: TimelineEntry): RowStyle {
       if (s.kind === 'block') {
         return block(
           s.blockKind,
-          s.outcome === 'abandoned' ? `${kindLabel(s.blockKind)} (cut short)` : kindLabel(s.blockKind),
+          s.result === 'abandoned' ? `${kindLabel(s.blockKind)} (cut short)` : kindLabel(s.blockKind),
           s.purpose ?? undefined,
         )
       }

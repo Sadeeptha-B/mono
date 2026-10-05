@@ -16,7 +16,7 @@ const id = () => `seg-${(seq += 1)}`
 const block = (
   startedAt: Ms,
   lengthMin: number,
-  outcome: 'completed' | 'abandoned' = 'completed',
+  result: 'completed' | 'abandoned' = 'completed',
   blockKind: BlockKind = 'deep',
 ): CompletedSegment => ({
   kind: 'block',
@@ -26,7 +26,7 @@ const block = (
   startedAt,
   endedAt: startedAt + minutes(lengthMin),
   plannedEndsAt: startedAt + minutes(lengthMin),
-  outcome,
+  result,
 })
 
 const rest = (startedAt: Ms, lengthMin: number): CompletedSegment => ({
