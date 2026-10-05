@@ -31,8 +31,8 @@ export function BlockTasks({
   compact?: boolean
 }) {
   const items = useTasks((s) => s.items)
-  const completeTask = useTasks((s) => s.completeTask)
-  const reopenTask = useTasks((s) => s.reopenTask)
+  const completeItem = useTasks((s) => s.completeItem)
+  const reopenItem = useTasks((s) => s.reopenItem)
 
   // A task deleted since the block began has nothing left to say about itself,
   // and an id with no title is not worth a row. Order is the block's own.
@@ -53,7 +53,7 @@ export function BlockTasks({
             <input
               type="checkbox"
               checked={done}
-              onChange={() => (done ? reopenTask(task.id) : completeTask(task.id))}
+              onChange={() => (done ? reopenItem(task.id) : completeItem(task.id))}
               aria-label={`${task.title} done`}
               className="translate-y-0.5 accent-[var(--color-deep)]"
             />

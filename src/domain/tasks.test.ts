@@ -2,20 +2,29 @@ import { describe, expect, it } from 'vitest'
 
 import {
   activeAreas,
+  activeTasks,
+  archive,
   areaOf,
   canParent,
   childrenOf,
   complete,
   defaultPurpose,
+  descendantsOf,
   drop,
   inboxOf,
+  isInActiveTree,
   newArea,
   newer,
   newItem,
   nextOrder,
   openTasks,
+  pathOf,
+  purposeParts,
+  tasksOfOutcome,
+  placesForTasks,
   PURPOSE_MAX_LENGTH,
   reopen,
+  unarchive,
   type Item,
 } from './tasks'
 
@@ -167,5 +176,121 @@ describe('newer', () => {
     expect(newer(b, a)).toBe(b)
     const c = { id: 'x', updatedAt: 1 }
     expect(newer(a, c)).toBe(a)
+  })
+})
+
+describe('the active tree', () => {
+  const tree = [
+    item('auth', 'epic', 'work', { title: 'Mono auth' }),
+    item('pages', 'outcome', 'auth', { title: 'Login pages' }),
+    item('form', 'task', 'pages', { title: 'Login form' }),
+    item('csrf', 'task', 'auth', { title: 'CSRF token' }),
+    item('priya', 'task', 'work', { title: 'Call Priya' }),
+  ]
+
+  it('offers every open task while nothing above it is finished', () => {
+    expect(activeTasks(tree, [work]).map((t) => t.id).sort()).toEqual(['csrf', 'form', 'priya'])
+  })
+
+  it("hides a finished or archived epic's tasks without touching them", () => {
+    for (const changed of [
+      complete(tree[0]!, 2_000),
+      drop(tree[0]!, 2_000),
+      archive(tree[0]!, 2_000),
+    ]) {
+      const items = [changed, ...tree.slice(1)]
+      expect(activeTasks(items, [work]).map((t) => t.id)).toEqual(['priya'])
+      // The tasks themselves are exactly as they were.
+      expect(items.find((i) => i.id === 'form')?.status).toBe('open')
+    }
+  })
+
+  it('brings them back unchanged when the epic is restored', () => {
+    const archived = archive(tree[0]!, 2_000)
+    const restored = unarchive(archived, 3_000)
+    expect('archivedAt' in restored).toBe(false)
+    expect(isInActiveTree('form', [restored, ...tree.slice(1)], [work])).toBe(true)
+  })
+
+  it('hides everything in an archived area', () => {
+    const shelved = { ...work, archivedAt: 2_000 }
+    expect(activeTasks(tree, [shelved])).toEqual([])
+  })
+
+  it('still counts a finished task inside an active epic as in the tree', () => {
+    const items = tree.map((i) => (i.id === 'form' ? complete(i, 2_000) : i))
+    expect(isInActiveTree('form', items, [work])).toBe(true)
+  })
+})
+
+describe('descendantsOf', () => {
+  it('finds the whole subtree, deleted children included, and survives a cycle', () => {
+    const items = [
+      item('auth', 'epic', 'work'),
+      item('pages', 'outcome', 'auth'),
+      item('form', 'task', 'pages'),
+      item('gone', 'task', 'auth', { deletedAt: AT }),
+      item('elsewhere', 'task', 'work'),
+    ]
+    expect(descendantsOf('auth', items).map((i) => i.id).sort()).toEqual(['form', 'gone', 'pages'])
+
+    const loop = [item('a', 'task', 'b'), item('b', 'epic', 'a')]
+    expect(descendantsOf('a', loop).map((i) => i.id)).toEqual(['b'])
+  })
+})
+
+describe('paths and places', () => {
+  const items = [
+    item('auth', 'epic', 'work', { title: 'Mono auth' }),
+    item('pages', 'outcome', 'auth', { title: 'Login pages' }),
+    item('form', 'task', 'pages', { title: 'Login form' }),
+    item('old', 'epic', 'work', { title: 'Old epic', status: 'done' }),
+  ]
+
+  it('names everything above an item, area first', () => {
+    expect(pathOf('form', items, [work])).toEqual(['Work', 'Mono auth', 'Login pages'])
+    expect(pathOf('auth', items, [work])).toEqual(['Work'])
+  })
+
+  it('lists every open place a task can go, in tree order', () => {
+    expect(placesForTasks(items, [work, personal]).map((p) => p.label)).toEqual([
+      'Work',
+      'Work › Mono auth',
+      'Work › Mono auth › Login pages',
+      'Personal',
+    ])
+  })
+})
+
+describe('picking an outcome', () => {
+  const items = [
+    item('auth', 'epic', 'work', { title: 'Mono auth' }),
+    item('pages', 'outcome', 'auth', { title: 'Login pages' }),
+    item('form', 'task', 'pages', { title: 'Login form', order: 0 }),
+    item('cookie', 'task', 'pages', { title: 'Session cookie', order: 1 }),
+    item('shipped', 'task', 'pages', { title: 'Shipped already', status: 'done' }),
+    item('solo', 'outcome', 'auth', { title: 'Docs' }),
+    item('readme', 'task', 'solo', { title: 'Write the README' }),
+    item('priya', 'task', 'work', { title: 'Call Priya' }),
+  ]
+
+  it("holds only the outcome's open, active tasks", () => {
+    expect(tasksOfOutcome('pages', items, [work]).map((t) => t.id)).toEqual(['form', 'cookie'])
+    expect(tasksOfOutcome('pages', items, [{ ...work, archivedAt: 1 }])).toEqual([])
+  })
+
+  it('names a fully picked outcome once, where its first task was', () => {
+    expect(purposeParts(['priya', 'cookie', 'form'], items, [work])).toEqual([
+      'Call Priya',
+      'Login pages',
+    ])
+  })
+
+  it('names the tasks of an outcome only partly picked', () => {
+    expect(purposeParts(['form'], items, [work])).toEqual(['Login form'])
+  })
+
+  it("keeps a single-task outcome's task title, the more specific name", () => {
+    expect(purposeParts(['readme'], items, [work])).toEqual(['Write the README'])
   })
 })

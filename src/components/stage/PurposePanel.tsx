@@ -22,20 +22,31 @@
  * Tasks from outside today's intentions are offered as readily as the ones
  * inside them. Something small from elsewhere is a perfectly good use of the
  * end of a block, and a picker that hid it would make the intentions a fence.
- * Writing a new task here can put it under an intention, or under none.
+ * Writing a new task here can file it anywhere a task can live, and put it
+ * under an intention or under none.
+ *
+ * A whole outcome can be ticked at once: it picks every open task it holds,
+ * shows as partly ticked when only some are, and names the purpose after
+ * itself when all are (`purposeParts`). It is a shortcut for picking tasks, not
+ * a new thing a block can be for — the block still records task ids, so
+ * nothing downstream of this prompt learns that outcomes exist.
  */
 
 import { useEffect, useRef, useState, type RefObject } from 'react'
 
-import { fieldClass, GhostButton, PrimaryButton, StagePrompt } from '../ui'
+import { fieldClass, GhostButton, InlineSelect, PrimaryButton, StagePrompt } from '../ui'
 import {
-  activeAreas,
-  areaOf,
+  activeTasks,
   defaultPurpose,
-  openTasks,
+  isInActiveTree,
+  pathOf,
+  PATH_SEPARATOR,
+  placesForTasks,
+  purposeParts,
   PURPOSE_MAX_LENGTH,
-  type Area,
+  tasksOfOutcome,
   type Item,
+  type Place,
 } from '@/domain/tasks'
 import { useTasks } from '@/store/tasks'
 import type { BlockKind, Intention } from '@/domain/types'
@@ -56,6 +67,8 @@ type Props = {
 
 /** How many tasks from elsewhere in the backlog to offer before asking for a filter. */
 const OTHERS_SHOWN = 6
+/** And how many whole outcomes. Fewer: each one stands for several tasks. */
+const OUTCOMES_SHOWN = 4
 
 export function PurposePanel({
   blockKind,
@@ -71,22 +84,26 @@ export function PurposePanel({
 }: Props) {
   const hydrated = useTasks((s) => s.hydrated)
   const items = useTasks((s) => s.items)
-  const areas = activeAreas(useTasks((s) => s.areas))
-  const addTask = useTasks((s) => s.addTask)
+  const allAreas = useTasks((s) => s.areas)
+  const addItem = useTasks((s) => s.addItem)
 
   const [selected, setSelected] = useState<string[]>([])
   // `null` while the purpose is still following the tasks; text once edited.
   const [ownPurpose, setOwnPurpose] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
   const [newTitle, setNewTitle] = useState('')
-  const [newArea, setNewArea] = useState<string | null>(null)
+  const [newPlace, setNewPlace] = useState<string | null>(null)
   const [newIntention, setNewIntention] = useState<string | null | undefined>(undefined)
   const newTaskInput = useRef<HTMLInputElement>(null)
 
-  const open = openTasks(items)
+  // Only tasks whose epic, outcome and area are all still in play: finishing or
+  // archiving any of those takes its tasks out of the offer with it.
+  const open = activeTasks(items, allAreas)
   const byId = new Map(items.map((i) => [i.id, i]))
   const chosen = selected.map((id) => byId.get(id)).filter((t): t is Item => t !== undefined)
-  const purpose = ownPurpose ?? defaultPurpose(chosen.map((t) => t.title))
+  const purpose = ownPurpose ?? defaultPurpose(purposeParts(selected, items, allAreas))
+  const places = placesForTasks(items, allAreas)
+  const pathFor = (task: Item) => pathOf(task.id, items, allAreas).join(PATH_SEPARATOR)
   const trimmed = purpose.trim()
 
   // Today's intentions with their open tasks, in the order the day named them.
@@ -104,6 +121,29 @@ export function PurposePanel({
     ...matching.slice(0, OTHERS_SHOWN),
   ]
 
+  // Outcomes worth ticking whole: open, in play, and still holding open tasks.
+  // The same rule as the tasks — one already partly or fully ticked stays shown
+  // whatever the filter says.
+  const outcomes = items
+    .filter(
+      (o) =>
+        o.kind === 'outcome' &&
+        o.status === 'open' &&
+        isInActiveTree(o.id, items, allAreas) &&
+        tasksOfOutcome(o.id, items, allAreas).length > 0,
+    )
+    .map((o) => ({ outcome: o, tasks: tasksOfOutcome(o.id, items, allAreas) }))
+  const touched = (tasks: readonly Item[]) => tasks.some((t) => selected.includes(t.id))
+  const outcomeMatches = outcomes.filter(
+    ({ outcome }) => needle === '' || outcome.title.toLowerCase().includes(needle),
+  )
+  const shownOutcomes = [
+    ...outcomes.filter(
+      (o) => touched(o.tasks) && !outcomeMatches.slice(0, OUTCOMES_SHOWN).includes(o),
+    ),
+    ...outcomeMatches.slice(0, OUTCOMES_SHOWN),
+  ]
+
   // The intention a new task lands in unless told otherwise: whichever one
   // every task already picked belongs to, if they agree, and none if they
   // do not — guessing between two would be filing the task for the user.
@@ -111,14 +151,16 @@ export function PurposePanel({
   const impliedIntention =
     pickedIntentions.size === 1 ? ([...pickedIntentions][0] ?? null) : null
   const intentionForNew = newIntention === undefined ? impliedIntention : newIntention
-  // And the area: the first picked task's, then the intention's own area link,
-  // then the first area there is.
-  const linkedArea = intentions.find((i) => i.id === intentionForNew)?.link
-  const areaForNew =
-    newArea ??
-    (chosen[0] ? areaOf(chosen[0].id, items, areas)?.id : undefined) ??
-    (linkedArea?.kind === 'area' ? linkedArea.id : undefined) ??
-    areas[0]?.id ??
+  // And where it is filed: beside the first task picked, which is usually the
+  // work in hand; then wherever the intention it is for points; then the first
+  // area there is. Only somewhere still active — `places` is that list.
+  const placeIds = new Set(places.map((p) => p.id))
+  const usable = (id: string | undefined) => (id !== undefined && placeIds.has(id) ? id : undefined)
+  const placeForNew =
+    usable(newPlace ?? undefined) ??
+    usable(chosen[0]?.parentId) ??
+    usable(intentions.find((i) => i.id === intentionForNew)?.link?.id) ??
+    places[0]?.id ??
     null
 
   // Focus on entry, and start from a blank prompt rather than the last block's
@@ -144,9 +186,18 @@ export function PurposePanel({
       current.includes(id) ? current.filter((t) => t !== id) : [...current, id],
     )
 
+  // Ticking an outcome picks every open task it holds, or lets go of all of
+  // them when they are all already picked.
+  const toggleOutcome = (tasks: readonly Item[]) =>
+    setSelected((current) => {
+      const ids = tasks.map((t) => t.id)
+      if (ids.every((id) => current.includes(id))) return current.filter((id) => !ids.includes(id))
+      return [...current, ...ids.filter((id) => !current.includes(id))]
+    })
+
   const createTask = () => {
-    if (areaForNew === null || newTitle.trim() === '') return
-    const id = addTask({ title: newTitle, parentId: areaForNew })
+    if (placeForNew === null || newTitle.trim() === '') return
+    const id = addItem({ kind: 'task', title: newTitle, parentId: placeForNew })
     if (id === null) return
     if (intentionForNew !== null) onLinkTask(id, intentionForNew)
     setSelected((current) => [...current, id])
@@ -186,23 +237,50 @@ export function PurposePanel({
             />
           ))}
 
-          {others.length > 0 && (
-            <div>
+          {(others.length > 0 || outcomes.length > 0) && (
+            <div className="flex flex-col gap-3">
               <input
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
-                placeholder="Find a task from elsewhere"
+                placeholder="Find a task or outcome from elsewhere"
                 aria-label="Find a task"
                 className={`${fieldClass} py-2 text-sm`}
               />
-              <TaskGroup
-                label="From the backlog"
-                tasks={shownOthers}
-                selected={selected}
-                onToggle={toggle}
-                empty="Nothing open matches."
-                areaOf={(t) => areaOf(t.id, items, areas)?.name ?? null}
-              />
+              {shownOutcomes.length > 0 && (
+                <fieldset className="min-w-0">
+                  <legend className="mb-1.5 text-xs font-medium tracking-wide text-muted uppercase">
+                    Whole outcomes
+                  </legend>
+                  <ul className="flex flex-col gap-1">
+                    {shownOutcomes.map(({ outcome, tasks }) => (
+                      <OutcomeRow
+                        key={outcome.id}
+                        outcome={outcome}
+                        path={pathOf(outcome.id, items, allAreas).join(PATH_SEPARATOR)}
+                        count={tasks.length}
+                        state={
+                          tasks.every((t) => selected.includes(t.id))
+                            ? 'all'
+                            : touched(tasks)
+                              ? 'some'
+                              : 'none'
+                        }
+                        onToggle={() => toggleOutcome(tasks)}
+                      />
+                    ))}
+                  </ul>
+                </fieldset>
+              )}
+              {others.length > 0 && (
+                <TaskGroup
+                  label="From the backlog"
+                  tasks={shownOthers}
+                  selected={selected}
+                  onToggle={toggle}
+                  empty="Nothing open matches."
+                  pathOf={pathFor}
+                />
+              )}
             </div>
           )}
 
@@ -210,9 +288,9 @@ export function PurposePanel({
             inputRef={newTaskInput}
             title={newTitle}
             onTitle={setNewTitle}
-            areas={areas}
-            area={areaForNew}
-            onArea={setNewArea}
+            places={places}
+            place={placeForNew}
+            onPlace={setNewPlace}
             intentions={intentions}
             intention={intentionForNew}
             onIntention={setNewIntention}
@@ -260,15 +338,15 @@ function TaskGroup({
   selected,
   onToggle,
   empty,
-  areaOf,
+  pathOf,
 }: {
   label: string
   tasks: readonly Item[]
   selected: readonly string[]
   onToggle: (id: string) => void
   empty: string
-  /** When given, each row names its area, for tasks gathered from all of them. */
-  areaOf?: (task: Item) => string | null
+  /** When given, each row says where it lives, for tasks gathered from everywhere. */
+  pathOf?: (task: Item) => string
 }) {
   return (
     <fieldset className="min-w-0">
@@ -289,13 +367,62 @@ function TaskGroup({
                   className="translate-y-0.5 accent-[var(--color-deep)]"
                 />
                 <span className="min-w-0 truncate">{task.title}</span>
-                {areaOf && <span className="shrink-0 text-xs text-muted">{areaOf(task)}</span>}
+                {pathOf && (
+                  <span className="min-w-0 shrink truncate text-xs text-muted">{pathOf(task)}</span>
+                )}
               </label>
             </li>
           ))}
         </ul>
       )}
     </fieldset>
+  )
+}
+
+/**
+ * An outcome, ticked whole.
+ *
+ * Three states, because an outcome is a set: none of its open tasks picked, all
+ * of them, or some. The browser's `indeterminate` is a property with no
+ * attribute, so it is set from an effect on the one value it depends on.
+ */
+function OutcomeRow({
+  outcome,
+  path,
+  count,
+  state,
+  onToggle,
+}: {
+  outcome: Item
+  path: string
+  count: number
+  state: 'none' | 'some' | 'all'
+  onToggle: () => void
+}) {
+  const box = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (box.current) box.current.indeterminate = state === 'some'
+  }, [state])
+
+  return (
+    <li>
+      <label className="flex cursor-pointer items-baseline gap-2 text-sm text-body hover:text-bright">
+        <input
+          ref={box}
+          type="checkbox"
+          checked={state === 'all'}
+          onChange={onToggle}
+          aria-label={`All of ${outcome.title}`}
+          {...(state === 'some' ? { 'aria-checked': 'mixed' as const } : {})}
+          className="translate-y-0.5 accent-[var(--color-deep)]"
+        />
+        <span className="min-w-0 truncate">{outcome.title}</span>
+        <span className="shrink-0 text-xs text-muted">
+          {count} task{count === 1 ? '' : 's'}
+        </span>
+        <span className="min-w-0 shrink truncate text-xs text-muted">{path}</span>
+      </label>
+    </li>
   )
 }
 
@@ -310,9 +437,9 @@ function NewTask({
   inputRef,
   title,
   onTitle,
-  areas,
-  area,
-  onArea,
+  places,
+  place,
+  onPlace,
   intentions,
   intention,
   onIntention,
@@ -321,9 +448,10 @@ function NewTask({
   inputRef: RefObject<HTMLInputElement | null>
   title: string
   onTitle: (title: string) => void
-  areas: readonly Area[]
-  area: string | null
-  onArea: (id: string) => void
+  /** Everywhere a task can be filed, as full paths. */
+  places: readonly Place[]
+  place: string | null
+  onPlace: (id: string) => void
   intentions: readonly Intention[]
   intention: string | null
   onIntention: (id: string | null) => void
@@ -349,7 +477,7 @@ function NewTask({
         <GhostButton
           type="button"
           onClick={onCreate}
-          disabled={title.trim() === '' || area === null}
+          disabled={title.trim() === '' || place === null}
           className="shrink-0"
         >
           Add task
@@ -358,12 +486,18 @@ function NewTask({
 
       {title.trim() !== '' && (
         <div className="mt-2 flex flex-col gap-1.5">
-          <Chips
-            label="In"
-            options={areas.map((a) => ({ id: a.id, name: a.name }))}
-            value={area}
-            onChange={(id) => id !== null && onArea(id)}
-          />
+          {/* A select rather than chips: with epics and outcomes there can be
+              dozens of places, each named by its whole path. */}
+          <div className="text-xs">
+            <InlineSelect
+              label="Where the new task goes"
+              prefix="In"
+              value={place ?? ''}
+              onChange={onPlace}
+              options={places.map((p) => ({ value: p.id, name: p.label }))}
+              wide
+            />
+          </div>
           {intentions.length > 0 && (
             <Chips
               label="For"

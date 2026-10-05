@@ -107,3 +107,80 @@ test('the end of a block asks what got done', async ({ page }) => {
     blockTasks(page).getByRole('checkbox', { name: 'Login form done' }),
   ).toBeChecked()
 })
+
+/**
+ * Work › Mono auth › Login pages holding two tasks, built on the tasks page,
+ * then back to a day with one intention and the purpose prompt open.
+ */
+async function withAuthEpic(page: Parameters<typeof stage>[0]) {
+  await openMono(page)
+  await goToStage(page, "Today's intentions")
+  await addIntention(page, 'Billing ticket')
+  await stage(page).getByRole('button', { name: 'Start the day' }).click()
+
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  const main = page.getByRole('main')
+  for (const [label, title] of [
+    ['New epic in Work', 'Mono auth'],
+    ['New outcome in Mono auth', 'Login pages'],
+    ['New task in Login pages', 'Login form'],
+    ['New task in Login pages', 'Session cookie'],
+  ] as const) {
+    await main.getByLabel(label, { exact: true }).fill(title)
+    await main.getByLabel(label, { exact: true }).press('Enter')
+  }
+  await page.getByRole('link', { name: 'Back to today' }).click()
+  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+}
+
+test('ticking a whole outcome picks its tasks, and names the purpose after it', async ({
+  page,
+}) => {
+  await withAuthEpic(page)
+
+  const whole = stage(page).getByRole('checkbox', { name: 'All of Login pages' })
+  await whole.check()
+  await expect(stage(page).getByRole('checkbox', { name: 'Login form' })).toBeChecked()
+  await expect(stage(page).getByRole('checkbox', { name: 'Session cookie' })).toBeChecked()
+  await expect(purposeField(page)).toHaveValue('Login pages')
+
+  // Partly picked is said as partly picked, and the purpose names the tasks.
+  await stage(page).getByRole('checkbox', { name: 'Session cookie' }).uncheck()
+  await expect(whole).toHaveAttribute('aria-checked', 'mixed')
+  await expect(purposeField(page)).toHaveValue('Login form')
+
+  await whole.check()
+  await startButton(page).click()
+  await expect(blockTasks(page)).toContainText('Login form')
+  await expect(blockTasks(page)).toContainText('Session cookie')
+})
+
+test('a task written on the prompt can be filed straight into an outcome', async ({ page }) => {
+  await withAuthEpic(page)
+
+  await stage(page).getByLabel('New task', { exact: true }).fill('Remember me')
+  await stage(page)
+    .getByLabel('Where the new task goes')
+    .selectOption({ label: 'Work › Mono auth › Login pages' })
+  await stage(page).getByRole('button', { name: 'Add task' }).click()
+  await startButton(page).click()
+
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await expect(
+    page.getByRole('main').getByRole('region', { name: 'Outcome: Login pages' }),
+  ).toContainText('Remember me')
+})
+
+test('an archived epic takes its tasks out of the prompt', async ({ page }) => {
+  await withAuthEpic(page)
+  await expect(stage(page).getByRole('checkbox', { name: 'Login form' })).toBeVisible()
+  await stage(page).getByRole('button', { name: 'Not yet' }).click()
+
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await page.getByRole('main').getByRole('button', { name: 'Archive Mono auth' }).click()
+  await page.getByRole('link', { name: 'Back to today' }).click()
+
+  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+  await expect(stage(page).getByRole('checkbox', { name: 'Login form' })).toHaveCount(0)
+  await expect(stage(page).getByRole('checkbox', { name: 'All of Login pages' })).toHaveCount(0)
+})

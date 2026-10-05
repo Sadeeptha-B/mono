@@ -606,7 +606,7 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="One thing"
-              asks="Which tasks is this block for, and what is it for? Tick at least one — from today's intentions, from elsewhere in your backlog, or written there and then. The purpose starts as their titles and is yours to rewrite: one sentence about this stretch, not a list. Naming it is the point — you are deciding what the next stretch is worth."
+              asks="Which tasks is this block for, and what is it for? Tick at least one — from today's intentions, from elsewhere in your backlog, or written there and then and filed wherever it belongs. Tick a whole outcome to take every open task in it. The purpose starts as their titles, or the outcome's name when you took all of it, and is yours to rewrite: one sentence about this stretch, not a list. Naming it is the point — you are deciding what the next stretch is worth."
               choices={[
                 [
                   'Start',
@@ -680,6 +680,22 @@ function sectionsFor(settings: Settings): Section[] {
             can live there for good.
           </P>
           <P>
+            When an area holds several separate obligations, give each an{' '}
+            <Em>epic</Em> — Mono's login work, a house move — and break an epic into{' '}
+            <Em>outcomes</Em>, the pieces that each need finishing: the login pages, the
+            password reset. Tasks can sit at any of those levels. Every task row says
+            where it lives and can be moved anywhere else by its path.
+          </P>
+          <P>
+            You decide when an epic or outcome is finished — nothing completes itself
+            because its tasks ran out. <Em>Done</Em> and <Em>Archive</Em> both put it
+            away with everything inside, out of the page and out of the purpose prompt;
+            the tasks inside are left exactly as they were, and <Em>Reopen</Em> or{' '}
+            <Em>Restore</Em> brings them all back. <Em>Delete</Em> is the one that
+            reaches inside: it deletes everything in the epic too, and asks first,
+            saying how much that is.
+          </P>
+          <P>
             The backlog lasts. Intentions belong to a day, and a block to its stretch of
             it, but a task written in March is still there in May until you tick it,
             drop it or delete it. <Em>Drop</Em> is deciding not to do something, and it
@@ -689,7 +705,8 @@ function sectionsFor(settings: Settings): Section[] {
           <P>
             Under <Em>Today</Em> the page shows your intentions with the tasks gathered
             under each. Put a task under one from its row, or take it out with{' '}
-            <Em>Not today</Em>. A task belongs to one intention a day at most, and to
+            <Em>Not today</Em>. An intention can also say what it is part of — an area,
+            an epic or an outcome — which is a note for you rather than a filter. A task belongs to one intention a day at most, and to
             none quite happily: a small thing from outside today's intentions is a fine
             way to use the end of a block.
           </P>

@@ -57,7 +57,10 @@ each time. What they cannot show is a real profile over days, or two real tabs.
    Import an export from before tasks existed: the backlog must be unchanged.
 4. In a profile with site data blocked, add a task. The header must say Mono is
    not saving, and keep saying so after an ordinary block completes.
-5. Open Mono at a time before working hours. The intentions question's timer
+5. With an epic holding an outcome and tasks open in two tabs, delete the epic
+   in one. The other must lose the whole subtree without a reload, and nothing
+   from it must reappear after either tab is reloaded.
+6. Open Mono at a time before working hours. The intentions question's timer
    must run and chime (with sound on, after any click on the page) even though
    no block can start yet.
 
