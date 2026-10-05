@@ -21,12 +21,15 @@ import {
   migratePersisted,
   readImport,
   SCHEMA_VERSION,
+  type ExportedBacklog,
   type ExportedShape,
   type PersistedShape,
 } from './schema'
 import type {
   Commitment,
   CommitmentPatch,
+  Intention,
+  IntentionPatch,
   Ms,
   PlannedBreak,
   PlannedBreakPatch,
@@ -147,10 +150,27 @@ type SessionStore = {
   /** The user answered the day's opening questions. Records only that. */
   shapeDay: () => void
 
+  /** Name something today is for. Returns its id. */
+  addIntention: (input: Omit<Intention, 'id'>) => string
+  updateIntention: (id: string, patch: IntentionPatch) => void
+  /** Its tasks go back to belonging to no intention; they stay in the backlog. */
+  removeIntention: (id: string) => void
+  /** Put a task under one of today's intentions, moving it if it had one, or `null` to take it out. */
+  linkTask: (taskId: string, intentionId: string | null) => void
+
   /** Roll the day over if the calendar day changed. Safe to call every tick. */
   checkDayRollover: (now: Ms) => void
-  exportJSON: () => string
-  importJSON: (json: string) => void
+  /**
+   * The log as an export, with the backlog beside it when one is given. The
+   * backlog is passed in rather than read from its store, so this store stays
+   * the one that knows about the day and nothing else. See `backup.ts`.
+   */
+  exportJSON: (tasks?: ExportedBacklog) => string
+  /**
+   * Replace the session from an export. Returns the backlog the file carried,
+   * or null when it carried none, for the caller to hand to the task store.
+   */
+  importJSON: (json: string) => ExportedBacklog | null
 }
 
 /**
@@ -225,6 +245,20 @@ export const useSession = create<SessionStore>()(
 
       shapeDay: () => get().append({ type: 'day/shaped', at: Date.now() }),
 
+      addIntention: (input) => {
+        const id = newId()
+        get().append({ type: 'intention/added', at: Date.now(), intention: { ...input, id } })
+        return id
+      },
+
+      updateIntention: (id, patch) =>
+        get().append({ type: 'intention/updated', at: Date.now(), id, patch }),
+
+      removeIntention: (id) => get().append({ type: 'intention/removed', at: Date.now(), id }),
+
+      linkTask: (taskId, intentionId) =>
+        get().append({ type: 'intention/taskLinked', at: Date.now(), taskId, intentionId }),
+
       checkDayRollover: (now) => {
         const today = dayKey(now)
         const { dayKey: storedDay, session } = get()
@@ -245,19 +279,20 @@ export const useSession = create<SessionStore>()(
         set({ dayKey: today, phase: initialPhase, generation: get().generation + 1 })
       },
 
-      exportJSON: () =>
+      exportJSON: (tasks) =>
         JSON.stringify(
           {
             version: SCHEMA_VERSION,
             dayKey: get().dayKey,
             events: get().events,
+            ...(tasks === undefined ? {} : { tasks }),
           } satisfies ExportedShape,
           null,
           2,
         ),
 
       importJSON: (json) => {
-        const { events, session, dayKey: day } = readImport(json, Date.now())
+        const { events, session, dayKey: day, tasks } = readImport(json, Date.now())
         // Same rule as a reload: only a *running* segment resurrects a phase.
         // After an out-of-date import there is none — the day reset inside
         // `readImport` only runs when nothing is active — so this lands idle.
@@ -271,6 +306,7 @@ export const useSession = create<SessionStore>()(
           phase: phaseForActive(session),
           generation: get().generation + 1,
         })
+        return tasks
       },
     }),
     {

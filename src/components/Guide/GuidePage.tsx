@@ -400,6 +400,7 @@ function sectionsFor(settings: Settings): Section[] {
     deepMinutes: deep,
     shortMinutes: short,
     reflectMinutes: reflect,
+    intentionMinutes: intending,
     plannerPolicy: policy,
   } = settings
   return [
@@ -816,6 +817,10 @@ function sectionsFor(settings: Settings): Section[] {
           </Setting>
           <Setting name="Priorities timer">
             How long "I can't pick one" gives you. Currently {reflect} minutes.
+          </Setting>
+          <Setting name="Intentions timer">
+            How long the day's intentions question runs before it stops and offers to go
+            again. Currently {intending} minutes.
           </Setting>
           <Setting name="Working hours">
             The recurring shape every day starts from. Editing a single day from the

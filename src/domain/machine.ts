@@ -88,7 +88,8 @@ export const isBlockRunning = (phase: Phase, active: ActiveSegment | null): bool
 
 export type Action =
   | { type: 'startBlock'; at: Ms; blockKind: BlockKind }
-  | { type: 'setPurpose'; at: Ms; purpose: string }
+  /** Name the block and say which backlog tasks it is for. */
+  | { type: 'setPurpose'; at: Ms; purpose: string; taskIds: string[] }
   | { type: 'cannotDecide'; at: Ms }
   | { type: 'timerElapsed'; at: Ms }
   | { type: 'abandonBlock'; at: Ms }
@@ -139,6 +140,7 @@ export function transition(
 
     case 'definingPurpose': {
       if (action.type === 'setPurpose') {
+        const taskIds = [...new Set(action.taskIds)]
         // The block starts now, not when the prompt opened, so the timer is
         // honest about the time the user spent deciding.
         return {
@@ -151,6 +153,7 @@ export function transition(
               blockKind: phase.blockKind,
               endsAt: action.at + blockDuration(session, phase.blockKind),
               purpose: action.purpose.trim(),
+              taskIds,
             },
           ],
         }

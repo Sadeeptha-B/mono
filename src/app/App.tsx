@@ -375,7 +375,7 @@ export function App() {
 
   const setPurpose = (purpose: string) => {
     popOutForBlock()
-    store.dispatch({ type: 'setPurpose', at: Date.now(), purpose })
+    store.dispatch({ type: 'setPurpose', at: Date.now(), purpose, taskIds: [] })
   }
 
   const cannotDecide = () => {

@@ -16,11 +16,15 @@
  */
 
 import { reduce, replay, type MonoEvent, type SessionState } from '@/domain/events'
+import { ITEM_KINDS, ITEM_STATUSES, type Area, type Item } from '@/domain/tasks'
 import { dayKey } from '@/domain/time'
 import {
   isRoomId,
   type Commitment,
   type CommitmentPatch,
+  type Intention,
+  type IntentionLink,
+  type IntentionPatch,
   type Ms,
   type PlannedBreak,
   type PlannedBreakPatch,
@@ -30,13 +34,32 @@ import {
 
 /** What `localStorage` holds, and what an export wraps with its version. */
 export type PersistedShape = { events: MonoEvent[]; dayKey: string | null }
-export type ExportedShape = PersistedShape & { version: number }
+
+/** The backlog, as an export carries it. Tombstones included. */
+export type ExportedBacklog = { areas: Area[]; items: Item[] }
 
 /**
- * The schema the event log is written in. Bumped only when old logs need
- * rewriting, and every bump needs a branch in `migratePersisted`.
+ * An export: the log, and since v4 the backlog beside it.
+ *
+ * The backlog is optional because a v3 file has none, and importing one must
+ * leave the backlog alone rather than empty it — a file from before tasks
+ * existed says nothing about them, which is not the same as saying there are
+ * none.
  */
-export const SCHEMA_VERSION = 3
+export type ExportedShape = PersistedShape & { version: number; tasks?: ExportedBacklog }
+
+/**
+ * The schema the event log and its exports are written in. Every bump needs a
+ * branch in `migratePersisted`, or the fall-through at the bottom of it
+ * discards the logs of everyone upgrading.
+ *
+ * v4 changed no existing event. It added the intention events and an optional
+ * `taskIds` on `block/started`, and an export gained the backlog. The bump is
+ * for the build that cannot read those: a v3 build would import a v4 file,
+ * silently drop every task in it, and look as though it had worked. A version
+ * it refuses is the honest answer.
+ */
+export const SCHEMA_VERSION = 4
 
 /**
  * Read an export. Throws only when the file is not a Mono export, or comes
@@ -45,7 +68,13 @@ export const SCHEMA_VERSION = 3
 export function readImport(
   json: string,
   now: Ms,
-): { events: MonoEvent[]; session: SessionState; dayKey: string } {
+): {
+  events: MonoEvent[]
+  session: SessionState
+  dayKey: string
+  /** Null when the file carries no backlog, which means "leave it as it is". */
+  tasks: ExportedBacklog | null
+} {
   const parsed: unknown = JSON.parse(json)
   if (!isRecord(parsed) || !Array.isArray(parsed.events)) {
     throw new Error('Not a Mono export: expected an "events" array.')
@@ -63,10 +92,15 @@ export function readImport(
   const stampedDayKey = typeof parsed.dayKey === 'string' ? parsed.dayKey : null
 
   const raw = parsed.events.filter(isEventShaped)
-  const migrated = version < SCHEMA_VERSION ? raw.map(migrateDayEndsAt) : raw
+  // Only a v1 file has `dayEndsAt` to rewrite. Every later version is read as
+  // it is, because no later bump changed an existing event.
+  const migrated = version < 2 ? raw.map(migrateDayEndsAt) : raw
   const events = migrated.map(sanitiseImportedEvent).filter(isPresent)
 
-  return normaliseImportedEvents(events, stampedDayKey, now)
+  return {
+    ...normaliseImportedEvents(events, stampedDayKey, now),
+    tasks: 'tasks' in parsed ? sanitiseBacklog(parsed.tasks) : null,
+  }
 }
 
 /**
@@ -78,7 +112,10 @@ export function readImport(
  * through into this one.
  */
 export function migratePersisted(persisted: unknown, from: number): PersistedShape {
-  if (from === SCHEMA_VERSION && isPersisted(persisted)) {
+  // v3 -> v4 only added things, so a v3 log is read exactly as a current one.
+  // This branch is the whole migration, and without it the fall-through below
+  // would throw every existing log away on upgrade.
+  if ((from === SCHEMA_VERSION || from === 3) && isPersisted(persisted)) {
     return {
       events: persisted.events
         .filter(isEventShaped)
@@ -216,9 +253,25 @@ function sanitiseImportedEvent(event: MonoEvent): MonoEvent | null {
       const blockKind = sanitiseBlockKind(raw.blockKind)
       const endsAt = sanitiseNumber(raw.endsAt)
       const purpose = sanitiseNullableString(raw.purpose)
-      return id === null || blockKind === null || endsAt === null || purpose === undefined
-        ? null
-        : { type: event.type, at: event.at, id, blockKind, endsAt, purpose }
+      if (id === null || blockKind === null || endsAt === null || purpose === undefined) {
+        return null
+      }
+      // Lenient where the rest of this file is strict, and on purpose: dropping
+      // a `block/started` because one task id was unreadable would lose the
+      // block itself and strand the `block/completed` after it. A block whose
+      // tasks cannot be read is still a block that happened.
+      const taskIds = Array.isArray(raw.taskIds)
+        ? raw.taskIds.filter((t): t is string => typeof t === 'string')
+        : undefined
+      return {
+        type: event.type,
+        at: event.at,
+        id,
+        blockKind,
+        endsAt,
+        purpose,
+        ...(taskIds === undefined ? {} : { taskIds }),
+      }
     }
 
     case 'block/purposeSet': {
@@ -243,6 +296,30 @@ function sanitiseImportedEvent(event: MonoEvent): MonoEvent | null {
       const from = sanitiseNumber(raw.from)
       const to = sanitiseNumber(raw.to)
       return from === null || to === null ? null : { type: event.type, at: event.at, from, to }
+    }
+
+    case 'intention/added': {
+      const intention = sanitiseIntention(raw.intention)
+      return intention === null ? null : { type: event.type, at: event.at, intention }
+    }
+
+    case 'intention/updated': {
+      const id = sanitiseString(raw.id)
+      const patch = sanitiseIntentionPatch(raw.patch)
+      return id === null || patch === null ? null : { type: event.type, at: event.at, id, patch }
+    }
+
+    case 'intention/removed': {
+      const id = sanitiseString(raw.id)
+      return id === null ? null : { type: event.type, at: event.at, id }
+    }
+
+    case 'intention/taskLinked': {
+      const taskId = sanitiseString(raw.taskId)
+      const intentionId = sanitiseNullableString(raw.intentionId)
+      return taskId === null || intentionId === undefined
+        ? null
+        : { type: event.type, at: event.at, taskId, intentionId }
     }
   }
 
@@ -309,6 +386,10 @@ function sanitiseSettingsPatch(value: unknown): Partial<Settings> | null {
   if ('reflectMinutes' in value) {
     const reflectMinutes = sanitisePositiveMinutes(value.reflectMinutes)
     if (reflectMinutes !== null) patch.reflectMinutes = reflectMinutes
+  }
+  if ('intentionMinutes' in value) {
+    const intentionMinutes = sanitisePositiveMinutes(value.intentionMinutes)
+    if (intentionMinutes !== null) patch.intentionMinutes = intentionMinutes
   }
   if ('defaultRegions' in value) {
     const defaultRegions = sanitiseDefaultRegions(value.defaultRegions)
@@ -471,6 +552,144 @@ function sanitiseDefaultRegions(value: unknown): Settings['defaultRegions'] | nu
   }
   return regions
 }
+
+/**
+ * A link, when one is there.
+ *
+ * `undefined` for absent, `null` for present and unreadable — the same three
+ * answers `sanitiseMarginMinutes` gives, for the same reason.
+ */
+function sanitiseIntentionLink(value: unknown): IntentionLink | null | undefined {
+  if (value === undefined) return undefined
+  if (!isRecord(value)) return null
+  const id = sanitiseString(value.id)
+  const kind = value.kind
+  if (id === null || (kind !== 'area' && kind !== 'epic' && kind !== 'outcome')) return null
+  return { kind, id }
+}
+
+function sanitiseIntention(value: unknown): Intention | null {
+  if (!isRecord(value)) return null
+  const id = sanitiseString(value.id)
+  const title = sanitiseString(value.title)
+  const link = sanitiseIntentionLink(value.link)
+  if (id === null || title === null || link === null) return null
+  return { id, title, ...(link === undefined ? {} : { link }) }
+}
+
+function sanitiseIntentionPatch(value: unknown): IntentionPatch | null {
+  if (!isRecord(value)) return null
+
+  const patch: IntentionPatch = {}
+  if ('title' in value) {
+    const title = sanitiseString(value.title)
+    if (title === null) return null
+    patch.title = title
+  }
+  if ('link' in value) {
+    // `null` is a real instruction here — remove the link — so it is kept.
+    if (value.link === null) {
+      patch.link = null
+    } else {
+      const link = sanitiseIntentionLink(value.link)
+      if (link === null || link === undefined) return null
+      patch.link = link
+    }
+  }
+
+  return Object.keys(patch).length === 0 ? null : patch
+}
+
+/**
+ * The backlog from an export, keeping every record that can be read.
+ *
+ * A file whose `tasks` is not even shaped like a backlog is treated as having
+ * none, so the import leaves the current backlog alone rather than replacing it
+ * with nothing.
+ */
+function sanitiseBacklog(value: unknown): ExportedBacklog | null {
+  if (!isRecord(value) || !Array.isArray(value.areas) || !Array.isArray(value.items)) {
+    return null
+  }
+  return {
+    areas: value.areas.map(sanitiseArea).filter(isPresent),
+    items: value.items.map(sanitiseItem).filter(isPresent),
+  }
+}
+
+function sanitiseArea(value: unknown): Area | null {
+  if (!isRecord(value)) return null
+  const id = sanitiseString(value.id)
+  const name = sanitiseString(value.name)
+  const order = sanitiseNumber(value.order)
+  const createdAt = sanitiseNumber(value.createdAt)
+  const updatedAt = sanitiseNumber(value.updatedAt)
+  const archivedAt = sanitiseOptionalNumber(value.archivedAt)
+  const deletedAt = sanitiseOptionalNumber(value.deletedAt)
+  if (
+    id === null ||
+    name === null ||
+    order === null ||
+    createdAt === null ||
+    updatedAt === null ||
+    archivedAt === null ||
+    deletedAt === null
+  ) {
+    return null
+  }
+  return {
+    id,
+    name,
+    order,
+    createdAt,
+    updatedAt,
+    ...(archivedAt === undefined ? {} : { archivedAt }),
+    ...(deletedAt === undefined ? {} : { deletedAt }),
+  }
+}
+
+function sanitiseItem(value: unknown): Item | null {
+  if (!isRecord(value)) return null
+  const id = sanitiseString(value.id)
+  const title = sanitiseString(value.title)
+  const parentId = sanitiseString(value.parentId)
+  const order = sanitiseNumber(value.order)
+  const createdAt = sanitiseNumber(value.createdAt)
+  const updatedAt = sanitiseNumber(value.updatedAt)
+  const doneAt = sanitiseOptionalNumber(value.doneAt)
+  const deletedAt = sanitiseOptionalNumber(value.deletedAt)
+  const kind = ITEM_KINDS.find((k) => k === value.kind) ?? null
+  const status = ITEM_STATUSES.find((s) => s === value.status) ?? null
+  if (
+    id === null ||
+    title === null ||
+    parentId === null ||
+    order === null ||
+    createdAt === null ||
+    updatedAt === null ||
+    doneAt === null ||
+    deletedAt === null ||
+    kind === null ||
+    status === null
+  ) {
+    return null
+  }
+  return {
+    id,
+    kind,
+    title,
+    parentId,
+    status,
+    order,
+    createdAt,
+    updatedAt,
+    ...(doneAt === undefined ? {} : { doneAt }),
+    ...(deletedAt === undefined ? {} : { deletedAt }),
+  }
+}
+
+const sanitiseOptionalNumber = (value: unknown): number | null | undefined =>
+  value === undefined ? undefined : sanitiseNumber(value)
 
 /** Rewrite a v1 `dayEndsAt` settings patch into a v2 `defaultRegions` one. */
 function migrateDayEndsAt(event: MonoEvent): MonoEvent {

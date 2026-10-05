@@ -26,7 +26,7 @@ describe('ambient settings', () => {
   })
 
   it('only wants ambience during a running focus or priorities block', () => {
-    const active = { kind: 'block', id: 'b', blockKind: 'deep', purpose: null, startedAt: 0, endsAt: 1 } as const
+    const active = { kind: 'block', id: 'b', blockKind: 'deep', purpose: null, startedAt: 0, endsAt: 1, taskIds: [] as string[] } as const
     expect(wantsAmbience({ name: 'focusing' }, active)).toBe(true)
     expect(wantsAmbience({ name: 'reflecting' }, active)).toBe(true)
     expect(wantsAmbience({ name: 'blockComplete' }, active)).toBe(false)
