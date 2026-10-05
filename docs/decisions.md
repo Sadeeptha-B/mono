@@ -302,9 +302,20 @@ it.
 - **No history or journal view.** The log captures everything one would need
   (completed and abandoned blocks, purposes, away spans) and `vitals` reads a slice
   of it back, but nothing presents the archive.
-- **No cross-device sync.** JSON export/import is the escape hatch.
+- **No cross-device sync.** JSON export/import is the escape hatch. The
+  backlog is shaped so sync could be added later — client ids, `updatedAt` on
+  every record, tombstones — but nothing talks to a server, and adding one
+  reverses this entry and the one about accounts below.
 - **No weekday-aware default shape.**
-- **No editing a block's purpose after it starts.**
+- **No editing a block's purpose after it starts.** Its tasks can be ticked,
+  not added to.
+- **No due dates, priorities, estimates, tags or area colours on tasks.** Each
+  is a field to keep current and a reason to open the tasks page instead of
+  starting a block. Area colours would also be hand-picked hues outside the
+  palette, which the rooms decision rules out.
+- **No capturing a task from inside a running block, yet.** Deferred, not
+  refused: it is the most focus-shaped thing the task model could do, and it
+  waits for the model to settle first.
 - **No component tests.** Testing is either pure-domain or full e2e. Nothing
   mounts a component in vitest.
 - **No light theme, and no custom room colours.** See the rooms decision above.
@@ -2831,3 +2842,100 @@ was noise rather than a useful cue. The preferred floor is now 160px. It remains
 a preference threshold rather than the smallest height at which Mono works;
 the inner content can scroll below it while the footer stays available at
 practical PiP sizes.
+
+**2026-10-05 — A task model: areas, tasks, intentions, and blocks that carry tasks.**
+
+Mono learned what the user is working on, in four layers with different
+lifetimes. The *backlog* — areas of life, then epics, outcomes and tasks — lasts
+indefinitely. An *intention* lasts a day. A block's *tasks* and *purpose* last
+the block. Each layer lives where its lifetime says it should, and that is most
+of the design.
+
+*The backlog is not in the event log.* The log is a day's journal, replayed on
+every boot and reset at midnight; a backlog is long-lived state edited in place,
+and folding a year of renames out of a journal on every load would be paying for
+history nobody reads. Tasks live in IndexedDB (`src/store/taskDb.ts`) as
+current-state records, and the log refers to them by id only. IndexedDB rather
+than `localStorage` because the backlog grows without bound and is written one
+record at a time; `localStorage` is capped, synchronous, and rewritten whole.
+The session log stays in `localStorage`: its synchronous rehydration is what the
+extension publisher relies on (the trap above), and moving it would have turned
+a feature into a persistence rewrite.
+
+*Shaped for sync, without sync.* Client-generated ids, `updatedAt` on every
+record, tombstones rather than deletions, references by id. A record that simply
+vanished could not tell another copy it was deleted rather than never seen, and
+history would point at nothing. Two tabs already exist, so the store broadcasts
+every landed write and keeps the newer copy of each record by `updatedAt`.
+
+*The hierarchy's middle is optional.* A task may sit directly under an area, and
+those tasks are the area's inbox — a view, not a container, with no triage flag.
+Epics go under areas, outcomes under epics, tasks anywhere but under a task
+(`canParent`). "Key item" was renamed *Outcome*; that name was already taken by
+the derived `outcome: 'completed' | 'abandoned'` on block history, which became
+`result`. It was never persisted, so the rename needed no migration.
+
+*Storage health became per source.* The session writes its whole log every
+time, so any success catches up on every failure; the backlog writes per record,
+so a later success says nothing about an earlier failure. Failed records stay
+pending and go out with every later write, and only a write that carried all of
+them reports `tasks` healthy. A single flag let a session save clear a warning
+about a task still only in memory.
+
+*Intentions are the day's, so they are in the log.* Four events
+(`intention/added|updated|removed|taskLinked`), cleared by `day/reset`. Which
+intention a task belongs to is a map keyed by task id on the session, because
+the rule — one intention per task per day — is about the task, and a map cannot
+hold two answers. Linking to an intention that does not exist is refused. A
+task may belong to none: something small from outside today's intentions is a
+good use of the end of a block, and refusing it would make intentions a fence.
+
+*A block's intentions are derived, never stored.* `block/started` records
+`taskIds`; `blockIntentions` works out the rest from today's links. Purpose stays
+its own primitive — the block's one sentence, shown on the blocked-site page —
+and starts as the tasks' titles joined, until edited. The prompt still asks for
+it, because an assembled list is the least interesting name the block could have.
+
+*Schema v4, and the branch that keeps everyone's log.* v4 changed no existing
+event, but an export gained the backlog, and a v3 build importing a v4 file
+would silently drop every task and appear to succeed. The bump makes it refuse
+instead. `migratePersisted` needed an explicit `from === 3` branch: its
+fall-through discards anything it does not recognise, so without one every
+existing log would have been wiped on upgrade. The v1 `dayEndsAt` rewrite in
+`readImport` used to run for every version below current and is now limited to
+v1, where it belongs. A v3 file imports with the backlog untouched — a file from
+before tasks existed says nothing about them.
+
+*Intentions are the third opening question, and the only one that gates.* A
+day with nothing fixed is ordinary, which is why commitments accept "nothing";
+a day with nothing meant is not, and there is always something to write. Only
+the first ask gates `Start the day`; revisiting is changing your mind.
+
+*The intentions timer is not a priorities block.* The obvious build was "I
+don't know yet" opening a reflect block. A block is recorded, costs plan time,
+arms site blocking, and can only run inside working hours — while this question
+is most often asked before they start. So it is a timer on the question: two
+instants in `App` beside `setupStage`, never in the log, started by itself on
+the first sight of the question on an unshaped day, stopping at zero with an
+offer of another round, and cleared when the day starts so a revisit never shows
+the tail of the morning's countdown. The chime is an effect keyed on a boolean
+that flips once, not on `now`.
+
+*Every focus block carries a task, enforced in the machine.* The prompt will
+not offer Start without one; `setPurpose` refuses an empty `taskIds` or a blank
+purpose for a stale click or a direct dispatch. The priorities block is exempt —
+not knowing is its whole subject. Ticking a task is the backlog's write and only
+the backlog's: a task can be finished in a block cut short, and a block can run
+its full length without finishing anything.
+
+*The pop-out hands task-picking back to the tab, and shows no list while a block
+runs.* Picking is a browse of the backlog, which a 470×210 window cannot hold.
+It keeps "Not yet" and "I can't pick one", which need no list. A read-only task
+list under the running timer was built and removed: one row overflowed the tuned
+opening size (the mini-window size spec caught it), and the purpose line already
+says what the block is for. The tasks appear at block end, where ticking is the
+point.
+
+*`#/tasks` is the third route*, deferred like the guide and sharing its header,
+including the timer strip, now `HeaderStatus`. Epics and outcomes are in the
+model and storage but not on the page yet.

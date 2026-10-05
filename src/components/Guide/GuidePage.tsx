@@ -28,7 +28,7 @@ import { useMemo, type ReactNode } from 'react'
 
 import { PixelCat } from '../Companion/PixelCat'
 import { StorageWarning } from '../StorageWarning'
-import { timerFace } from '../timerFace'
+import { HeaderStatus } from '../HeaderStatus'
 import { EditGlyph, headerControlClass } from '../ui'
 import { PopOutButton } from '@/pip/PopOutButton'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
@@ -36,7 +36,6 @@ import type { TimerMode } from '@/domain/time'
 import { DAY_HASH } from '@/hooks/useRoute'
 import { useSession } from '@/store/session'
 import { RoomMenu } from '@/ambient/RoomMenu'
-import type { Phase } from '@/domain/machine'
 import type { ActiveSegment, Ms, Settings } from '@/domain/types'
 import { ambienceLabel, ROOMS } from '@/ambient/rooms'
 
@@ -132,10 +131,11 @@ export function GuidePage({
           <div className="max-w-2xl">
             <Note>
               <Em>The two-minute version.</Em> Declare your working hours. Name what is
-              already fixed today. Mono fills the gaps with {deep}-minute deep blocks and{' '}
-              {short}-minute short ones. Press start, name the one thing the block is for,
-              work until the timer ends, then decide between a break and the next block.
-              Everything after this is detail.
+              already fixed today, and what today is for. Mono fills the gaps with{' '}
+              {deep}-minute deep blocks and {short}-minute short ones. Press start, pick the
+              tasks the block is for and name the one thing it is for, work until the timer
+              ends, then decide between a break and the next block. Everything after this
+              is detail.
             </Note>
           </div>
 
@@ -191,93 +191,6 @@ export function GuidePage({
     </div>
   )
 }
-
-/**
- * What the timer would be saying, in the header.
- *
- * A running block is the usual case, but Mono also *asks* things, and a
- * question the user cannot see is a question they will not answer — the guide
- * would quietly cost them the decision it was explaining. So a phase that is
- * waiting on an answer says so here, and outranks the timer: when a block
- * has just ended, "Block done" is the truth and a timer counting past zero is
- * merely a number.
- */
-const WAITING: Partial<Record<Phase['name'], string>> = {
-  definingPurpose: 'Name the block',
-  blockComplete: 'Block done',
-  choosingBreak: 'How long a break?',
-  reconciling: 'You were away',
-}
-
-function HeaderStatus({
-  active,
-  now,
-  phase,
-  timerMode,
-}: {
-  active: ActiveSegment | null
-  now: Ms
-  phase: Phase
-  timerMode: TimerMode
-}) {
-  const waiting = WAITING[phase.name]
-
-  if (waiting !== undefined) {
-    return (
-      <Strip tone="text-bright" title="Back to the timer">
-        <span className="tracking-widest uppercase">{waiting}</span>
-        <span className="text-muted">answer on the timer</span>
-      </Strip>
-    )
-  }
-
-  if (!active) return null
-
-  const face = timerFace(active, now, timerMode)
-  const kind = active.kind === 'break' ? 'break' : active.blockKind
-
-  return (
-    <Strip tone={TONE[kind]} title="Back to the timer">
-      <span className="tracking-widest uppercase">{RUNNING_LABEL[kind]}</span>
-      <span className="tnum text-bright">
-        {face.overrun && timerMode === 'remaining' && '+'}{face.reading}
-      </span>
-      <span className="text-muted">{face.modeLabel.toLowerCase()}</span>
-    </Strip>
-  )
-}
-
-const TONE = {
-  deep: 'text-deep',
-  short: 'text-short',
-  reflect: 'text-reflect',
-  break: 'text-rest',
-} as const
-
-const RUNNING_LABEL = {
-  deep: 'Focusing',
-  short: 'Focusing',
-  reflect: 'Priorities',
-  break: 'Break',
-} as const
-
-const Strip = ({
-  tone,
-  title,
-  children,
-}: {
-  tone: string
-  title: string
-  children: ReactNode
-}) => (
-  <a
-    href={DAY_HASH}
-    title={title}
-    className={`flex items-center gap-2 rounded-lg border border-muted/70 px-3 py-1.5 text-xs transition hover:bg-surface-raised ${tone}`}
-  >
-    {children}
-  </a>
-)
 
 /** The state machine, as the six things Mono can be asking. */
 function Flow() {
@@ -459,8 +372,9 @@ function sectionsFor(settings: Settings): Section[] {
           </P>
           <P>
             It is not a second copy of Mono. It shows what is running and when it ends,
-            and it asks whatever Mono is currently asking — name the block, keep going or
-            take a break, how long, did you finish the one you slept through. When nothing
+            and it asks whatever Mono is currently asking — keep going or take a break,
+            which of the block's tasks got done, how long, did you finish the one you
+            slept through. When nothing
             is running it offers the next block, so the window is worth leaving open
             between blocks rather than only during them. Answer in either place; there is
             one session and both windows are looking at it.
@@ -474,7 +388,10 @@ function sectionsFor(settings: Settings): Section[] {
             are questions about the whole day, and the whole day does not fit in a window
             that size — so it says so and points you back to the tab, where the calendar
             is drawn beside the answer. That is the same rule as everywhere else here,
-            not an exception to it.
+            not an exception to it. Picking a block's tasks goes back to the tab for the
+            same kind of reason: it is a list of your backlog to browse. The window keeps
+            the two answers that need no list — <Em>Not yet</Em>, and{' '}
+            <Em>I can't pick one</Em>.
           </P>
           <P>
             You do not have to remember it. By default the window opens itself the moment
@@ -503,22 +420,38 @@ function sectionsFor(settings: Settings): Section[] {
       body: (
         <>
           <P>
-            Every day opens with two questions on the timer.{' '}
+            Every day opens with three questions on the timer.{' '}
             <Em>What's already fixed today?</Em> comes first, because what you cannot
             move decides how much of the day is left to spend. Then{' '}
             <Em>are these your hours today?</Em>, pre-filled with your usual shape — a
-            glance on an ordinary morning.
+            glance on an ordinary morning. Last, <Em>what do you intend today?</Em>, which
+            is only honest once the other two have said how much of the day there is.
           </P>
           <P>
-            Neither one gates the other. The dots move between them in either order,
+            None of them gates another. The dots move between them in any order,
             nothing you have typed is lost by switching, and <Em>Start the day</Em>{' '}
-            finishes from whichever you are looking at. With nothing fixed today, that
-            is the whole of it: press it and Mono plans your hours end to end. The
-            questions stay answerable afterwards — between blocks the dots go back to
-            either one, because a meeting that appears at four is no different from one
-            you knew about at nine, and <Em>Back to the day</Em> returns. They never
-            skip ahead, though: naming a block is not something you can click past, and
-            while one is running the questions are the calendar's to answer.
+            finishes from whichever you are looking at. With nothing fixed today and the
+            usual hours, one intention is the whole of it. The questions stay answerable
+            afterwards — between blocks the dots go back to any of them, because a
+            meeting that appears at four is no different from one you knew about at
+            nine, and <Em>Back to the day</Em> returns. They never skip ahead, though:
+            naming a block is not something you can click past, and while one is running
+            the questions are the calendar's to answer.
+          </P>
+          <P>
+            <Em>Intentions</Em> are a few broad strokes — handle the billing ticket, Mono's
+            login pages — and the day needs at least one before it starts, the first time
+            it is asked. Nothing fixed is an ordinary day; nothing meant is not, and there
+            is always something to write. Each can say which area of life it belongs to.
+            They last the day: at midnight they go with the rest of its answers, and the
+            tasks gathered under them stay in your backlog.
+          </P>
+          <P>
+            The question gives itself {intending} minutes, counting from the first time you
+            see it, and keeps counting while you look at the other two. At zero it chimes
+            if sound is on and simply stops, offering another round — it never starts the
+            day for you, and nothing about it is recorded. Coming back to your intentions
+            later in the day starts no timer unless you ask for one.
           </P>
           <P>
             <Em>Working hours</Em> are the only time Mono is allowed to plan in.
@@ -673,11 +606,11 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="One thing"
-              asks="What is this block for? One purpose, not a list. Naming it is the point — you are deciding what the next stretch is worth."
+              asks="Which tasks is this block for, and what is it for? Tick at least one — from today's intentions, from elsewhere in your backlog, or written there and then. The purpose starts as their titles and is yours to rewrite: one sentence about this stretch, not a list. Naming it is the point — you are deciding what the next stretch is worth."
               choices={[
                 [
                   'Start',
-                  'The block begins now and runs its full length. The clock starts here, not when the prompt opened, so time spent deciding is not charged to the block.',
+                  'The block begins now and runs its full length. The clock starts here, not when the prompt opened, so time spent deciding is not charged to the block. It needs a task and a purpose.',
                 ],
                 ['Not yet', 'Backs out. Nothing is recorded.'],
                 [
@@ -688,17 +621,17 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="Focusing"
-              asks="The timer shows time remaining by default. Click it to see time focused so far, and click again to switch back. Your choice carries into later blocks and breaks. Your purpose sits under it."
+              asks="The timer shows time remaining by default. Click it to see time focused so far, and click again to switch back. Your choice carries into later blocks and breaks. Your purpose sits under it, and the block's tasks under that — tick one off the moment it is done."
               choices={[
                 [
                   'End early',
-                  'Ends the block now and records it as cut short. Honest, and permanent — there is no pause.',
+                  'Ends the block now and records it as cut short. Honest, and permanent — there is no pause. Anything you ticked stays done: a task can be finished in a block that was cut short.',
                 ],
               ]}
             />
             <Step
               name="Block done"
-              asks="The timer reached zero. Mono chimes if sound is on, and asks the only question that matters here."
+              asks="The timer reached zero. Mono chimes if sound is on, shows the block's tasks for a last tick, and asks the only question that matters here."
               choices={[
                 [
                   'Keep going',
@@ -731,6 +664,45 @@ function sectionsFor(settings: Settings): Section[] {
             double-counting, or resurrecting themselves. Ending early and starting again
             is the honest version of the same thing.
           </Note>
+        </>
+      ),
+    },
+    {
+      id: 'tasks',
+      title: 'Tasks and intentions',
+      body: (
+        <>
+          <P>
+            <Em>Tasks</Em> in the header opens your backlog: everything you mean to do,
+            grouped by area of life — Work and Personal to begin with, and whatever else
+            you add. A task sitting straight under an area is that area's inbox. There is
+            nothing to triage and no filing required; a one-off like calling someone back
+            can live there for good.
+          </P>
+          <P>
+            The backlog lasts. Intentions belong to a day, and a block to its stretch of
+            it, but a task written in March is still there in May until you tick it,
+            drop it or delete it. <Em>Drop</Em> is deciding not to do something, and it
+            stays in the folded list as a decision; <Em>Delete</Em> is taking back a
+            mistake. Both done and dropped tasks can be reopened.
+          </P>
+          <P>
+            Under <Em>Today</Em> the page shows your intentions with the tasks gathered
+            under each. Put a task under one from its row, or take it out with{' '}
+            <Em>Not today</Em>. A task belongs to one intention a day at most, and to
+            none quite happily: a small thing from outside today's intentions is a fine
+            way to use the end of a block.
+          </P>
+          <P>
+            Ticking a task done is the backlog's business, and finishing a block is the
+            block's. Neither says anything about the other — a block can run its full
+            length without finishing anything, and a task can be finished in a block you
+            cut short.
+          </P>
+          <P>
+            The backlog is kept in this browser like everything else, in its own store
+            beside the day's journal, and <Em>Export</Em> in settings carries both.
+          </P>
         </>
       ),
     },
