@@ -216,7 +216,9 @@ export function App() {
   const [intentionTimer, setIntentionTimer] = useState<IntentionTimer | null>(null)
   // Where an intention can point. Read from the backlog store, which the day
   // otherwise never needs; it re-renders this component only when tasks change.
-  const places = placesForTasks(useTasks((s) => s.items), useTasks((s) => s.areas))
+  const taskItems = useTasks((s) => s.items)
+  const taskAreas = useTasks((s) => s.areas)
+  const places = useMemo(() => placesForTasks(taskItems, taskAreas), [taskItems, taskAreas])
 
   const { phase, session } = store
   const today = dayKey(now)

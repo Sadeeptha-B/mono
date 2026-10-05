@@ -23,6 +23,7 @@ import {
   SCHEMA_VERSION,
   type ExportedBacklog,
   type ExportedShape,
+  type ImportedFile,
   type PersistedShape,
 } from './schema'
 import type {
@@ -171,6 +172,12 @@ type SessionStore = {
    * or null when it carried none, for the caller to hand to the task store.
    */
   importJSON: (json: string) => ExportedBacklog | null
+  /**
+   * Replace the session from an export already read by `readImport`. The
+   * second half of `importJSON`, apart so that `backup.ts` can land the
+   * backlog between reading the file and replacing the day.
+   */
+  applyImport: (file: ImportedFile) => void
 }
 
 /**
@@ -292,7 +299,12 @@ export const useSession = create<SessionStore>()(
         ),
 
       importJSON: (json) => {
-        const { events, session, dayKey: day, tasks } = readImport(json, Date.now())
+        const file = readImport(json, Date.now())
+        get().applyImport(file)
+        return file.tasks
+      },
+
+      applyImport: ({ events, session, dayKey: day }) => {
         // Same rule as a reload: only a *running* segment resurrects a phase.
         // After an out-of-date import there is none — the day reset inside
         // `readImport` only runs when nothing is active — so this lands idle.
@@ -306,7 +318,6 @@ export const useSession = create<SessionStore>()(
           phase: phaseForActive(session),
           generation: get().generation + 1,
         })
-        return tasks
       },
     }),
     {

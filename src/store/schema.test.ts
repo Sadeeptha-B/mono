@@ -254,6 +254,71 @@ describe('the v4 schema', () => {
     expect(readImport(file, NOW).tasks).toEqual({ areas: [area], items: [task] })
   })
 
+  it('refuses a backlog whose readable tasks lost their unreadable parent', () => {
+    // The area cannot be read, so it is dropped; its task can, and would be
+    // imported belonging to nothing, in no view at all.
+    const task = {
+      id: 't',
+      kind: 'task',
+      title: 'Call Priya',
+      parentId: 'work',
+      status: 'open',
+      order: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const file = JSON.stringify({
+      version: 4,
+      dayKey: today,
+      events: [],
+      tasks: { areas: [{ id: 'work', name: 42 }], items: [task] },
+    })
+    expect(() => readImport(file, NOW)).toThrow(/do not fit together.*nothing was imported/)
+  })
+
+  it('drops a record whose version cannot be advanced', () => {
+    // Every edit is stamped one past the version it replaces, and past
+    // Number.MAX_SAFE_INTEGER that changes nothing, so the record could never
+    // be edited again. Only a damaged or edited file has one.
+    const area = { id: 'work', name: 'Work', order: 0, createdAt: 1, updatedAt: 1 }
+    const task = {
+      id: 't',
+      kind: 'task',
+      title: 'Call Priya',
+      parentId: 'work',
+      status: 'open',
+      order: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    const file = JSON.stringify({
+      version: 4,
+      dayKey: today,
+      events: [],
+      tasks: {
+        areas: [area],
+        items: [
+          task,
+          { ...task, id: 'stuck', updatedAt: 2 ** 53 },
+          { ...task, id: 'fraction', updatedAt: 1.5 },
+          { ...task, id: 'negative', updatedAt: -1 },
+        ],
+      },
+    })
+    expect(readImport(file, NOW).tasks?.items.map((i) => i.id)).toEqual(['t'])
+  })
+
+  it('reads back a record at the last version, which an edit can reach', () => {
+    const area = { id: 'work', name: 'Work', order: 0, createdAt: 1, updatedAt: Number.MAX_SAFE_INTEGER }
+    const file = JSON.stringify({
+      version: 4,
+      dayKey: today,
+      events: [],
+      tasks: { areas: [area], items: [] },
+    })
+    expect(readImport(file, NOW).tasks?.areas).toEqual([area])
+  })
+
   it('refuses a file from a newer version than this one', () => {
     const file = JSON.stringify({ version: SCHEMA_VERSION + 1, events: [] })
     expect(() => readImport(file, NOW)).toThrow(/newer version/)

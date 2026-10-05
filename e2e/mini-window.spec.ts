@@ -379,6 +379,23 @@ test("picking a block's tasks is handed back to the tab", async ({ page }) => {
   await expect(mini.getByText('Priorities')).toBeVisible()
 })
 
+test('Open Mono brings the tab back to the day, wherever it was', async ({ page }) => {
+  await stubMiniWindow(page)
+  await openMono(page)
+  await shapeDay(page)
+
+  // Popped out from the tasks page, which has no stage on it.
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await page.getByRole('button', { name: 'Pop out' }).click()
+  const mini = page.frameLocator(MINI)
+  await mini.getByRole('button', { name: /Start (deep|short) block/ }).click()
+  await mini.getByRole('button', { name: 'Open Mono' }).click()
+
+  // The picker the window promised is now on screen.
+  await expect(stage(page).getByRole('heading', { name: 'One thing' })).toBeVisible()
+  expect(new URL(page.url()).hash).toBe('#/')
+})
+
 test('a focus room persists and dresses the pop-out document', async ({ page }) => {
   await stubMiniWindow(page)
   await openMono(page)

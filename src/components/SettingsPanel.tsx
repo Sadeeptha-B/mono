@@ -8,6 +8,7 @@ import { dayKey, formatClock } from '@/domain/time'
 import { supportsMiniWindow } from '@/pip/useMiniWindow'
 import { useSession, useStorageHealth } from '@/store/session'
 import { exportBackup, importBackup } from '@/store/backup'
+import { useTasks } from '@/store/tasks'
 import type { Settings } from '@/domain/types'
 
 export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
@@ -15,6 +16,11 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
   const updateSettings = useSession((s) => s.updateSettings)
   const fileInput = useRef<HTMLInputElement>(null)
   const [importError, setImportError] = useState<string | null>(null)
+  // An export taken before the backlog has been read would record it as empty,
+  // and one taken mid-import would wait for it anyway; `backup.ts` guards both,
+  // and the buttons say so rather than appear to do nothing for a moment.
+  const tasksLoaded = useTasks((s) => s.hydrated)
+  const [importing, setImporting] = useState(false)
   // The one failure Mono cannot recover from on its own, so it is explained
   // here, against the button that rescues the day it is about to cost you.
   const storageFailedAt = useStorageHealth((s) => s.failedAt)
@@ -149,10 +155,18 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4">
         <div className="flex gap-2">
-          <GhostButton type="button" onClick={() => download(exportBackup())}>
+          <GhostButton
+            type="button"
+            disabled={!tasksLoaded || importing}
+            onClick={() => void exportBackup().then(download)}
+          >
             Export
           </GhostButton>
-          <GhostButton type="button" onClick={() => fileInput.current?.click()}>
+          <GhostButton
+            type="button"
+            disabled={importing}
+            onClick={() => fileInput.current?.click()}
+          >
             Import
           </GhostButton>
           <input
@@ -163,6 +177,7 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
             onChange={async (e) => {
               const file = e.target.files?.[0]
               if (!file) return
+              setImporting(true)
               try {
                 await importBackup(await file.text())
                 setImportError(null)
@@ -173,6 +188,8 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
                 setImportError(
                   error instanceof Error ? error.message : 'Could not read that file.',
                 )
+              } finally {
+                setImporting(false)
               }
               e.target.value = ''
             }}

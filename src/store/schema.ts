@@ -16,7 +16,14 @@
  */
 
 import { reduce, replay, type MonoEvent, type SessionState } from '@/domain/events'
-import { ITEM_KINDS, ITEM_STATUSES, type Area, type Item } from '@/domain/tasks'
+import {
+  backlogProblem,
+  isVersion,
+  ITEM_KINDS,
+  ITEM_STATUSES,
+  type Area,
+  type Item,
+} from '@/domain/tasks'
 import { dayKey } from '@/domain/time'
 import {
   isRoomId,
@@ -102,6 +109,9 @@ export function readImport(
     tasks: 'tasks' in parsed ? sanitiseBacklog(parsed.tasks) : null,
   }
 }
+
+/** An export, read and checked, not yet applied to anything. */
+export type ImportedFile = ReturnType<typeof readImport>
 
 /**
  * Bring a persisted blob up to the current schema.
@@ -611,10 +621,18 @@ function sanitiseBacklog(value: unknown): ExportedBacklog | null {
   if (!isRecord(value) || !Array.isArray(value.areas) || !Array.isArray(value.items)) {
     return null
   }
-  return {
+  const backlog = {
     areas: value.areas.map(sanitiseArea).filter(isPresent),
     items: value.items.map(sanitiseItem).filter(isPresent),
   }
+  // Checked after the unreadable records are dropped, not before: a dropped
+  // area or epic is exactly what would leave its children belonging to
+  // nothing, and an import replaces the whole backlog with what is left.
+  const problem = backlogProblem(backlog)
+  if (problem !== null) {
+    throw new Error(`The tasks in that file do not fit together — ${problem} — so nothing was imported.`)
+  }
+  return backlog
 }
 
 function sanitiseArea(value: unknown): Area | null {
@@ -623,7 +641,7 @@ function sanitiseArea(value: unknown): Area | null {
   const name = sanitiseString(value.name)
   const order = sanitiseNumber(value.order)
   const createdAt = sanitiseNumber(value.createdAt)
-  const updatedAt = sanitiseNumber(value.updatedAt)
+  const updatedAt = sanitiseVersion(value.updatedAt)
   const archivedAt = sanitiseOptionalNumber(value.archivedAt)
   const deletedAt = sanitiseOptionalNumber(value.deletedAt)
   if (
@@ -655,7 +673,7 @@ function sanitiseItem(value: unknown): Item | null {
   const parentId = sanitiseString(value.parentId)
   const order = sanitiseNumber(value.order)
   const createdAt = sanitiseNumber(value.createdAt)
-  const updatedAt = sanitiseNumber(value.updatedAt)
+  const updatedAt = sanitiseVersion(value.updatedAt)
   const doneAt = sanitiseOptionalNumber(value.doneAt)
   const archivedAt = sanitiseOptionalNumber(value.archivedAt)
   const deletedAt = sanitiseOptionalNumber(value.deletedAt)
@@ -693,6 +711,17 @@ function sanitiseItem(value: unknown): Item | null {
 
 const sanitiseOptionalNumber = (value: unknown): number | null | undefined =>
   value === undefined ? undefined : sanitiseNumber(value)
+
+/**
+ * A record's version (`isVersion`): a whole number of milliseconds within the
+ * range where each one and the next are exact. Past it, adding one changes
+ * nothing, and two edits would carry the same version. Mono stamps versions
+ * from the clock and `nextVersion` never leaves the range, so an export always
+ * passes; only a damaged or edited file has one outside it, and the record is
+ * dropped, like any other this cannot read.
+ */
+const sanitiseVersion = (value: unknown): number | null =>
+  typeof value === 'number' && isVersion(value) ? value : null
 
 /** Rewrite a v1 `dayEndsAt` settings patch into a v2 `defaultRegions` one. */
 function migrateDayEndsAt(event: MonoEvent): MonoEvent {

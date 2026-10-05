@@ -687,13 +687,20 @@ function sectionsFor(settings: Settings): Section[] {
             where it lives and can be moved anywhere else by its path.
           </P>
           <P>
+            Each area is drawn as a board. Its epics run down the left, and beside each
+            one are its outcomes as columns, each with its tasks beneath it, then the
+            tasks that sit straight under the epic. The inbox is last, with its tasks
+            beside it.
+          </P>
+          <P>
             You decide when an epic or outcome is finished — nothing completes itself
             because its tasks ran out. <Em>Done</Em> and <Em>Archive</Em> both put it
             away with everything inside, out of the page and out of the purpose prompt;
             the tasks inside are left exactly as they were, and <Em>Reopen</Em> or{' '}
             <Em>Restore</Em> brings them all back. <Em>Delete</Em> is the one that
             reaches inside: it deletes everything in the epic too, and asks first,
-            saying how much that is.
+            saying how much that is. An area can be archived or deleted the same way,
+            and deleting one takes everything in it.
           </P>
           <P>
             The backlog lasts. Intentions belong to a day, and a block to its stretch of
@@ -859,7 +866,9 @@ function sectionsFor(settings: Settings): Section[] {
             nothing is sent anywhere, so this is also how you move to another machine.
             If Mono ever says <Em>Not saving</Em> in the header, this is the button it
             is pointing at: the browser has refused to write anything down, and the file
-            is the only way out of that.
+            is the only way out of that. An import replaces your tasks along with the
+            day; if the browser will not save the tasks in a file, the import changes
+            nothing and says so.
           </Setting>
         </div>
       ),

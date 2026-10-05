@@ -13,6 +13,7 @@ import {
   type InputHTMLAttributes,
   type MouseEvent,
   type PointerEvent,
+  type Ref,
 } from 'react'
 
 import { coerceBoundedMinutes } from './minutes'
@@ -246,6 +247,7 @@ export function InlineSelect({
   onChange,
   options,
   wide = false,
+  ref,
 }: {
   label: string
   prefix: string
@@ -254,11 +256,14 @@ export function InlineSelect({
   options: readonly { value: string; name: string }[]
   /** Room for a full path rather than a single name. */
   wide?: boolean
+  /** For a caller that mounts the select on demand and opens it at once. */
+  ref?: Ref<HTMLSelectElement>
 }) {
   return (
     <label className="flex min-w-0 items-center gap-1.5 text-muted">
       <span>{prefix}</span>
       <select
+        ref={ref}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         aria-label={label}

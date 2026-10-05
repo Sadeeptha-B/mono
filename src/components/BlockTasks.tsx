@@ -19,7 +19,7 @@
  * tab mid-block should read as renamed here too.
  */
 
-import { isLive, type Item } from '@/domain/tasks'
+import { isGone, type Item } from '@/domain/tasks'
 import { useTasks } from '@/store/tasks'
 
 export function BlockTasks({
@@ -31,14 +31,16 @@ export function BlockTasks({
   compact?: boolean
 }) {
   const items = useTasks((s) => s.items)
+  const areas = useTasks((s) => s.areas)
   const completeItem = useTasks((s) => s.completeItem)
   const reopenItem = useTasks((s) => s.reopenItem)
 
-  // A task deleted since the block began has nothing left to say about itself,
-  // and an id with no title is not worth a row. Order is the block's own.
+  // A task deleted since the block began — itself, or with the epic or area
+  // it sat in — has nothing left to say about itself, and an id with no title
+  // is not worth a row. Order is the block's own.
   const tasks = taskIds
     .map((id) => items.find((i) => i.id === id))
-    .filter((t): t is Item => t !== undefined && isLive(t))
+    .filter((t): t is Item => t !== undefined && !isGone(t.id, items, areas))
   if (tasks.length === 0) return null
 
   return (
