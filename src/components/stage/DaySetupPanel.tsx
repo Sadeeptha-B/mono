@@ -1,17 +1,27 @@
 /**
- * The two questions a day opens with.
+ * The three questions a day opens with.
  *
- * What is already fixed, then what hours you are working. That order matters:
- * commitments are the part of the day you do not control, so they decide how
- * much of it is left to declare. Asking for hours first means asking again the
- * moment the user remembers the school run.
+ * What is already fixed, then what hours you are working, then what the day is
+ * for. That order matters: commitments are the part of the day you do not
+ * control, so they decide how much of it is left to declare. Asking for hours
+ * first means asking again the moment the user remembers the school run. And
+ * intentions come last because they are only honest once the other two have
+ * said how much of the day there is.
  *
- * Neither question gates the other. The carousel under the stage moves between
- * them in either direction, and `Start the day` finishes from whichever one you
- * are looking at — so the commitment draft lives here, in a component that
+ * No question gates another. The carousel under the stage moves between them
+ * in any order, and `Start the day` finishes from whichever one you are looking
+ * at — so the commitment and intention drafts live here, in a component that
  * stays mounted across the switch, rather than in the panels themselves.
  * Nothing typed is lost by changing your mind about which question to answer
  * first.
+ *
+ * Starting the day does need one intention, though, which is the asymmetry
+ * between this question and the first. A day with nothing fixed in it is
+ * ordinary, and "nothing" had to become a complete answer there or a day
+ * without meetings could never begin. A day with nothing meant by it is not
+ * ordinary, and there is always something to write — so the empty answer here
+ * is the one thing worth stopping for. Only on the first ask: once the day is
+ * shaped, coming back is changing your mind, and the way out stays open.
  *
  * The hours draft used to live here too, and now lives in `App`, one level up.
  * Not for the switch — this component survives that — but because the calendar
@@ -55,7 +65,19 @@ import {
   type CommitmentDraft,
 } from '../CommitmentFields'
 import { resolveHours, TodayHoursFields } from '../TodayHours'
-import { otherSetupStage, type SetupStageId } from './stages'
+import {
+  emptyIntentionDraft,
+  IntentionsPanel,
+  type IntentionDraft,
+  type IntentionTimer,
+} from './IntentionsPanel'
+import {
+  nextSetupStage,
+  previousSetupStage,
+  setupStageName,
+  type SetupStageId,
+} from './stages'
+import type { Area } from '@/domain/tasks'
 import { formatClock, formatDuration, nextHalfHour } from '@/domain/time'
 import {
   commitmentSpan,
@@ -63,6 +85,8 @@ import {
   type Commitment,
   type CommitmentPatch,
   type DefaultRegion,
+  type Intention,
+  type IntentionPatch,
   type Ms,
   type WorkRegion,
 } from '@/domain/types'
@@ -81,6 +105,15 @@ export function DaySetupPanel({
   onAddCommitment,
   onUpdateCommitment,
   onRemoveCommitment,
+  intentions,
+  areas,
+  planned,
+  intentionTimer,
+  intentionMinutes,
+  onStartIntentionTimer,
+  onAddIntention,
+  onUpdateIntention,
+  onRemoveIntention,
   onDone,
 }: {
   now: Ms
@@ -100,6 +133,17 @@ export function DaySetupPanel({
   onAddCommitment: (input: Omit<Commitment, 'id'>) => void
   onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onRemoveCommitment: (id: string) => void
+  intentions: readonly Intention[]
+  /** Areas an intention can point at. */
+  areas: readonly Area[]
+  /** What the plan can still hold, quoted by the intentions question. */
+  planned: { blocks: number; minutes: number }
+  intentionTimer: IntentionTimer | null
+  intentionMinutes: number
+  onStartIntentionTimer: () => void
+  onAddIntention: (input: Omit<Intention, 'id'>) => void
+  onUpdateIntention: (id: string, patch: IntentionPatch) => void
+  onRemoveIntention: (id: string) => void
   onDone: () => void
 }) {
   // The commitment draft has nothing in the store to follow, so it is seeded
@@ -122,6 +166,17 @@ export function DaySetupPanel({
   const [expanded, setExpanded] = useState(false)
   // Which question was on screen last render, for the arrival rule below.
   const [seenStage, setSeenStage] = useState(stage)
+  // Here rather than in the intentions panel for the commitment draft's reason:
+  // that panel unmounts when you look at another question, and this does not.
+  const [intentionDraft, setIntentionDraft] = useState<IntentionDraft>(emptyIntentionDraft)
+  // An edit whose intention was removed — here, or by the midnight reset —
+  // points at nothing. Adjusted during render, as the commitment form is.
+  if (
+    intentionDraft.editing !== null &&
+    !intentions.some((i) => i.id === intentionDraft.editing)
+  ) {
+    setIntentionDraft(emptyIntentionDraft)
+  }
 
   const clearForm = () => {
     setEditing(null)
@@ -199,7 +254,10 @@ export function DaySetupPanel({
   // them is a day it can do nothing with. The button says no; the line under it
   // has to say why, and where to fix it.
   const noHours = resolveHours(now, hours).length === 0
+  const noIntentions = intentions.length === 0
   const eyebrow = revisiting ? 'Changing today' : 'To begin'
+  const previous = previousSetupStage(stage)
+  const next = nextSetupStage(stage)
 
   return (
     <div className="max-w-md">
@@ -277,7 +335,7 @@ export function DaySetupPanel({
             </GhostButton>
           )}
         </>
-      ) : (
+      ) : stage === 'hours' ? (
         <>
           <StagePrompt
             eyebrow={eyebrow}
@@ -286,27 +344,47 @@ export function DaySetupPanel({
           />
           <TodayHoursFields draft={hours} onDraft={onHours} now={now} />
         </>
+      ) : (
+        <IntentionsPanel
+          now={now}
+          eyebrow={eyebrow}
+          timer={intentionTimer}
+          minutes={intentionMinutes}
+          onStartTimer={onStartIntentionTimer}
+          planned={planned}
+          intentions={intentions}
+          areas={areas}
+          draft={intentionDraft}
+          onDraft={setIntentionDraft}
+          onAdd={onAddIntention}
+          onUpdate={onUpdateIntention}
+          onRemove={onRemoveIntention}
+        />
       )}
 
-      {/* Outside the form above, so that Enter in a field adds a commitment
-          rather than ending the setup. */}
+      {/* Outside the forms above, so that Enter in a field adds a commitment
+          or an intention rather than ending the setup. */}
       <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-4">
-        <PrimaryButton type="button" onClick={onDone} disabled={!revisiting && noHours}>
+        <PrimaryButton
+          type="button"
+          onClick={onDone}
+          disabled={!revisiting && (noHours || noIntentions)}
+        >
           {revisiting ? 'Back to the day' : 'Start the day'}
         </PrimaryButton>
-        <GhostButton type="button" onClick={() => onStage(otherSetupStage(stage))}>
-          {stage === 'commitments' ? "Today's hours" : "What's already fixed"}
-        </GhostButton>
+        {/* Named after the question they lead to, like its dot in the strip. */}
+        {previous && (
+          <GhostButton type="button" onClick={() => onStage(previous)}>
+            {setupStageName(previous)}
+          </GhostButton>
+        )}
+        {next && (
+          <GhostButton type="button" onClick={() => onStage(next)}>
+            {setupStageName(next)}
+          </GhostButton>
+        )}
         <p className="w-full text-xs leading-relaxed text-muted">
-          {noHours
-            ? revisiting
-              ? "With no stretches left under Today's hours there is nowhere for Mono to plan. Go back and the rest of the day stays empty."
-              : "Mono plans inside your working hours and nowhere else, so it needs at least one stretch. Add one under Today's hours."
-            : revisiting
-              ? 'Anything you change here re-derives the plan. Nothing running is disturbed.'
-              : commitments.length === 0
-                ? 'Nothing fixed today? Start the day and Mono will plan the whole of it.'
-                : 'Add as many as you like. Mono plans the runway between them.'}
+          {footnote({ stage, revisiting, noHours, noIntentions, commitments: commitments.length })}
         </p>
       </div>
     </div>
@@ -376,6 +454,43 @@ function CommitmentRow({
       </button>
     </li>
   )
+}
+
+/**
+ * The line under `Start the day`: why it will not go, or what it will do.
+ *
+ * A missing answer outranks everything, hours before intentions, because the
+ * button is disabled and this line is the only place that says why. After
+ * that it speaks to the question on screen.
+ */
+function footnote({
+  stage,
+  revisiting,
+  noHours,
+  noIntentions,
+  commitments,
+}: {
+  stage: SetupStageId
+  revisiting: boolean
+  noHours: boolean
+  noIntentions: boolean
+  commitments: number
+}): string {
+  if (noHours) {
+    return revisiting
+      ? "With no stretches left under Today's hours there is nowhere for Mono to plan. Go back and the rest of the day stays empty."
+      : "Mono plans inside your working hours and nowhere else, so it needs at least one stretch. Add one under Today's hours."
+  }
+  if (revisiting) return 'Anything you change here re-derives the plan. Nothing running is disturbed.'
+  if (noIntentions) {
+    return stage === 'intentions'
+      ? 'Name at least one thing today is for, and the day can start.'
+      : "Before the day starts, name at least one thing it is for under Today's intentions."
+  }
+  if (stage === 'intentions') return 'A handful is plenty. You can change them between blocks.'
+  return commitments === 0
+    ? 'Nothing fixed today? Start the day and Mono will plan the whole of it.'
+    : 'Add as many as you like. Mono plans the runway between them.'
 }
 
 /**

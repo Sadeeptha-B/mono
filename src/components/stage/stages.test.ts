@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { dayDoneFor } from './stages'
+import { dayDoneFor, nextSetupStage, previousSetupStage, setupStageName } from './stages'
 
 const completedDay = {
   phase: { name: 'idle' } as const,
@@ -21,5 +21,19 @@ describe('dayDoneFor', () => {
     expect(dayDoneFor({ ...completedDay, hasRegions: false })).toBe(false)
     expect(dayDoneFor({ ...completedDay, nextRegionStart: 1 })).toBe(false)
     expect(dayDoneFor({ ...completedDay, withinHours: true })).toBe(false)
+  })
+})
+
+describe('the opening questions', () => {
+  it('are asked commitments, then hours, then intentions', () => {
+    expect(nextSetupStage('commitments')).toBe('hours')
+    expect(nextSetupStage('hours')).toBe('intentions')
+    expect(nextSetupStage('intentions')).toBeNull()
+    expect(previousSetupStage('intentions')).toBe('hours')
+    expect(previousSetupStage('commitments')).toBeNull()
+  })
+
+  it('name each question the way its dot does', () => {
+    expect(setupStageName('intentions')).toBe("Today's intentions")
   })
 })

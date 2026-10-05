@@ -63,22 +63,38 @@ export const fixedList = (page: Page) => stage(page).getByRole('list', { name: '
 export const carousel = (page: Page) => page.getByRole('navigation', { name: 'Stages of the day' })
 
 /**
- * Move between the two opening questions using the carousel.
+ * Move between the opening questions using the carousel.
  *
- * Scoped to the strip on purpose: the setup panel also carries a button to the
- * other question, with the same name because it goes the same place. Two
- * controls sharing an accessible name is fine for a reader and ambiguous for a
- * locator, and this helper is specifically about the dots.
+ * Scoped to the strip on purpose: the setup panel also carries buttons to the
+ * neighbouring questions, with the same names because they go the same place.
+ * Two controls sharing an accessible name is fine for a reader and ambiguous
+ * for a locator, and this helper is specifically about the dots.
  */
 export async function goToStage(page: Page, name: string) {
   await carousel(page).getByRole('button', { name, exact: true }).click()
 }
 
+/** The intentions already named today, on the third opening question. */
+export const intentionList = (page: Page) =>
+  stage(page).getByRole('list', { name: 'Intended today' })
+
+/** Name one thing today is for, on the intentions question. */
+export async function addIntention(page: Page, title: string) {
+  await stage(page).getByLabel('Next intention', { exact: true }).fill(title)
+  await stage(page).getByRole('button', { name: 'Add intention' }).click()
+}
+
 /**
- * Finish the opening questions. Available from either of them, and from the
- * commitments one with nothing added — an empty day is a complete answer.
+ * Finish the opening questions.
+ *
+ * An empty day is a complete answer to the first two, but the first ask needs
+ * one intention, so this names one on the way out when none has been named.
+ * Going to the third question first changes nothing the others recorded: the
+ * drafts outlive the switch, which is a rule the setup specs hold separately.
  */
 export async function startDay(page: Page) {
+  await goToStage(page, "Today's intentions")
+  if ((await intentionList(page).count()) === 0) await addIntention(page, 'Ship the planner')
   await stage(page).getByRole('button', { name: 'Start the day' }).click()
 }
 

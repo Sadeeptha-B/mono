@@ -31,7 +31,6 @@ import { StageCarousel } from '@/components/stage/StageCarousel'
 import {
   FIRST_SETUP_STAGE,
   dayDoneFor,
-  otherSetupStage,
   setupReachable,
   stageFor,
   type SetupStageId,
@@ -64,7 +63,11 @@ import { dayProgressFor } from '@/domain/dayProgress'
 import { dayKey, formatDuration, isWithinRegions, nextRegionStart } from '@/domain/time'
 import type { TimerMode } from '@/domain/time'
 import { useSession, useStorageHealth, toPlanInput, selectRegions } from '@/store/session'
-import type { BlockKind } from '@/domain/types'
+import { useTasks } from '@/store/tasks'
+import { activeAreas } from '@/domain/tasks'
+import { playChime } from '@/ambient/audio'
+import type { IntentionTimer } from '@/components/stage/IntentionsPanel'
+import { minutesToMs, type BlockKind, type Ms } from '@/domain/types'
 
 /**
  * The one piece of the app that is not in the bundle that opens it.
@@ -183,6 +186,21 @@ export function App() {
   // to change an answer is not being asked again.
   const [revisitingSetup, setRevisitingSetup] = useState(false)
   const [seenGeneration, setSeenGeneration] = useState(() => store.generation)
+  /**
+   * The intentions question's timer, as two instants.
+   *
+   * Beside `setupStage` because it is the same kind of thing: about where the
+   * user is in setting up the day, not a fact about the day. It is never
+   * written to the log — see `IntentionsPanel` for why it is not a block — and a
+   * reload simply starts the question's time again, as it re-asks any other
+   * question.
+   *
+   * `null` until it has run once this session. It starts by itself only the
+   * first time the intentions question is shown on an unshaped day; after that,
+   * and on any re-visit, only from its own button.
+   */
+  const [intentionTimer, setIntentionTimer] = useState<IntentionTimer | null>(null)
+  const areas = activeAreas(useTasks((s) => s.areas))
 
   const { phase, session } = store
   const today = dayKey(now)
@@ -282,6 +300,7 @@ export function App() {
     setSeenGeneration(store.generation)
     setSetupStage(FIRST_SETUP_STAGE)
     setRevisitingSetup(false)
+    setIntentionTimer(null)
     setComposer(null)
     // The calendar's own drafts are cleared by remounting — the composers
     // unmount with the editor, the stage panel is keyed on the generation. This
@@ -309,6 +328,30 @@ export function App() {
 
 
   const stage = stageFor(phase, setupOpen, setupStage)
+
+  const startIntentionTimer = (at: Ms) =>
+    setIntentionTimer({
+      startedAt: at,
+      endsAt: at + minutesToMs(session.settings.intentionMinutes),
+    })
+  // The first sight of the intentions question on a day not yet shaped starts
+  // its timer. During render, the way this component adjusts its other state,
+  // so the face never paints a frame with no time on it; reading `now` here is
+  // fine, it is only ever written once.
+  if (setupOpen && !dayShaped && setupStage === 'intentions' && intentionTimer === null) {
+    startIntentionTimer(now)
+  }
+  // A single boolean that flips once, which is what lets the chime be an effect
+  // without `now` in its dependencies. Only while the questions are open: the
+  // timer is about the question, and a chime arriving after the day has started
+  // would be the app talking about something already finished.
+  const intentionTimeUp = setupOpen && intentionTimer !== null && now >= intentionTimer.endsAt
+  const soundEnabled = session.settings.soundEnabled
+  useEffect(() => {
+    if (intentionTimeUp && soundEnabled) playChime()
+    // `soundEnabled` is read rather than watched: turning sound on afterwards
+    // should not chime for a timer that ran out minutes ago.
+  }, [intentionTimeUp])
   /**
    * Move the stage to one of the opening questions.
    *
@@ -339,6 +382,10 @@ export function App() {
     resetHours()
     if (!dayShaped) store.shapeDay()
     setRevisitingSetup(false)
+    // The timer was about getting the day started, and it has. Coming back to
+    // the intentions later is changing your mind, which gets a fresh round only
+    // if you ask for one — not the tail end of the morning's.
+    setIntentionTimer(null)
   }
 
   const startBlock = (kind: BlockKind): void => {
@@ -408,7 +455,7 @@ export function App() {
     if (next?.kind === 'hours') {
       if (stage === 'hours') {
         if (dayShaped) setRevisitingSetup(false)
-        else setSetupStage(otherSetupStage('hours'))
+        else setSetupStage('commitments')
       }
       // The composer wins the edit, so the question's draft goes — including
       // when the question was not the one on screen. It outlives the panel now
@@ -629,6 +676,14 @@ export function App() {
                 onAddCommitment={store.addCommitment}
                 onUpdateCommitment={store.updateCommitment}
                 onRemoveCommitment={store.removeCommitment}
+                intentions={session.intentions}
+                areas={areas}
+                planned={planned}
+                intentionTimer={intentionTimer}
+                onStartIntentionTimer={() => startIntentionTimer(Date.now())}
+                onAddIntention={store.addIntention}
+                onUpdateIntention={store.updateIntention}
+                onRemoveIntention={store.removeIntention}
                 onDayShaped={finishSetup}
                 onEditHours={() => openComposer({ kind: 'hours' })}
                 onStartBlock={startBlock}
