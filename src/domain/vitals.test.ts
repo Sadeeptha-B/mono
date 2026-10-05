@@ -23,6 +23,7 @@ const block = (
   id: id(),
   blockKind,
   purpose: 'something',
+  taskIds: [],
   startedAt,
   endedAt: startedAt + minutes(lengthMin),
   plannedEndsAt: startedAt + minutes(lengthMin),
@@ -174,6 +175,7 @@ describe('a block waiting to be confirmed', () => {
       id: 'pending',
       blockKind,
       purpose: 'the one thing',
+      taskIds: [],
       startedAt,
       endsAt: startedAt + minutes(lengthMin),
     }) satisfies ActiveSegment
@@ -233,7 +235,7 @@ describe('driven through the real machine', () => {
 
   const finishOneBlock: Action[] = [
     { type: 'startBlock', at: TWO_PM - minutes(45), blockKind: 'deep' },
-    { type: 'setPurpose', at: TWO_PM - minutes(45), purpose: 'Write the planner' },
+    { type: 'setPurpose', at: TWO_PM - minutes(45), purpose: 'Write the planner', taskIds: ['task'] },
     { type: 'timerElapsed', at: TWO_PM },
   ]
 

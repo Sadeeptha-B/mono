@@ -21,6 +21,8 @@ import {
   type Commitment,
   type CommitmentPatch,
   type CompletedSegment,
+  type Intention,
+  type IntentionPatch,
   type Interval,
   type Ms,
   type PlannedBreak,
@@ -46,6 +48,12 @@ export type MonoEvent =
       /** Absolute. The block owns this instant regardless of tick delivery. */
       endsAt: Ms
       purpose: string | null
+      /**
+       * The backlog tasks this block is for. Absent from every block started
+       * before tasks existed, and from a priorities block, which is for working
+       * out what the tasks are.
+       */
+      taskIds?: string[]
     }
   | { type: 'block/purposeSet'; at: Ms; purpose: string }
   | { type: 'block/completed'; at: Ms }
@@ -55,6 +63,14 @@ export type MonoEvent =
   | { type: 'away/recorded'; at: Ms; from: Ms; to: Ms }
   | { type: 'day/reset'; at: Ms }
   | { type: 'day/shaped'; at: Ms }
+  | { type: 'intention/added'; at: Ms; intention: Intention }
+  | { type: 'intention/updated'; at: Ms; id: string; patch: IntentionPatch }
+  | { type: 'intention/removed'; at: Ms; id: string }
+  /**
+   * Put a task under one of today's intentions, or take it out with `null`.
+   * Linking moves: a task belongs to at most one intention a day.
+   */
+  | { type: 'intention/taskLinked'; at: Ms; taskId: string; intentionId: string | null }
 
 export type SessionState = {
   settings: Settings
@@ -82,6 +98,17 @@ export type SessionState = {
    * could never get past the question.
    */
   shapedAt: Ms | null
+  /** What today is for, in the order they were named. Cleared at midnight. */
+  intentions: Intention[]
+  /**
+   * Which of today's intentions each task belongs to, by task id.
+   *
+   * A map rather than a list on each intention because the rule it keeps is
+   * about the task — one intention a day — and a map cannot hold two answers
+   * for the same key. Tasks are backlog records and know nothing about days;
+   * the day knows about them.
+   */
+  taskIntentions: Record<string, string>
 }
 
 export const initialState: SessionState = {
@@ -92,6 +119,8 @@ export const initialState: SessionState = {
   overrides: [],
   regionOverrides: null,
   shapedAt: null,
+  intentions: [],
+  taskIntentions: {},
 }
 
 export function reduce(state: SessionState, event: MonoEvent): SessionState {
@@ -202,6 +231,7 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
           purpose: event.purpose,
           startedAt: event.at,
           endsAt: event.endsAt,
+          taskIds: event.taskIds ?? [],
         },
       }
 
@@ -279,10 +309,51 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
         // And the new day gets asked its opening questions again. Yesterday's
         // answers were about yesterday.
         shapedAt: null,
+        // Intentions are one of those answers. The tasks they gathered stay in
+        // the backlog; only today's grouping of them goes.
+        intentions: [],
+        taskIntentions: {},
       }
 
     case 'day/shaped':
       return { ...state, shapedAt: event.at }
+
+    case 'intention/added':
+      // An id already present is a replayed or duplicated event, not a second
+      // intention with the same name — the first one stands.
+      if (state.intentions.some((i) => i.id === event.intention.id)) return state
+      return { ...state, intentions: [...state.intentions, event.intention] }
+
+    case 'intention/updated': {
+      const existing = state.intentions.find((i) => i.id === event.id)
+      if (!existing) return state
+      const updated = applyIntentionPatch(existing, event.patch)
+      return {
+        ...state,
+        intentions: state.intentions.map((i) => (i.id === event.id ? updated : i)),
+      }
+    }
+
+    case 'intention/removed':
+      return {
+        ...state,
+        intentions: state.intentions.filter((i) => i.id !== event.id),
+        // Its tasks go back to belonging to no intention, rather than pointing
+        // at one that no longer exists.
+        taskIntentions: Object.fromEntries(
+          Object.entries(state.taskIntentions).filter(([, id]) => id !== event.id),
+        ),
+      }
+
+    case 'intention/taskLinked': {
+      const { [event.taskId]: previous, ...others } = state.taskIntentions
+      void previous
+      if (event.intentionId === null) return { ...state, taskIntentions: others }
+      // Linking to an intention that is not there is refused rather than
+      // recorded, so the map can only ever point at something real.
+      if (!state.intentions.some((i) => i.id === event.intentionId)) return state
+      return { ...state, taskIntentions: { ...others, [event.taskId]: event.intentionId } }
+    }
 
     default: {
       // The `never` keeps the switch exhaustive at compile time, but the log
@@ -401,7 +472,14 @@ export function completeBlock(
     endedAt,
     plannedEndsAt: active.endsAt,
     result,
+    taskIds: active.taskIds,
   }
+}
+
+/** Merge an edit into an intention. `link: null` is a removal. */
+function applyIntentionPatch(intention: Intention, patch: IntentionPatch): Intention {
+  const { link, ...rest } = { ...intention, ...patch }
+  return link ? { ...rest, link } : rest
 }
 
 /** Close an open segment so a malformed log cannot strand one. */

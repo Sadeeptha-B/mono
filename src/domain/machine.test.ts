@@ -59,7 +59,7 @@ describe('starting a block', () => {
   it('starts the timer from when the purpose was set, not when the prompt opened', () => {
     const { phase, session } = run([
       { type: 'startBlock', at: at(14), blockKind: 'deep' },
-      { type: 'setPurpose', at: at(14, 3), purpose: 'Write the planner' },
+      { type: 'setPurpose', at: at(14, 3), purpose: 'Write the planner', taskIds: ['task'] },
     ])
 
     expect(phase).toEqual({ name: 'focusing' })
@@ -75,7 +75,7 @@ describe('starting a block', () => {
   it('trims the purpose', () => {
     const { session } = run([
       { type: 'startBlock', at: at(14), blockKind: 'deep' },
-      { type: 'setPurpose', at: at(14), purpose: '  Ship the timeline  ' },
+      { type: 'setPurpose', at: at(14), purpose: '  Ship the timeline  ', taskIds: ['task'] },
     ])
     expect(session.active).toMatchObject({ purpose: 'Ship the timeline' })
   })
@@ -88,7 +88,7 @@ describe('starting a block', () => {
     const result = run(
       [
         { type: 'startBlock', at: at(14), blockKind: 'short' },
-        { type: 'setPurpose', at: at(14), purpose: 'Inbox' },
+        { type: 'setPurpose', at: at(14), purpose: 'Inbox', taskIds: ['task'] },
       ],
       session,
     )
@@ -157,7 +157,7 @@ describe('not being able to name a purpose', () => {
 describe('finishing a block', () => {
   const startAndFinish: Action[] = [
     { type: 'startBlock', at: at(14), blockKind: 'deep' },
-    { type: 'setPurpose', at: at(14), purpose: 'Write the planner' },
+    { type: 'setPurpose', at: at(14), purpose: 'Write the planner', taskIds: ['task'] },
     { type: 'timerElapsed', at: at(14, 45) },
   ]
 
@@ -252,7 +252,7 @@ describe('abandoning', () => {
   it('records the partial block and returns to idle', () => {
     const { phase, session } = run([
       { type: 'startBlock', at: at(14), blockKind: 'deep' },
-      { type: 'setPurpose', at: at(14), purpose: 'Write the planner' },
+      { type: 'setPurpose', at: at(14), purpose: 'Write the planner', taskIds: ['task'] },
       { type: 'abandonBlock', at: at(14, 12) },
     ])
 
@@ -280,7 +280,7 @@ describe('abandoning', () => {
   it('there is no pause: an unknown action leaves the phase untouched', () => {
     const { phase } = run([
       { type: 'startBlock', at: at(14), blockKind: 'deep' },
-      { type: 'setPurpose', at: at(14), purpose: 'Focus' },
+      { type: 'setPurpose', at: at(14), purpose: 'Focus', taskIds: ['task'] },
       { type: 'endBreak', at: at(14, 10) },
     ])
     expect(phase).toEqual({ name: 'focusing' })
@@ -290,7 +290,7 @@ describe('abandoning', () => {
 describe('coming back after being away', () => {
   const focusing: Action[] = [
     { type: 'startBlock', at: at(14), blockKind: 'deep' },
-    { type: 'setPurpose', at: at(14), purpose: 'Write the planner' },
+    { type: 'setPurpose', at: at(14), purpose: 'Write the planner', taskIds: ['task'] },
   ]
 
   it('never auto-completes a block that ended while the machine slept', () => {
@@ -365,7 +365,7 @@ describe('the event log', () => {
   it('rebuilds the same state when replayed', () => {
     const { session, events } = run([
       { type: 'startBlock', at: at(14), blockKind: 'deep' },
-      { type: 'setPurpose', at: at(14), purpose: 'Write the planner' },
+      { type: 'setPurpose', at: at(14), purpose: 'Write the planner', taskIds: ['task'] },
       { type: 'timerElapsed', at: at(14, 45) },
       { type: 'takeBreak', at: at(14, 45) },
       { type: 'confirmBreak', at: at(14, 45), durationMin: 15 },
@@ -440,7 +440,7 @@ describe('the event log', () => {
   it('keeps history across the midnight reset and drops the plan', () => {
     const { session } = run([
       { type: 'startBlock', at: at(14), blockKind: 'deep' },
-      { type: 'setPurpose', at: at(14), purpose: 'Write the planner' },
+      { type: 'setPurpose', at: at(14), purpose: 'Write the planner', taskIds: ['task'] },
       { type: 'timerElapsed', at: at(14, 45) },
       { type: 'skipBreak', at: at(14, 45), nextBlockKind: 'deep' },
     ])
@@ -499,6 +499,7 @@ describe('whether a block is actually running', () => {
     id: 'b1',
     blockKind: 'deep',
     purpose: 'ship it',
+    taskIds: [],
     startedAt: at(9),
     endsAt: at(9, 45),
   }

@@ -236,6 +236,41 @@ describe('session import', () => {
   })
 })
 
+describe('the backlog in a backup', () => {
+  beforeEach(async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(TODAY)
+    installStorageMock().clear()
+    ;({ useSession } = await import('./session'))
+    useSession.setState({ events: [], session: initialState, phase: initialPhase, dayKey: null })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    installStorageMock().clear()
+  })
+
+  const backlog = {
+    areas: [{ id: 'work', name: 'Work', order: 0, createdAt: 1, updatedAt: 1 }],
+    items: [],
+  }
+
+  it('rides along in an export when it is given one, and is left out when not', () => {
+    expect(JSON.parse(useSession.getState().exportJSON(backlog)).tasks).toEqual(backlog)
+    expect('tasks' in JSON.parse(useSession.getState().exportJSON())).toBe(false)
+  })
+
+  it('comes back out of an import for the task store to take', () => {
+    const file = useSession.getState().exportJSON(backlog)
+    expect(useSession.getState().importJSON(file)).toEqual(backlog)
+  })
+
+  it('comes back as null from a file that has none', () => {
+    const file = JSON.stringify({ version: 3, dayKey: dayKey(TODAY.getTime()), events: [] })
+    expect(useSession.getState().importJSON(file)).toBeNull()
+  })
+})
+
 /**
  * Rehydration runs *synchronously* while the module is still evaluating, which
  * is what made the v1 branch a wipe rather than a migration: it called a helper
@@ -282,6 +317,37 @@ describe('session rehydration', () => {
     // And it knows which day that log belonged to, so the midnight reset still
     // has something to compare against on the first tick.
     expect(state.dayKey).toBe(dayKey(YESTERDAY.getTime()))
+  })
+
+  it('keeps a v3 log through the v4 upgrade, running block included', async () => {
+    // The bump that only added things is the easy one to get wrong: without a
+    // branch for it, the fall-through in `migratePersisted` reads every log
+    // written the day before the upgrade as unreadable and starts empty.
+    seed({
+      version: 3,
+      state: {
+        dayKey: dayKey(TODAY.getTime()),
+        events: [
+          { type: 'day/shaped', at: at(TODAY, 9) },
+          {
+            type: 'block/started',
+            at: at(TODAY, 9, 30),
+            id: 'block-1',
+            blockKind: 'deep',
+            endsAt: at(TODAY, 10, 15),
+            purpose: 'Before tasks existed',
+          },
+        ],
+      },
+    })
+
+    const { useSession: store } = await import('./session')
+    const state = store.getState()
+
+    expect(state.events).toHaveLength(2)
+    expect(state.session.shapedAt).toBe(at(TODAY, 9))
+    expect(state.session.active).toMatchObject({ id: 'block-1', taskIds: [] })
+    expect(state.phase).toEqual({ name: 'focusing' })
   })
 
   it('clears the pre-release v2 store rather than carrying old room ids', async () => {

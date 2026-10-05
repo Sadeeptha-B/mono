@@ -319,3 +319,100 @@ describe('taking a break', () => {
     ])
   })
 })
+
+describe("the day's intentions", () => {
+  const auth = { id: 'auth', title: 'Mono auth', link: { kind: 'epic', id: 'epic-1' } } as const
+  const billing = { id: 'billing', title: 'Billing ticket' }
+  const named: MonoEvent[] = [
+    { type: 'intention/added', at: at(8), intention: auth },
+    { type: 'intention/added', at: at(8, 1), intention: billing },
+  ]
+
+  it('keeps the order they were named in, and ignores a duplicate id', () => {
+    const state = replay([
+      ...named,
+      { type: 'intention/added', at: at(8, 2), intention: { id: 'auth', title: 'Again' } },
+    ])
+    expect(state.intentions.map((i) => i.title)).toEqual(['Mono auth', 'Billing ticket'])
+  })
+
+  it('patches a title and removes a link with null', () => {
+    const state = replay([
+      ...named,
+      { type: 'intention/updated', at: at(9), id: 'auth', patch: { title: 'Auth', link: null } },
+    ])
+    expect(state.intentions[0]).toEqual({ id: 'auth', title: 'Auth' })
+  })
+
+  it('puts a task under one intention at a time', () => {
+    const state = replay([
+      ...named,
+      { type: 'intention/taskLinked', at: at(9), taskId: 't', intentionId: 'auth' },
+      { type: 'intention/taskLinked', at: at(9, 1), taskId: 't', intentionId: 'billing' },
+    ])
+    expect(state.taskIntentions).toEqual({ t: 'billing' })
+  })
+
+  it('unlinks with null, and refuses a link to an intention that is not there', () => {
+    const state = replay([
+      ...named,
+      { type: 'intention/taskLinked', at: at(9), taskId: 't', intentionId: 'auth' },
+      { type: 'intention/taskLinked', at: at(9, 1), taskId: 't', intentionId: null },
+      { type: 'intention/taskLinked', at: at(9, 2), taskId: 'u', intentionId: 'nowhere' },
+    ])
+    expect(state.taskIntentions).toEqual({})
+  })
+
+  it('lets go of its tasks when an intention is removed', () => {
+    const state = replay([
+      ...named,
+      { type: 'intention/taskLinked', at: at(9), taskId: 't', intentionId: 'auth' },
+      { type: 'intention/taskLinked', at: at(9), taskId: 'u', intentionId: 'billing' },
+      { type: 'intention/removed', at: at(10), id: 'auth' },
+    ])
+    expect(state.intentions.map((i) => i.id)).toEqual(['billing'])
+    expect(state.taskIntentions).toEqual({ u: 'billing' })
+  })
+
+  it('are cleared at midnight with the rest of the day', () => {
+    const state = replay([
+      ...named,
+      { type: 'intention/taskLinked', at: at(9), taskId: 't', intentionId: 'auth' },
+      { type: 'day/reset', at: at(23, 59) },
+    ])
+    expect(state.intentions).toEqual([])
+    expect(state.taskIntentions).toEqual({})
+  })
+})
+
+describe('the tasks a block is for', () => {
+  it('ride from the start event into history', () => {
+    const state = replay([
+      {
+        type: 'block/started',
+        at: at(9),
+        id: 'b',
+        blockKind: 'deep',
+        endsAt: at(9, 45),
+        purpose: 'Login',
+        taskIds: ['t', 'u'],
+      },
+      { type: 'block/completed', at: at(9, 45) },
+    ])
+    expect(state.history[0]).toMatchObject({ kind: 'block', taskIds: ['t', 'u'] })
+  })
+
+  it('are none for a block started before tasks existed', () => {
+    const state = replay([
+      {
+        type: 'block/started',
+        at: at(9),
+        id: 'b',
+        blockKind: 'deep',
+        endsAt: at(9, 45),
+        purpose: 'Old',
+      },
+    ])
+    expect(state.active).toMatchObject({ kind: 'block', taskIds: [] })
+  })
+})

@@ -8,6 +8,7 @@ const block: ActiveSegment = {
   id: 'focus',
   blockKind: 'deep',
   purpose: 'Write',
+  taskIds: [],
   startedAt: 0,
   endsAt: 60_000,
 }

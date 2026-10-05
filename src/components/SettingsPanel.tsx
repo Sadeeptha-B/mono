@@ -7,13 +7,12 @@ import { parseBoundedMinutes } from './minutes'
 import { dayKey, formatClock } from '@/domain/time'
 import { supportsMiniWindow } from '@/pip/useMiniWindow'
 import { useSession, useStorageHealth } from '@/store/session'
+import { exportBackup, importBackup } from '@/store/backup'
 import type { Settings } from '@/domain/types'
 
 export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () => void }) {
   const settings = useSession((s) => s.session.settings)
   const updateSettings = useSession((s) => s.updateSettings)
-  const exportJSON = useSession((s) => s.exportJSON)
-  const importJSON = useSession((s) => s.importJSON)
   const fileInput = useRef<HTMLInputElement>(null)
   const [importError, setImportError] = useState<string | null>(null)
   // The one failure Mono cannot recover from on its own, so it is explained
@@ -55,6 +54,15 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
           max={30}
           step={1}
           onCommit={(v) => set('reflectMinutes', v)}
+        />
+        <MinutesField
+          id="intention-minutes"
+          label="Intentions timer"
+          value={settings.intentionMinutes}
+          min={1}
+          max={30}
+          step={1}
+          onCommit={(v) => set('intentionMinutes', v)}
         />
       </div>
 
@@ -141,7 +149,7 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
 
       <div className="mt-6 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4">
         <div className="flex gap-2">
-          <GhostButton type="button" onClick={() => download(exportJSON())}>
+          <GhostButton type="button" onClick={() => download(exportBackup())}>
             Export
           </GhostButton>
           <GhostButton type="button" onClick={() => fileInput.current?.click()}>
@@ -156,7 +164,7 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
               const file = e.target.files?.[0]
               if (!file) return
               try {
-                importJSON(await file.text())
+                await importBackup(await file.text())
                 setImportError(null)
               } catch (error) {
                 // Shown in the panel rather than through `alert`, which stops

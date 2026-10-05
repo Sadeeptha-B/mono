@@ -81,6 +81,13 @@ export type Settings = {
   shortMinutes: Minutes
   reflectMinutes: Minutes
   /**
+   * How long the day's intentions question gives you before it stops to ask
+   * whether you want longer. A timer on the question rather than a block: it
+   * runs while the day is being set up, which is often before working hours
+   * begin, and it records nothing. See `IntentionsPanel`.
+   */
+  intentionMinutes: Minutes
+  /**
    * The default daily shape. Mono plans inside these and nowhere else, and the
    * end of the last one is the planning horizon. Each day starts seeded from
    * this; editing a day's regions on the timeline overrides it for that day.
@@ -113,6 +120,7 @@ export const DEFAULT_SETTINGS: Settings = {
   deepMinutes: 45,
   shortMinutes: 20,
   reflectMinutes: 5,
+  intentionMinutes: 5,
   defaultRegions: [{ start: '09:00', end: '18:00' }],
   plannerPolicy: 'prefer-deep',
   notificationsEnabled: false,
@@ -170,6 +178,36 @@ export type PlannedBreak = {
 export type PlannedBreakPatch = Partial<Omit<PlannedBreak, 'id'>>
 
 // -----------------------------------------------------------------------------
+// Intentions
+// -----------------------------------------------------------------------------
+
+/**
+ * Something today is for: "handle the billing ticket", "Mono's auth".
+ *
+ * Broader than a block's purpose and shorter-lived than anything in the
+ * backlog. An intention belongs to one day, which is why it lives in the event
+ * log with the rest of the day's decisions and is cleared at midnight, while
+ * the tasks it gathers live on in the backlog.
+ *
+ * The link is optional and is a pointer, not a container: "work on the auth
+ * epic today" is an intention about that epic, but plenty of intentions belong
+ * to nothing in the backlog at all.
+ */
+export type Intention = {
+  id: string
+  title: string
+  link?: IntentionLink
+}
+
+export type IntentionLink = { kind: 'area' | 'epic' | 'outcome'; id: string }
+
+/**
+ * Fields an edit may change. `link: null` removes the link: a patch is merged,
+ * and with `exactOptionalPropertyTypes` an absent field can only mean "leave it".
+ */
+export type IntentionPatch = { title?: string; link?: IntentionLink | null }
+
+// -----------------------------------------------------------------------------
 // Session history and active work
 // -----------------------------------------------------------------------------
 
@@ -185,6 +223,8 @@ export type CompletedSegment =
       endedAt: Ms
       plannedEndsAt: Ms
       result: 'completed' | 'abandoned'
+      /** The tasks it was for. Empty for a priorities block, and for old logs. */
+      taskIds: string[]
     }
   | {
       kind: 'break'
@@ -210,6 +250,8 @@ export type ActiveSegment =
       purpose: string | null
       startedAt: Ms
       endsAt: Ms
+      /** The tasks it is for. Empty only for a priorities block. */
+      taskIds: string[]
     }
   | {
       kind: 'break'
