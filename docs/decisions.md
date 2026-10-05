@@ -300,7 +300,7 @@ it.
 ## Deliberately not built
 
 - **No history or journal view.** The log captures everything one would need
-  (completed blocks, outcomes, purposes, away spans) and `vitals` reads a slice
+  (completed and abandoned blocks, purposes, away spans) and `vitals` reads a slice
   of it back, but nothing presents the archive.
 - **No cross-device sync.** JSON export/import is the escape hatch.
 - **No weekday-aware default shape.**

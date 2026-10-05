@@ -271,7 +271,7 @@ const sanitisePositiveMinutes = (value: unknown): number | null => {
 /**
  * A duration either side of a commitment: optional, and legitimately zero.
  *
- * Three outcomes rather than two, so a caller can tell "not there" from "there
+ * Three answers rather than two, so a caller can tell "not there" from "there
  * and wrong". `undefined` means absent, which is the normal state of every
  * commitment written before this field existed; `null` means present and
  * unusable.

@@ -81,7 +81,7 @@ export function dayProgressFor(
       rawTrail.push({ kind: 'break' })
       continue
     }
-    if (segment.outcome !== 'completed') {
+    if (segment.result !== 'completed') {
       rawTrail.push({ kind: 'gap' })
       continue
     }
@@ -162,7 +162,7 @@ function selectMilestone(
   if (
     !shown.has('recovery') &&
     previousConsequential?.kind === 'block' &&
-    previousConsequential.outcome === 'abandoned'
+    previousConsequential.result === 'abandoned'
   ) {
     return 'recovery'
   }

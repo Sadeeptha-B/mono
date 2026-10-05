@@ -19,7 +19,7 @@ type Props = {
   /** A break can be slept through too, and it asks a different question. */
   kind: 'block' | 'break'
   purpose: string | null
-  onResolve: (outcome: 'completed' | 'abandoned') => void
+  onResolve: (result: 'completed' | 'abandoned') => void
 }
 
 export function ReconcilePanel({ blockEndedAt, now, kind, purpose, onResolve }: Props) {
@@ -46,7 +46,7 @@ export function ReconcilePanel({ blockEndedAt, now, kind, purpose, onResolve }: 
 
       <div className="flex flex-wrap gap-2">
         {isBreak ? (
-          // A break has no outcome to record — either answer ends it at its
+          // A break has no result to record — either answer ends it at its
           // planned end and books the rest as unaccounted.
           <PrimaryButton type="button" onClick={() => onResolve('completed')}>
             Back to work

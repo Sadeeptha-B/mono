@@ -10,14 +10,14 @@ const block = (
   offset: number,
   minutes: number,
   kind: BlockKind = 'deep',
-  outcome: 'completed' | 'abandoned' = 'completed',
+  result: 'completed' | 'abandoned' = 'completed',
   purpose = 'Write',
 ): CompletedSegment => ({
   kind: 'block', id: `b-${offset}`, blockKind: kind, purpose,
   startedAt: NOW + offset * minute,
   endedAt: NOW + (offset + minutes) * minute,
   plannedEndsAt: NOW + (offset + minutes) * minute,
-  outcome,
+  result,
 })
 
 const rest = (offset: number, minutes: number): CompletedSegment => ({

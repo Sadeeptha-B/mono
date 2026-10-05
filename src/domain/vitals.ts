@@ -50,7 +50,7 @@ const today = (history: readonly CompletedSegment[], now: Ms): CompletedSegment[
   history.filter((segment) => onSameDay(segment.startedAt, now))
 
 export const isBankedFocus = (segment: CompletedSegment): boolean =>
-  segment.kind === 'block' && segment.outcome === 'completed' && segment.blockKind !== 'reflect'
+  segment.kind === 'block' && segment.result === 'completed' && segment.blockKind !== 'reflect'
 
 /**
  * @param pending A block whose timer has run out but which the log has not
@@ -99,7 +99,7 @@ export function vitalsFor(
     const harmless =
       segment.kind === 'break' ||
       (segment.kind === 'block' &&
-        segment.outcome === 'completed' &&
+        segment.result === 'completed' &&
         segment.blockKind === 'reflect')
     if (harmless) continue
 

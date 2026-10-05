@@ -480,8 +480,8 @@ export function App() {
         }
         onCancelBreak={() => store.dispatch({ type: 'cancelBreakChoice', at: Date.now() })}
         onEndBreak={() => store.dispatch({ type: 'endBreak', at: Date.now() })}
-        onResolveAway={(outcome) =>
-          store.dispatch({ type: 'resolveAway', at: Date.now(), outcome })
+        onResolveAway={(result) =>
+          store.dispatch({ type: 'resolveAway', at: Date.now(), result })
         }
       />,
       mini.container,
@@ -646,8 +646,8 @@ export function App() {
                   store.dispatch({ type: 'cancelBreakChoice', at: Date.now() })
                 }
                 onEndBreak={() => store.dispatch({ type: 'endBreak', at: Date.now() })}
-                onResolveAway={(outcome) =>
-                  store.dispatch({ type: 'resolveAway', at: Date.now(), outcome })
+                onResolveAway={(result) =>
+                  store.dispatch({ type: 'resolveAway', at: Date.now(), result })
                 }
               />
 

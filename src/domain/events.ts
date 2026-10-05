@@ -390,7 +390,7 @@ const pinsStillAhead = (breaks: PlannedBreak[], at: Ms): PlannedBreak[] =>
 export function completeBlock(
   active: Extract<ActiveSegment, { kind: 'block' }>,
   endedAt: Ms,
-  outcome: 'completed' | 'abandoned',
+  result: 'completed' | 'abandoned',
 ): CompletedSegment {
   return {
     kind: 'block',
@@ -400,7 +400,7 @@ export function completeBlock(
     startedAt: active.startedAt,
     endedAt,
     plannedEndsAt: active.endsAt,
-    outcome,
+    result,
   }
 }
 
