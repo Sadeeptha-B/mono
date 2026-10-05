@@ -1,7 +1,15 @@
 /** The backlog's own page: areas, their inboxes, and today's grouping. */
 
 import { expect, test, type Page } from '@playwright/test'
-import { addIntention, goToStage, openMono, stage, startBlock } from './support/mono'
+import {
+  addIntention,
+  addOnTasksPage,
+  goToStage,
+  importSession,
+  openMono,
+  stage,
+  startBlock,
+} from './support/mono'
 
 const main = (page: Page) => page.getByRole('main')
 
@@ -10,10 +18,7 @@ async function openTasks(page: Page) {
   await expect(page.getByRole('heading', { name: 'Tasks', level: 1 })).toBeVisible()
 }
 
-async function addTo(page: Page, area: string, title: string) {
-  await main(page).getByLabel(`New task in ${area}`, { exact: true }).fill(title)
-  await main(page).getByLabel(`New task in ${area}`, { exact: true }).press('Enter')
-}
+const addTo = (page: Page, area: string, title: string) => addOnTasksPage(page, 'task', area, title)
 
 const inbox = (page: Page, area: string) =>
   main(page).getByRole('list', { name: `${area} inbox` })
@@ -35,6 +40,63 @@ test('a new backlog starts with Work and Personal, and an inbox is just tasks', 
   await expect(inbox(page, 'Work')).toContainText('Call Priya')
 })
 
+test('an add field is folded until asked for, stays open for a run, and folds away again', async ({
+  page,
+}) => {
+  await openMono(page)
+  await openTasks(page)
+  const opener = main(page).getByRole('button', { name: 'Add a task to Work', exact: true })
+  const field = main(page).getByLabel('New task in Work', { exact: true })
+
+  await expect(field).toHaveCount(0)
+  await opener.click()
+  await expect(field).toBeFocused()
+
+  // Open after each add, cleared and focused, so several go in a row.
+  await field.fill('Call Priya')
+  await field.press('Enter')
+  await expect(field).toHaveValue('')
+  await expect(field).toBeFocused()
+  await field.fill('Buy a cable')
+  await field.press('Enter')
+  await expect(inbox(page, 'Work')).toContainText('Call Priya')
+  await expect(inbox(page, 'Work')).toContainText('Buy a cable')
+
+  // Escape folds it and hands focus back to the button.
+  await field.press('Escape')
+  await expect(field).toHaveCount(0)
+  await expect(opener).toBeFocused()
+
+  // Opening another folds it, but only while nothing is typed in it.
+  const other = main(page).getByLabel('New task in Personal', { exact: true })
+  await opener.click()
+  await field.fill('Half a thought')
+  await main(page).getByRole('button', { name: 'Add a task to Personal', exact: true }).click()
+  await expect(other).toBeFocused()
+  await expect(field).toHaveValue('Half a thought')
+
+  await field.fill('')
+  await main(page).getByRole('button', { name: 'Add an epic to Work', exact: true }).click()
+  await expect(main(page).getByLabel('New epic in Work', { exact: true })).toBeFocused()
+  await expect(field).toHaveCount(0)
+  await expect(other).toHaveCount(0)
+})
+
+test('a new outcome is added beside the last one, where its column will stand', async ({
+  page,
+}) => {
+  await openMono(page)
+  await openTasks(page)
+  await addOnTasksPage(page, 'epic', 'Work', 'Mono auth')
+  await addOnTasksPage(page, 'outcome', 'Mono auth', 'Login pages')
+
+  // The field stays open for the next outcome, now to the right of the first.
+  const last = await outcome(page, 'Login pages').boundingBox()
+  const slot = await main(page).getByLabel('New outcome in Mono auth', { exact: true }).boundingBox()
+  expect(slot!.x).toBeGreaterThan(last!.x + last!.width)
+  expect(slot!.y).toBeLessThan(last!.y + last!.height)
+})
+
 test('a task can be renamed, moved, dropped, reopened and deleted', async ({ page }) => {
   await openMono(page)
   await openTasks(page)
@@ -45,7 +107,12 @@ test('a task can be renamed, moved, dropped, reopened and deleted', async ({ pag
   await main(page).getByLabel('Rename Buy a cable', { exact: true }).press('Enter')
   await expect(inbox(page, 'Work')).toContainText('Buy a USB-C cable')
 
+  // Where it lives is a button until asked, so a long backlog does not mount
+  // every place in every row.
+  await expect(main(page).getByLabel('Where Buy a USB-C cable lives')).toHaveCount(0)
+  await main(page).getByRole('button', { name: 'Move Buy a USB-C cable from Work' }).click()
   await main(page).getByLabel('Where Buy a USB-C cable lives').selectOption({ label: 'Personal' })
+  await expect(main(page).getByLabel('Where Buy a USB-C cable lives')).toHaveCount(0)
   await expect(inbox(page, 'Personal')).toContainText('Buy a USB-C cable')
   await expect(inbox(page, 'Work')).toHaveCount(0)
 
@@ -94,6 +161,9 @@ test('areas can be added, renamed, archived and restored', async ({ page }) => {
   await openMono(page)
   await openTasks(page)
 
+  // The field is folded away under its button until asked for.
+  await expect(main(page).getByLabel('New area', { exact: true })).toHaveCount(0)
+  await main(page).getByRole('button', { name: 'Add area' }).click()
   await main(page).getByLabel('New area', { exact: true }).fill('Health')
   await main(page).getByRole('button', { name: 'Add area' }).click()
   await expect(main(page).getByRole('heading', { name: 'Health' })).toBeVisible()
@@ -133,17 +203,12 @@ const epic = (page: Page, title: string) =>
 const outcome = (page: Page, title: string) =>
   main(page).getByRole('region', { name: `Outcome: ${title}` })
 
-async function addInto(page: Page, label: string, title: string) {
-  await main(page).getByLabel(label, { exact: true }).fill(title)
-  await main(page).getByLabel(label, { exact: true }).press('Enter')
-}
-
 /** Work › Mono auth › Login pages › Login form, plus a task straight under the epic. */
 async function buildAuthEpic(page: Page) {
-  await addInto(page, 'New epic in Work', 'Mono auth')
-  await addInto(page, 'New outcome in Mono auth', 'Login pages')
-  await addInto(page, 'New task in Login pages', 'Login form')
-  await addInto(page, 'New task in Mono auth', 'CSRF token')
+  await addOnTasksPage(page, 'epic', 'Work', 'Mono auth')
+  await addOnTasksPage(page, 'outcome', 'Mono auth', 'Login pages')
+  await addOnTasksPage(page, 'task', 'Login pages', 'Login form')
+  await addOnTasksPage(page, 'task', 'Mono auth', 'CSRF token')
 }
 
 test('an epic holds outcomes, and both hold tasks', async ({ page }) => {
@@ -160,6 +225,7 @@ test('an epic holds outcomes, and both hold tasks', async ({ page }) => {
 
   // A task moves anywhere a task can live, by its full path.
   await addTo(page, 'Work', 'Rate limiting')
+  await main(page).getByRole('button', { name: 'Move Rate limiting' }).click()
   await main(page)
     .getByLabel('Where Rate limiting lives')
     .selectOption({ label: 'Work › Mono auth › Login pages' })
@@ -222,4 +288,140 @@ test('deleting an epic asks first, then takes everything in it', async ({ page }
 
   await page.reload()
   await expect(main(page).getByText('Mono auth')).toHaveCount(0)
+})
+
+test('deleting an area asks first, then takes everything in it and nothing else', async ({
+  page,
+}) => {
+  await openMono(page)
+  await openTasks(page)
+  await buildAuthEpic(page)
+  await addTo(page, 'Work', 'Call Priya')
+  await addTo(page, 'Personal', 'Fix the gate')
+
+  await main(page).getByRole('button', { name: 'Delete Work', exact: true }).click()
+  // The epic, its outcome, and three tasks.
+  await expect(main(page).getByText('And the 5 items inside?')).toBeVisible()
+  await main(page).getByRole('button', { name: 'Keep' }).click()
+  await expect(main(page).getByRole('heading', { name: 'Work' })).toBeVisible()
+
+  await main(page).getByRole('button', { name: 'Delete Work', exact: true }).click()
+  await main(page).getByRole('button', { name: 'Delete Work and everything in it' }).click()
+  await expect(main(page).getByRole('heading', { name: 'Work' })).toHaveCount(0)
+  await expect(main(page).getByText('Login form')).toHaveCount(0)
+  await expect(inbox(page, 'Personal')).toContainText('Fix the gate')
+
+  await page.reload()
+  await expect(main(page).getByRole('heading', { name: 'Work' })).toHaveCount(0)
+  await expect(inbox(page, 'Personal')).toContainText('Fix the gate')
+})
+
+test('an empty area is deleted at once', async ({ page }) => {
+  await openMono(page)
+  await openTasks(page)
+
+  await main(page).getByRole('button', { name: 'Delete Personal', exact: true }).click()
+  await expect(main(page).getByRole('heading', { name: 'Personal' })).toHaveCount(0)
+  await expect(main(page).getByRole('heading', { name: 'Work' })).toBeVisible()
+})
+
+test('an epic row holds its outcomes as columns beside its card, and its own tasks after them', async ({
+  page,
+}) => {
+  await openMono(page)
+  await openTasks(page)
+  await buildAuthEpic(page)
+  await addOnTasksPage(page, 'outcome', 'Mono auth', 'Password reset')
+
+  const row = epic(page, 'Mono auth')
+  const card = row.getByRole('heading', { name: 'Mono auth', level: 3 })
+  const first = outcome(page, 'Login pages')
+  const second = outcome(page, 'Password reset')
+  const loose = row.getByRole('list', { name: 'Mono auth tasks' })
+
+  // The card on the left of the rule, the board on the right of it, and the
+  // outcomes level with each other along the top of the board.
+  const [c, a, b] = await Promise.all([card, first, second].map((l) => l.boundingBox()))
+  expect(a!.x).toBeGreaterThan(c!.x + c!.width)
+  expect(b!.x).toBeGreaterThan(a!.x + a!.width)
+  expect(Math.abs(b!.y - a!.y)).toBeLessThan(2)
+  await expect(first.getByRole('list', { name: 'Login pages tasks' })).toContainText('Login form')
+  await expect(loose).toContainText('CSRF token')
+})
+
+test('an import brings its backlog with it, replacing the one here, and it is saved', async ({
+  page,
+}) => {
+  await openMono(page)
+  await importSession(page, {
+    version: 4,
+    dayKey: '2026-08-20',
+    events: [],
+    tasks: {
+      areas: [{ id: 'home', name: 'Home', order: 0, createdAt: 1, updatedAt: 1 }],
+      items: [
+        {
+          id: 'gate',
+          kind: 'task',
+          title: 'Fix the gate',
+          parentId: 'home',
+          status: 'open',
+          order: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    },
+  })
+  await openTasks(page)
+
+  await expect(inbox(page, 'Home')).toContainText('Fix the gate')
+  await expect(main(page).getByRole('heading', { name: 'Work' })).toHaveCount(0)
+
+  // Written to IndexedDB before it was shown, so a reload finds it there.
+  await page.reload()
+  await expect(inbox(page, 'Home')).toContainText('Fix the gate')
+})
+
+test('an archived task is put away, not listed as work, and can be restored', async ({ page }) => {
+  await openMono(page)
+  // Nothing on the page archives a single task, but a file can carry one.
+  await importSession(page, {
+    version: 4,
+    dayKey: '2026-08-20',
+    events: [],
+    tasks: {
+      areas: [{ id: 'home', name: 'Home', order: 0, createdAt: 1, updatedAt: 1 }],
+      items: [
+        {
+          id: 'gate',
+          kind: 'task',
+          title: 'Fix the gate',
+          parentId: 'home',
+          status: 'open',
+          order: 0,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          id: 'shed',
+          kind: 'task',
+          title: 'Paint the shed',
+          parentId: 'home',
+          status: 'open',
+          order: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          archivedAt: 1,
+        },
+      ],
+    },
+  })
+  await openTasks(page)
+
+  await expect(inbox(page, 'Home')).toContainText('Fix the gate')
+  await expect(inbox(page, 'Home')).not.toContainText('Paint the shed')
+  await main(page).getByText('Done, dropped and archived (1)').click()
+  await main(page).getByRole('button', { name: 'Restore Paint the shed' }).click()
+  await expect(inbox(page, 'Home')).toContainText('Paint the shed')
 })

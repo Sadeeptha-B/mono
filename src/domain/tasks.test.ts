@@ -5,19 +5,24 @@ import {
   activeTasks,
   archive,
   areaOf,
+  backlogProblem,
   canParent,
   childrenOf,
   complete,
   defaultPurpose,
-  descendantsOf,
   drop,
   inboxOf,
+  isGone,
   isInActiveTree,
+  isVersion,
+  liveDescendantsOf,
   newArea,
-  newer,
   newItem,
+  nextVersion,
   nextOrder,
   openTasks,
+  openTasksUnder,
+  outranks,
   pathOf,
   purposeParts,
   tasksOfOutcome,
@@ -64,6 +69,7 @@ describe('the inbox', () => {
       item('login', 'task', 'auth'),
       item('shipped', 'task', 'work', { status: 'done', doneAt: AT }),
       item('gone', 'task', 'work', { deletedAt: AT }),
+      item('shelved', 'task', 'work', { archivedAt: AT }),
       item('groceries', 'task', 'personal'),
     ]
 
@@ -168,14 +174,42 @@ describe('status transitions', () => {
   })
 })
 
-describe('newer', () => {
-  it('keeps the later write, and the first on a tie', () => {
+describe('versions', () => {
+  it('stamps an edit now, or one past a version from a clock running ahead', () => {
+    expect(nextVersion(5, 100)).toBe(100)
+    expect(nextVersion(500, 100)).toBe(501)
+  })
+
+  it('has no next version for a record already at the last one, so nothing passes it', () => {
+    const last = Number.MAX_SAFE_INTEGER
+    expect(nextVersion(last - 1, 100)).toBe(last)
+    expect(isVersion(last)).toBe(true)
+    expect(nextVersion(last, 100)).toBeNull()
+    expect(isVersion(last + 1)).toBe(false)
+    expect(isVersion(1.5)).toBe(false)
+    expect(isVersion(-1)).toBe(false)
+  })
+})
+
+describe('outranks', () => {
+  it('lets the later write win, and neither of two at the same version', () => {
     const a = { id: 'x', updatedAt: 1 }
     const b = { id: 'x', updatedAt: 2 }
-    expect(newer(a, b)).toBe(b)
-    expect(newer(b, a)).toBe(b)
+    expect(outranks(b, a)).toBe(true)
+    expect(outranks(a, b)).toBe(false)
     const c = { id: 'x', updatedAt: 1 }
-    expect(newer(a, c)).toBe(a)
+    expect(outranks(a, c)).toBe(false)
+    expect(outranks(c, a)).toBe(false)
+  })
+
+  it('lets a delete win over any live copy, and never the other way round', () => {
+    const deleted = { id: 'x', updatedAt: 1, deletedAt: 1 }
+    const renamedLater = { id: 'x', updatedAt: 5 }
+    expect(outranks(deleted, renamedLater)).toBe(true)
+    expect(outranks(renamedLater, deleted)).toBe(false)
+    // Between two tombstones, versions decide as usual.
+    const deletedLater = { id: 'x', updatedAt: 3, deletedAt: 3 }
+    expect(outranks(deletedLater, deleted)).toBe(true)
   })
 })
 
@@ -223,19 +257,20 @@ describe('the active tree', () => {
   })
 })
 
-describe('descendantsOf', () => {
-  it('finds the whole subtree, deleted children included, and survives a cycle', () => {
+describe('liveDescendantsOf', () => {
+  it('finds what deleting would take: live items beneath, through live ones only', () => {
     const items = [
       item('auth', 'epic', 'work'),
       item('pages', 'outcome', 'auth'),
       item('form', 'task', 'pages'),
-      item('gone', 'task', 'auth', { deletedAt: AT }),
+      item('gone', 'outcome', 'auth', { deletedAt: AT }),
+      item('under-gone', 'task', 'gone'),
       item('elsewhere', 'task', 'work'),
     ]
-    expect(descendantsOf('auth', items).map((i) => i.id).sort()).toEqual(['form', 'gone', 'pages'])
+    expect(liveDescendantsOf('auth', items).map((i) => i.id).sort()).toEqual(['form', 'pages'])
 
     const loop = [item('a', 'task', 'b'), item('b', 'epic', 'a')]
-    expect(descendantsOf('a', loop).map((i) => i.id)).toEqual(['b'])
+    expect(liveDescendantsOf('a', loop).map((i) => i.id)).toEqual(['b'])
   })
 })
 
@@ -292,5 +327,136 @@ describe('picking an outcome', () => {
 
   it("keeps a single-task outcome's task title, the more specific name", () => {
     expect(purposeParts(['readme'], items, [work])).toEqual(['Write the README'])
+  })
+})
+
+describe('a large backlog', () => {
+  // 100 epics of 5 outcomes, each outcome holding 20 open tasks: 10,000 tasks.
+  const build = () => {
+    const items: Item[] = []
+    for (let e = 0; e < 100; e++) {
+      items.push(item(`e${e}`, 'epic', 'work'))
+      for (let o = 0; o < 5; o++) {
+        items.push(item(`e${e}o${o}`, 'outcome', `e${e}`))
+        for (let t = 0; t < 20; t++) items.push(item(`e${e}o${o}t${t}`, 'task', `e${e}o${o}`))
+      }
+    }
+    return items
+  }
+
+  it('projects in linear time, not one tree walk per task', () => {
+    const items = build()
+    const started = performance.now()
+
+    expect(activeTasks(items, [work])).toHaveLength(10_000)
+    expect(placesForTasks(items, [work])).toHaveLength(1 + 100 + 500)
+    for (let e = 0; e < 100; e++) {
+      for (let o = 0; o < 5; o++) expect(tasksOfOutcome(`e${e}o${o}`, items, [work])).toHaveLength(20)
+    }
+    const picked = Array.from({ length: 20 }, (_, t) => `e0o0t${t}`)
+    expect(purposeParts(picked, items, [work])).toEqual(['e0o0'])
+
+    // About 35 ms here. Ten times that, so a slow machine does not fail it,
+    // while still catching both regressions met so far: a tree walk per task
+    // (25 s for the first line alone) and an index rebuilt per call because the
+    // areas arrived as a fresh array (600 ms for the outcome loop).
+    expect(performance.now() - started).toBeLessThan(400)
+  })
+
+  it('answers repeat questions about the same snapshot from the same index', () => {
+    const items = build()
+    const areas = [work]
+    expect(activeTasks(items, areas)).toBe(activeTasks(items, areas))
+    expect(placesForTasks(items, areas)).toBe(placesForTasks(items, areas))
+    // A new snapshot is a new answer.
+    expect(activeTasks([...items], areas)).not.toBe(activeTasks(items, areas))
+  })
+})
+
+describe('open tasks under a parent', () => {
+  it('leaves out an archived task, which belongs with the put-away ones', () => {
+    const items = [
+      item('auth', 'epic', 'work'),
+      item('form', 'task', 'auth'),
+      item('shelved', 'task', 'auth', { archivedAt: AT }),
+      item('shipped', 'task', 'auth', { status: 'done', doneAt: AT }),
+    ]
+    expect(openTasksUnder('auth', items).map((i) => i.id)).toEqual(['form'])
+  })
+})
+
+describe('isGone', () => {
+  it('counts an item deleted with its epic or outcome, at any depth', () => {
+    const items = [
+      item('auth', 'epic', 'work', { deletedAt: AT }),
+      item('pages', 'outcome', 'auth'),
+      item('form', 'task', 'pages'),
+      item('kept', 'task', 'work'),
+    ]
+    expect(isGone('auth', items, [work])).toBe(true)
+    expect(isGone('pages', items, [work])).toBe(true)
+    expect(isGone('form', items, [work])).toBe(true)
+    expect(isGone('kept', items, [work])).toBe(false)
+  })
+
+  it('counts everything in a deleted area', () => {
+    const items = [item('auth', 'epic', 'work'), item('call', 'task', 'auth')]
+    const deleted = { ...work, deletedAt: AT }
+    expect(isGone('auth', items, [deleted])).toBe(true)
+    expect(isGone('call', items, [deleted])).toBe(true)
+  })
+
+  it('keeps what was moved out, and is not fooled by a missing parent or a cycle', () => {
+    const items = [
+      item('auth', 'epic', 'work', { deletedAt: AT }),
+      item('moved', 'task', 'personal'),
+      item('stray', 'task', 'nowhere'),
+      item('a', 'task', 'b'),
+      item('b', 'epic', 'a'),
+    ]
+    for (const id of ['moved', 'stray', 'a', 'b']) {
+      expect(isGone(id, items, [work, personal])).toBe(false)
+    }
+    expect(isGone('unknown', items, [work, personal])).toBe(true)
+  })
+
+  it('takes a deleted subtree out of the active tree too', () => {
+    const items = [item('auth', 'epic', 'work', { deletedAt: AT }), item('form', 'task', 'auth')]
+    expect(isInActiveTree('form', items, [work])).toBe(false)
+    expect(activeTasks(items, [work])).toEqual([])
+  })
+})
+
+describe('backlogProblem', () => {
+  it('accepts a backlog whose records fit together, under tombstones too', () => {
+    const items = [
+      item('auth', 'epic', 'work', { deletedAt: AT }),
+      item('pages', 'outcome', 'auth'),
+      item('form', 'task', 'pages'),
+    ]
+    expect(backlogProblem({ areas: [work], items })).toBeNull()
+  })
+
+  it('refuses a child whose parent the file does not have', () => {
+    expect(backlogProblem({ areas: [work], items: [item('form', 'task', 'missing')] })).toMatch(
+      /belongs to something/,
+    )
+  })
+
+  it('refuses a child under a parent that cannot hold it, which every cycle has', () => {
+    expect(backlogProblem({ areas: [work], items: [item('pages', 'outcome', 'work')] })).toMatch(
+      /cannot/,
+    )
+    const loop = [item('a', 'task', 'b'), item('b', 'epic', 'a')]
+    expect(backlogProblem({ areas: [work], items: loop })).toMatch(/cannot/)
+  })
+
+  it('refuses two records with one id, across areas and items too', () => {
+    expect(
+      backlogProblem({ areas: [work], items: [item('x', 'task', 'work'), item('x', 'task', 'work')] }),
+    ).toMatch(/share an id/)
+    expect(backlogProblem({ areas: [work], items: [item('work', 'task', 'work')] })).toMatch(
+      /share an id/,
+    )
   })
 })

@@ -117,9 +117,11 @@ The **tasks page** at `#/tasks` is a page for the guide's reason: you go there
 and stay a while. It holds the backlog — areas of life, each with an inbox of
 the tasks that sit directly under it, then its epics, each epic's outcomes, and
 tasks at any of those levels — and today's intentions with the tasks gathered
-under each. Epics and outcomes are finished by hand; finishing or archiving one
-hides everything inside without changing it, and deleting one deletes its
-subtree. The stage only ever sees intentions and the tasks a block
+under each. Each area is a band split by a rule: epics and the inbox down the
+left, and level with each, its outcomes as columns of tasks. Epics and outcomes
+are finished by hand; finishing or archiving one hides everything inside without
+changing it, and deleting one, or an area, deletes its subtree. The stage only
+ever sees intentions and the tasks a block
 is for; filing and tidying happens on the page, away from the timer.
 
 Session state is a fold over an append-only event log

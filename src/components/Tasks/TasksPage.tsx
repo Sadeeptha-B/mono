@@ -8,20 +8,27 @@
  * `App` swaps the view without unmounting anything, so a block keeps running
  * while you are here, and the header says what the timer would be saying.
  *
- * Two sections, in the order a morning uses them. **Today** is the day's
+ * Two parts, in the order a morning uses them. **Today** is the day's
  * intentions and the tasks gathered under each — the grouping the day keeps,
- * and edits through the event log. **Areas** are the backlog itself: each has
- * its inbox, the open tasks that sit directly under it, and then its epics as
- * cards, each holding its own tasks and its outcomes, each outcome holding its
- * tasks. Three levels is the whole depth the model allows, so the page draws it
- * literally rather than as a general-purpose tree.
+ * and edits through the event log. **Areas** are the backlog itself, one band
+ * each, drawn as a board rather than as a general-purpose tree, because three
+ * levels is the whole depth the model allows. A rule splits every band in two.
+ * Down the left is what the area is made of: its name, one card per epic, and
+ * its inbox last, the open tasks that sit directly under it. On the right, level
+ * with each of those, is what it holds — beside an epic, one column per outcome
+ * with that outcome's tasks beneath it, then a column of the tasks that sit
+ * straight under the epic; beside the inbox, its tasks. The area's own actions
+ * sit level with its name. Columns wrap rather than scroll, so a wide epic
+ * grows downwards and the page never scrolls sideways; below `md` the two
+ * halves of each row stack, the board indented under its card.
  *
- * Epics and outcomes are finished by hand, archived, or deleted. Finishing and
- * archiving never touch what is inside; the subtree leaves the page and the
- * task picker together because its chain is no longer active, and returns
- * unchanged when the epic is reopened or restored — see `isInActiveTree`.
- * Deleting is the one act that reaches into the subtree, and it asks first,
- * naming how much will go with it.
+ * Epics and outcomes are finished by hand, archived, or deleted; areas, which
+ * never finish, are archived or deleted. Finishing and archiving never touch
+ * what is inside; the subtree leaves the page and the task picker together
+ * because its chain is no longer active, and returns unchanged when the epic
+ * or area is reopened or restored — see `isInActiveTree`. Deleting takes the
+ * subtree too, the same way and for good (`isGone`), so it asks first, naming
+ * how much will go with it.
  *
  * Every edit here is a backlog edit — the task store writes the one record it
  * changed — except linking a task to an intention, which is a fact about today
@@ -30,7 +37,16 @@
  * open.
  */
 
-import { useState, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 
 import { PixelCat } from '../Companion/PixelCat'
 import { HeaderStatus } from '../HeaderStatus'
@@ -46,8 +62,9 @@ import {
   activeAreas,
   activeTasks,
   childrenOf,
-  descendantsOf,
   isLive,
+  liveDescendantsOf,
+  openTasksUnder,
   pathOf,
   PATH_SEPARATOR,
   placesForTasks,
@@ -84,9 +101,14 @@ export function TasksPage({
 
   const areas = activeAreas(allAreas)
   const archived = allAreas.filter((a) => isLive(a) && a.archivedAt !== undefined)
-  const places = placesForTasks(items, allAreas)
-  const inPlay = activeTasks(items, allAreas)
-  const [newArea, setNewArea] = useState('')
+  // Per backlog snapshot, not per render: the header's timer re-renders this
+  // page every second, and the backlog has not changed on most of those.
+  const places = useMemo(() => placesForTasks(items, allAreas), [items, allAreas])
+  const inPlay = useMemo(() => activeTasks(items, allAreas), [items, allAreas])
+  const [addField, setAddField] = useState<string | null>(null)
+  // Stable across the timer's once-a-second render, so no field re-runs its
+  // fold check for a tick.
+  const addFields = useMemo(() => ({ current: addField, claim: setAddField }), [addField])
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink lg:h-dvh">
@@ -123,7 +145,9 @@ export function TasksPage({
       </header>
 
       <div className="mono-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-        <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
+        {/* As wide as the header, not the guide's reading measure: a band
+            sets columns side by side, and the prose here is capped on its own. */}
+        <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
           <h1 className="text-3xl font-light text-bright sm:text-4xl">Tasks</h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
             Everything you mean to do, by area of life. A task sitting straight under an
@@ -157,55 +181,53 @@ export function TasksPage({
                 )}
               </Section>
 
-              {areas.map((area) => (
-                <AreaSection
-                  key={area.id}
-                  area={area}
-                  places={places}
-                  items={items}
-                  intentions={intentions}
-                  taskIntentions={taskIntentions}
-                  onLink={linkTask}
-                />
-              ))}
+              <AddFields.Provider value={addFields}>
+                {/* One rule above the first band and one under each, so every
+                    area reads as its own band and the last is closed off from
+                    the control that adds another. */}
+                <div className="mt-8 border-t border-line">
+                  {areas.map((area) => (
+                    <AreaBand
+                      key={area.id}
+                      area={area}
+                      places={places}
+                      items={items}
+                      intentions={intentions}
+                      taskIntentions={taskIntentions}
+                      onLink={linkTask}
+                    />
+                  ))}
+                </div>
 
-              <Section title="Another area">
-                <form
-                  className="flex gap-2"
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    if (addArea(newArea) !== null) setNewArea('')
-                  }}
-                >
-                  <input
-                    value={newArea}
-                    onChange={(e) => setNewArea(e.target.value)}
+                <div className="mt-6">
+                  <AddForm
+                    opener="Add area"
+                    variant="prominent"
+                    label="New area"
                     placeholder="Health, Home, Side project"
-                    aria-label="New area"
+                    button="Add area"
                     maxLength={60}
-                    className={`${fieldClass} py-2 text-sm`}
+                    className="max-w-md"
+                    onAdd={addArea}
                   />
-                  <GhostButton type="submit" disabled={newArea.trim() === ''} className="shrink-0">
-                    Add area
-                  </GhostButton>
-                </form>
 
-                {archived.length > 0 && (
-                  <details className="mt-4">
-                    <summary className="cursor-pointer text-xs text-muted hover:text-body">
-                      Archived ({archived.length})
-                    </summary>
-                    <ul className="mt-2 flex flex-col gap-1.5">
-                      {archived.map((area) => (
-                        <li key={area.id} className="flex items-center justify-between gap-3 text-sm">
-                          <span className="text-muted">{area.name}</span>
-                          <TextButton onClick={() => unarchiveArea(area.id)}>Restore</TextButton>
-                        </li>
-                      ))}
-                    </ul>
-                  </details>
-                )}
-              </Section>
+                  {archived.length > 0 && (
+                    <details className="mt-4">
+                      <summary className="cursor-pointer text-xs text-muted hover:text-body">
+                        Archived ({archived.length})
+                      </summary>
+                      <ul className="mt-2 flex max-w-md flex-col gap-1.5">
+                        {archived.map((area) => (
+                          <li key={area.id} className="flex items-center justify-between gap-3 text-sm">
+                            <span className="text-muted">{area.name}</span>
+                            <TextButton onClick={() => unarchiveArea(area.id)}>Restore</TextButton>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </div>
+              </AddFields.Provider>
             </>
           )}
         </main>
@@ -214,28 +236,12 @@ export function TasksPage({
   )
 }
 
-function Section({
-  title,
-  aside,
-  children,
-}: {
-  title: ReactNode
-  aside?: ReactNode
-  children: ReactNode
-}) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="mt-8 border-t border-line pt-6">
-      <div className="mb-3 flex items-baseline justify-between gap-3">
-        {/* A rename puts a form where the heading was, and a form cannot sit
-            inside a heading, so anything but text is rendered as given. */}
-        {typeof title === 'string' ? (
-          <h2 className="text-xs font-medium tracking-widest text-muted uppercase">{title}</h2>
-        ) : (
-          title
-        )}
-        {aside}
-      </div>
-      {children}
+      <h2 className="mb-3 text-xs font-medium tracking-widest text-muted uppercase">{title}</h2>
+      {/* Lines of text, so held to a reading width while the bands go wide. */}
+      <div className="max-w-3xl">{children}</div>
     </section>
   )
 }
@@ -290,9 +296,19 @@ type TreeProps = {
   onLink: (taskId: string, intentionId: string | null) => void
 }
 
-function AreaSection({ area, ...tree }: TreeProps & { area: Area }) {
+/**
+ * One area as a band: a row for its name and its actions, a row for each open
+ * epic, a row to add another, and its inbox last.
+ *
+ * Every row is the same two-column grid, and the left cell of each carries the
+ * dividing rule, so rows stacked without gaps draw one unbroken line down the
+ * band. One grid holding every row would draw the same picture, but it could
+ * not make an epic's row a single region holding both its card and its board.
+ */
+function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
   const renameArea = useTasks((s) => s.renameArea)
   const archiveArea = useTasks((s) => s.archiveArea)
+  const deleteArea = useTasks((s) => s.deleteArea)
   const [renaming, setRenaming] = useState<string | null>(null)
 
   const children = childrenOf(area.id, tree.items)
@@ -301,96 +317,218 @@ function AreaSection({ area, ...tree }: TreeProps & { area: Area }) {
   const putAway = epics.filter((e) => !isOpenContainer(e))
 
   return (
-    <Section
-      title={
-        renaming === null ? (
-          area.name
-        ) : (
-          <InlineEdit
-            label={`Rename ${area.name}`}
-            value={renaming}
-            onChange={setRenaming}
-            onSave={() => {
-              renameArea(area.id, renaming)
-              setRenaming(null)
-            }}
-            onCancel={() => setRenaming(null)}
-          />
-        )
-      }
-      aside={
-        renaming === null && (
-          <div className="flex gap-3">
+    <div className="border-b border-line py-2">
+      <Row
+        side={
+          // A rename puts a form where the heading was, since a form cannot
+          // sit inside a heading.
+          renaming === null ? (
+            <h2 className="text-lg text-bright wrap-break-word">{area.name}</h2>
+          ) : (
+            <div className="flex">
+              <InlineEdit
+                label={`Rename ${area.name}`}
+                value={renaming}
+                onChange={setRenaming}
+                onSave={() => {
+                  renameArea(area.id, renaming)
+                  setRenaming(null)
+                }}
+                onCancel={() => setRenaming(null)}
+              />
+            </div>
+          )
+        }
+      >
+        {renaming === null && (
+          <div className="flex flex-wrap gap-x-4 gap-y-1 md:justify-end md:pt-1.5">
             <TextButton onClick={() => setRenaming(area.name)} label={`Rename ${area.name}`}>
               Rename
             </TextButton>
             <TextButton onClick={() => archiveArea(area.id)} label={`Archive ${area.name}`}>
               Archive
             </TextButton>
+            <DeleteButton
+              title={area.name}
+              inside={liveInside(area.id, tree.items)}
+              onDelete={() => deleteArea(area.id)}
+            />
           </div>
-        )
-      }
-    >
-      <TaskList
-        parent={area.id}
-        name={area.name}
-        listLabel={`${area.name} inbox`}
-        empty="The inbox is empty."
-        {...tree}
+        )}
+      </Row>
+
+      {openEpics.map((epic) => (
+        <EpicRow key={epic.id} epic={epic} {...tree} />
+      ))}
+
+      <Row
+        side={
+          <AddForm
+            opener="Add epic"
+            openerLabel={`Add an epic to ${area.name}`}
+            label={`New epic in ${area.name}`}
+            placeholder="A new epic"
+            button="Add epic"
+            onAdd={(title) =>
+              useTasks.getState().addItem({ kind: 'epic', title, parentId: area.id })
+            }
+          />
+        }
       />
 
-      {openEpics.length > 0 && (
-        <div className="mt-5 flex flex-col gap-3">
-          {openEpics.map((epic) => (
-            <ContainerCard key={epic.id} item={epic} {...tree} />
-          ))}
-        </div>
-      )}
-
-      <AddForm
-        label={`New epic in ${area.name}`}
-        placeholder="A new epic"
-        button="Add epic"
-        onAdd={(title) => useTasks.getState().addItem({ kind: 'epic', title, parentId: area.id })}
-      />
-
-      <PutAway items={[...finishedTasks(children), ...putAway]} allItems={tree.items} />
-    </Section>
+      <Row side={<h3 className="text-sm text-body md:pt-2">Inbox</h3>}>
+        <Board>
+          <div className="min-w-0">
+            <TaskList
+              parent={area.id}
+              name={area.name}
+              listLabel={`${area.name} inbox`}
+              empty="The inbox is empty."
+              {...tree}
+            />
+          </div>
+        </Board>
+        <PutAway items={[...finishedTasks(children), ...putAway]} allItems={tree.items} />
+      </Row>
+    </div>
   )
 }
 
 /**
- * An epic or an outcome: its open tasks, then (for an epic) its open outcomes,
- * then the forms that add to it, then what has been put away inside it.
+ * One row of a band: what the area is made of on the left of the rule, what
+ * that holds on the right.
  *
- * One component for both, because an outcome is an epic one level down with
- * the one difference that it cannot hold outcomes of its own.
+ * Named rows are regions, so an epic's card and its board are found together.
+ * Below `md` the halves stack, and a short rule down the left of the second
+ * half keeps it reading as belonging to the first.
  */
-function ContainerCard({ item, ...tree }: TreeProps & { item: Item }) {
+function Row({ side, label, children }: { side: ReactNode; label?: string; children?: ReactNode }) {
+  const cells = (
+    <>
+      <div className="min-w-0 py-2 md:border-r md:border-line md:py-3 md:pr-5">{side}</div>
+      {children && (
+        <div className="mb-3 ml-1 min-w-0 border-l border-line pl-3 md:mb-0 md:ml-0 md:border-l-0 md:py-3 md:pl-5">
+          {children}
+        </div>
+      )}
+    </>
+  )
+  const layout = 'grid md:grid-cols-[14rem_minmax(0,1fr)]'
+  return label === undefined ? (
+    <div className={layout}>{cells}</div>
+  ) : (
+    <section aria-label={label} className={layout}>
+      {cells}
+    </section>
+  )
+}
+
+/**
+ * Columns side by side that wrap, rather than scroll, when they run out of
+ * room — the page never scrolls sideways, and a phone gets one column.
+ */
+function Board({ children }: { children: ReactNode }) {
+  return (
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] items-start gap-4">
+      {children}
+    </div>
+  )
+}
+
+/**
+ * An epic's row: its card on the left; on the right a column for each open
+ * outcome, then a slot that adds another beside the last, then a column of the
+ * tasks straight under the epic, which needs no card of its own because the
+ * epic's is level with it. Below the board, what has been put away.
+ *
+ * The add slot sits in the row of outcomes rather than under the board because
+ * a new outcome is a new column: it appears where the button was.
+ */
+function EpicRow({ epic, ...tree }: TreeProps & { epic: Item }) {
+  const children = childrenOf(epic.id, tree.items)
+  const outcomes = children.filter((i) => i.kind === 'outcome')
+
+  return (
+    <Row label={`Epic: ${epic.title}`} side={<ContainerCard item={epic} allItems={tree.items} />}>
+      <Board>
+        {outcomes.filter(isOpenContainer).map((outcome) => (
+          <OutcomeColumn key={outcome.id} outcome={outcome} {...tree} />
+        ))}
+        <div className="min-w-0">
+          <AddForm
+            variant="slot"
+            opener="Add outcome"
+            openerLabel={`Add an outcome to ${epic.title}`}
+            label={`New outcome in ${epic.title}`}
+            placeholder="A new outcome"
+            button="Add"
+            onAdd={(title) =>
+              useTasks.getState().addItem({ kind: 'outcome', title, parentId: epic.id })
+            }
+          />
+        </div>
+        <div className="min-w-0">
+          <TaskList
+            parent={epic.id}
+            name={epic.title}
+            listLabel={`${epic.title} tasks`}
+            empty="No tasks directly under this epic."
+            {...tree}
+          />
+        </div>
+      </Board>
+
+      <PutAway
+        items={[...finishedTasks(children), ...outcomes.filter((o) => !isOpenContainer(o))]}
+        allItems={tree.items}
+      />
+    </Row>
+  )
+}
+
+/** An outcome's column: its card, its open tasks beneath, and what it has put away. */
+function OutcomeColumn({ outcome, ...tree }: TreeProps & { outcome: Item }) {
+  return (
+    <section aria-label={`Outcome: ${outcome.title}`} className="flex min-w-0 flex-col gap-2">
+      <ContainerCard item={outcome} allItems={tree.items} />
+      <TaskList
+        parent={outcome.id}
+        name={outcome.title}
+        listLabel={`${outcome.title} tasks`}
+        empty="No tasks yet."
+        {...tree}
+      />
+      <PutAway items={finishedTasks(childrenOf(outcome.id, tree.items))} allItems={tree.items} />
+    </section>
+  )
+}
+
+/**
+ * The card that names an epic or an outcome and carries its own actions:
+ * rename, finish, archive, delete. What it holds is drawn beside or beneath it
+ * by the row or column it heads, not inside it.
+ *
+ * One component for both, because an outcome is an epic one level down.
+ */
+function ContainerCard({ item, allItems }: { item: Item; allItems: readonly Item[] }) {
   const renameItem = useTasks((s) => s.renameItem)
   const completeItem = useTasks((s) => s.completeItem)
   const archiveItem = useTasks((s) => s.archiveItem)
+  const deleteItem = useTasks((s) => s.deleteItem)
   const [renaming, setRenaming] = useState<string | null>(null)
 
   const noun = item.kind === 'epic' ? 'Epic' : 'Outcome'
-  const children = childrenOf(item.id, tree.items)
-  const outcomes = children.filter((i) => i.kind === 'outcome')
-  const openOutcomes = outcomes.filter(isOpenContainer)
+  const Heading = item.kind === 'epic' ? 'h3' : 'h4'
 
   return (
-    <section
-      aria-label={`${noun}: ${item.title}`}
-      className={`rounded-xl border px-4 py-3 ${
-        item.kind === 'epic' ? 'border-muted/70 bg-surface/40' : 'border-line'
-      }`}
-    >
-      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="text-[10px] font-medium tracking-widest text-muted uppercase">
-          {noun}
-        </span>
-        {renaming === null ? (
-          <>
-            <h3 className="min-w-0 flex-1 truncate text-sm text-bright">{item.title}</h3>
+    <div className="rounded-xl border border-muted bg-surface/40 px-3 py-2.5">
+      <span className="text-[10px] font-medium tracking-widest text-muted uppercase">{noun}</span>
+      {renaming === null ? (
+        <>
+          <div className="mt-0.5 flex items-start gap-2">
+            <Heading className="min-w-0 flex-1 text-sm text-bright wrap-break-word">
+              {item.title}
+            </Heading>
             <button
               type="button"
               onClick={() => setRenaming(item.title)}
@@ -399,18 +537,23 @@ function ContainerCard({ item, ...tree }: TreeProps & { item: Item }) {
             >
               <EditGlyph />
             </button>
-            {/* Its own line on a phone, so the title keeps the width it needs. */}
-            <div className="flex w-full flex-wrap gap-3 sm:w-auto">
-              <TextButton onClick={() => completeItem(item.id)} label={`Mark ${item.title} done`}>
-                Done
-              </TextButton>
-              <TextButton onClick={() => archiveItem(item.id)} label={`Archive ${item.title}`}>
-                Archive
-              </TextButton>
-              <DeleteButton item={item} allItems={tree.items} />
-            </div>
-          </>
-        ) : (
+          </div>
+          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
+            <TextButton onClick={() => completeItem(item.id)} label={`Mark ${item.title} done`}>
+              Done
+            </TextButton>
+            <TextButton onClick={() => archiveItem(item.id)} label={`Archive ${item.title}`}>
+              Archive
+            </TextButton>
+            <DeleteButton
+              title={item.title}
+              inside={liveInside(item.id, allItems)}
+              onDelete={() => deleteItem(item.id)}
+            />
+          </div>
+        </>
+      ) : (
+        <div className="mt-1 flex">
           <InlineEdit
             label={`Rename ${item.title}`}
             value={renaming}
@@ -421,43 +564,9 @@ function ContainerCard({ item, ...tree }: TreeProps & { item: Item }) {
             }}
             onCancel={() => setRenaming(null)}
           />
-        )}
-      </div>
-
-      <div className="mt-2">
-        <TaskList
-          parent={item.id}
-          name={item.title}
-          listLabel={`${item.title} tasks`}
-          empty={item.kind === 'epic' ? 'No tasks directly under this epic.' : 'No tasks yet.'}
-          {...tree}
-        />
-      </div>
-
-      {openOutcomes.length > 0 && (
-        <div className="mt-3 flex flex-col gap-2">
-          {openOutcomes.map((outcome) => (
-            <ContainerCard key={outcome.id} item={outcome} {...tree} />
-          ))}
         </div>
       )}
-
-      {item.kind === 'epic' && (
-        <AddForm
-          label={`New outcome in ${item.title}`}
-          placeholder="A new outcome"
-          button="Add outcome"
-          onAdd={(title) =>
-            useTasks.getState().addItem({ kind: 'outcome', title, parentId: item.id })
-          }
-        />
-      )}
-
-      <PutAway
-        items={[...finishedTasks(children), ...outcomes.filter((o) => !isOpenContainer(o))]}
-        allItems={tree.items}
-      />
-    </section>
+    </div>
   )
 }
 
@@ -468,10 +577,13 @@ function TaskList({
   listLabel,
   empty,
   ...tree
-}: TreeProps & { parent: string; name: string; listLabel: string; empty: string }) {
-  const open = childrenOf(parent, tree.items).filter(
-    (i) => i.kind === 'task' && i.status === 'open',
-  )
+}: TreeProps & {
+  parent: string
+  name: string
+  listLabel: string
+  empty: string
+}) {
+  const open = openTasksUnder(parent, tree.items)
 
   return (
     <>
@@ -492,8 +604,11 @@ function TaskList({
         </ul>
       )}
       <AddForm
+        opener="Add task"
+        openerLabel={`Add a task to ${name}`}
         label={`New task in ${name}`}
-        placeholder={`Add a task to ${name}`}
+        // The column already says whose; a column is too narrow to say it twice.
+        placeholder="Add a task"
         button="Add"
         onAdd={(title) => useTasks.getState().addItem({ kind: 'task', title, parentId: parent })}
       />
@@ -501,38 +616,160 @@ function TaskList({
   )
 }
 
+const OPENER_CLASS = {
+  // `self-start` so a flex column (an outcome's) does not stretch it to full width.
+  inline: 'mt-2 self-start text-xs text-muted',
+  prominent: 'mt-2 self-start text-sm text-body',
+  slot: 'w-full rounded-xl border border-dashed border-line px-3 py-4 text-left text-xs text-muted hover:border-muted',
+} as const
+
+/**
+ * Which add field was opened last, page-wide, so opening one can fold the
+ * others. `null` once the last one opened has been folded by hand.
+ */
+const AddFields = createContext<{
+  current: string | null
+  claim: (id: string | null) => void
+}>({
+  current: null,
+  claim: () => undefined,
+})
+
+/**
+ * A `+ Add …` button that opens into the field it asks for.
+ *
+ * Folded because the board has one in every column, every epic and every area,
+ * and open they outweighed the tasks they add to: a page that is mostly empty
+ * fields reads as a form to fill in rather than as the backlog. The fold costs
+ * one click, and only on the rarer visit that adds rather than ticks.
+ *
+ * Once open it stays open after each add, cleared and focused, because things
+ * are usually written down in runs — three tasks for one outcome, not one. It
+ * folds again on Escape or ×, which hand focus back to the button, and when
+ * another field is opened while it is empty, so at most one empty field is
+ * ever showing and nothing typed is ever thrown away.
+ *
+ * Not on blur, which was tried first. A press elsewhere blurs the field before
+ * the release that completes the click, so a field folding on blur moved the
+ * page under the pointer and the click landed on whatever slid into its place
+ * — usually not the button below it that was aimed at. Opening another field
+ * is itself a finished click, so folding in answer to it moves nothing that
+ * matters.
+ */
 function AddForm({
+  opener,
+  openerLabel,
+  variant = 'inline',
   label,
   placeholder,
   button,
+  maxLength = 120,
+  className = '',
   onAdd,
 }: {
+  /** The folded button's text, after its `+`. */
+  opener: string
+  /** The folded button's accessible name, when its text alone does not say where. */
+  openerLabel?: string
+  /**
+   * `inline` under what it adds to; `prominent` for the page's own `+ Add
+   * area`, sized as the page's last word rather than a column's; `slot` for a
+   * whole column of the board, outlined where the new column will stand.
+   */
+  variant?: 'inline' | 'prominent' | 'slot'
   label: string
   placeholder: string
   button: string
+  maxLength?: number
+  className?: string
   /** Returns the new id, or null when the store refused it. */
   onAdd: (title: string) => string | null
 }) {
-  const [title, setTitle] = useState('')
+  const id = useId()
+  const { current, claim } = useContext(AddFields)
+  /** What is typed while open, or null while folded. */
+  const [title, setTitle] = useState<string | null>(null)
+  const open = title !== null
+
+  // Another field was opened: fold this one if nothing has been typed in it.
+  useEffect(() => {
+    if (current !== null && current !== id) setTitle((t) => (t === '' ? null : t))
+  }, [current, id])
+
+  const field = useRef<HTMLInputElement>(null)
+  const openerButton = useRef<HTMLButtonElement>(null)
+  const refocusOpener = useRef(false)
+
+  // The button only exists again once the fold has rendered, so focus is
+  // handed back after it rather than in the handler that folds it.
+  useEffect(() => {
+    if (open || !refocusOpener.current) return
+    refocusOpener.current = false
+    openerButton.current?.focus()
+  }, [open])
+
+  const fold = () => {
+    refocusOpener.current = true
+    setTitle(null)
+    if (current === id) claim(null)
+  }
+
+  if (!open) {
+    return (
+      <button
+        ref={openerButton}
+        type="button"
+        onClick={() => {
+          setTitle('')
+          claim(id)
+        }}
+        {...(openerLabel ? { 'aria-label': openerLabel } : {})}
+        className={`transition hover:text-bright ${OPENER_CLASS[variant]} ${className}`}
+      >
+        <span aria-hidden="true">+ </span>
+        {opener}
+      </button>
+    )
+  }
+
   return (
     <form
-      className="mt-3 flex gap-2"
+      className={`flex items-center gap-2 ${variant === 'slot' ? '' : 'mt-2'} ${className}`}
       onSubmit={(e) => {
         e.preventDefault()
-        if (onAdd(title) !== null) setTitle('')
+        if (onAdd(title) === null) return
+        setTitle('')
+        field.current?.focus()
       }}
     >
       <input
+        ref={field}
         value={title}
         onChange={(e) => setTitle(e.target.value)}
+        onKeyDown={(e) => e.key === 'Escape' && fold()}
         placeholder={placeholder}
         aria-label={label}
-        maxLength={120}
-        className={`${fieldClass} py-2 text-sm`}
+        // Opened by a click asking for exactly this field.
+        autoFocus
+        maxLength={maxLength}
+        className={`${fieldClass} py-1.5 text-sm`}
       />
-      <GhostButton type="submit" disabled={title.trim() === ''} className="shrink-0">
+      {/* Smaller than the page's other buttons: every column can carry one. */}
+      <GhostButton
+        type="submit"
+        disabled={title.trim() === ''}
+        className="shrink-0 px-3 py-1.5 text-xs"
+      >
         {button}
       </GhostButton>
+      <button
+        type="button"
+        onClick={fold}
+        aria-label={`Cancel ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
+        className="shrink-0 px-1 text-muted transition hover:text-bright"
+      >
+        ×
+      </button>
     </form>
   )
 }
@@ -567,17 +804,19 @@ function TaskRow({
 
   return (
     <li className="rounded-lg border border-muted/70 px-3 py-2">
-      <div className="flex items-center gap-2">
+      <div className="flex items-start gap-2">
+        {/* Level with the first line of the title, which now wraps: a column
+            is too narrow to cut a title short and still say which task it is. */}
         <input
           type="checkbox"
           checked={false}
           onChange={() => completeItem(task.id)}
           aria-label={`${task.title} done`}
-          className="accent-[var(--color-deep)]"
+          className="mt-1 accent-[var(--color-deep)]"
         />
         {renaming === null ? (
           <>
-            <span className="min-w-0 flex-1 truncate text-sm text-bright">{task.title}</span>
+            <span className="min-w-0 flex-1 text-sm text-bright wrap-break-word">{task.title}</span>
             <button
               type="button"
               onClick={() => setRenaming(task.title)}
@@ -615,13 +854,7 @@ function TaskRow({
           />
         )}
         {places.length > 1 && (
-          <InlineSelect
-            label={`Where ${task.title} lives`}
-            prefix="In"
-            value={task.parentId}
-            onChange={(value) => moveItem(task.id, value)}
-            options={places.map((p) => ({ value: p.id, name: p.label }))}
-          />
+          <MovePicker task={task} places={places} onMove={(value) => moveItem(task.id, value)} />
         )}
         <span className="ml-auto flex gap-3">
           <TextButton onClick={() => dropItem(task.id)} label={`Drop ${task.title}`}>
@@ -637,39 +870,137 @@ function TaskRow({
 }
 
 /**
- * Delete, asking first when there is more than the item itself to lose.
+ * Where a task lives, shown as a button that becomes the select only when
+ * asked.
+ *
+ * A select in every row mounts every place as an option in every row: a
+ * thousand tasks across sixty places is sixty thousand elements, growing with
+ * both, and re-rendered with the page each second — for a control used on one
+ * row at a time. The button says where the task is; the whole list exists only
+ * once it is asked for. It stays a select until a place is picked, rather than
+ * folding back when focus leaves: a press elsewhere blurs it before the click
+ * completes, and the fold would move the row under that click — the trap the
+ * add fields fell into. What stays mounted is bounded by the rows someone
+ * actually opened.
+ */
+function MovePicker({
+  task,
+  places,
+  onMove,
+}: {
+  task: Item
+  places: readonly Place[]
+  onMove: (parentId: string) => void
+}) {
+  const [choosing, setChoosing] = useState(false)
+  const select = useRef<HTMLSelectElement>(null)
+  useEffect(() => {
+    if (!choosing) return
+    select.current?.focus()
+    // Opened at once where the browser allows it, so a move is still one
+    // click; elsewhere the focused select opens on the next.
+    try {
+      select.current?.showPicker()
+    } catch {
+      // Unsupported, or the click's activation has lapsed. Focus is enough.
+    }
+  }, [choosing])
+
+  if (!choosing) {
+    const here = labelsOf(places).get(task.parentId) ?? '—'
+    return (
+      <button
+        type="button"
+        onClick={() => setChoosing(true)}
+        aria-label={`Move ${task.title} from ${here}`}
+        className="flex min-w-0 items-center gap-1.5 text-muted transition hover:text-bright"
+      >
+        <span>In</span>
+        <span className="max-w-[11rem] min-w-0 truncate rounded-md border border-muted/70 px-1.5 py-0.5 text-body">
+          {here}
+        </span>
+      </button>
+    )
+  }
+  return (
+    <InlineSelect
+      ref={select}
+      label={`Where ${task.title} lives`}
+      prefix="In"
+      value={task.parentId}
+      onChange={(value) => {
+        setChoosing(false)
+        onMove(value)
+      }}
+      options={places.map((p) => ({ value: p.id, name: p.label }))}
+    />
+  )
+}
+
+/**
+ * Each place's label by id, built once per list of places — which is once per
+ * backlog snapshot — so a row's button finds its own in one lookup.
+ */
+const placeLabels = new WeakMap<readonly Place[], ReadonlyMap<string, string>>()
+function labelsOf(places: readonly Place[]): ReadonlyMap<string, string> {
+  let labels = placeLabels.get(places)
+  if (!labels) {
+    labels = new Map(places.map((p) => [p.id, p.label]))
+    placeLabels.set(places, labels)
+  }
+  return labels
+}
+
+/**
+ * Delete, asking first when there is more than the thing itself to lose.
  *
  * Asked inline rather than in a dialog — Settings is the only dialog Mono has
- * — and only when it matters: an empty epic goes at once, an epic with tasks
- * says how many will go with it.
+ * — and only when it matters: an empty epic or area goes at once, one holding
+ * tasks says how many will go with it. The same for an area as for an item,
+ * since both take what is beneath them the same way.
  */
-function DeleteButton({ item, allItems }: { item: Item; allItems: readonly Item[] }) {
-  const deleteItem = useTasks((s) => s.deleteItem)
+function DeleteButton({
+  title,
+  inside,
+  onDelete,
+}: {
+  title: string
+  /** How many live items would go with it. */
+  inside: number
+  onDelete: () => void
+}) {
   const [asking, setAsking] = useState(false)
-  const inside = descendantsOf(item.id, allItems).filter(isLive).length
 
   if (!asking) {
     return (
       <TextButton
-        onClick={() => (inside === 0 ? deleteItem(item.id) : setAsking(true))}
-        label={`Delete ${item.title}`}
+        onClick={() => (inside === 0 ? onDelete() : setAsking(true))}
+        label={`Delete ${title}`}
       >
         Delete
       </TextButton>
     )
   }
   return (
-    <span role="group" aria-label={`Confirm deleting ${item.title}`} className="flex gap-2">
+    <span
+      role="group"
+      aria-label={`Confirm deleting ${title}`}
+      className="flex flex-wrap gap-x-2 gap-y-1"
+    >
       <span className="text-xs text-commit">
         And the {inside} item{inside === 1 ? '' : 's'} inside?
       </span>
-      <TextButton onClick={() => deleteItem(item.id)} label={`Delete ${item.title} and everything in it`}>
+      <TextButton onClick={onDelete} label={`Delete ${title} and everything in it`}>
         Delete all
       </TextButton>
       <TextButton onClick={() => setAsking(false)}>Keep</TextButton>
     </span>
   )
 }
+
+/** The live items anywhere beneath an area or an item: what deleting it takes. */
+const liveInside = (id: string, items: readonly Item[]): number =>
+  liveDescendantsOf(id, items).length
 
 /**
  * What has been put away under one parent — done and dropped tasks, and
@@ -681,6 +1012,7 @@ function DeleteButton({ item, allItems }: { item: Item; allItems: readonly Item[
 function PutAway({ items, allItems }: { items: readonly Item[]; allItems: readonly Item[] }) {
   const reopenItem = useTasks((s) => s.reopenItem)
   const unarchiveItem = useTasks((s) => s.unarchiveItem)
+  const deleteItem = useTasks((s) => s.deleteItem)
   if (items.length === 0) return null
 
   return (
@@ -714,7 +1046,11 @@ function PutAway({ items, allItems }: { items: readonly Item[]; allItems: readon
                   Reopen
                 </TextButton>
               )}
-              <DeleteButton item={item} allItems={allItems} />
+              <DeleteButton
+                title={item.title}
+                inside={liveInside(item.id, allItems)}
+                onDelete={() => deleteItem(item.id)}
+              />
             </li>
           )
         })}
@@ -727,8 +1063,13 @@ function PutAway({ items, allItems }: { items: readonly Item[]; allItems: readon
 const isOpenContainer = (item: Item): boolean =>
   item.status === 'open' && item.archivedAt === undefined
 
+/**
+ * The tasks under one parent that have been put away: finished, dropped, or
+ * archived while still open — the last can arrive in an import, and belongs
+ * here, where it can be restored, rather than among the work.
+ */
 const finishedTasks = (children: readonly Item[]): Item[] =>
-  children.filter((i) => i.kind === 'task' && i.status !== 'open')
+  children.filter((i) => i.kind === 'task' && (i.status !== 'open' || i.archivedAt !== undefined))
 
 function InlineEdit({
   label,

@@ -2984,3 +2984,434 @@ that list: chips stopped scaling once there could be dozens of places.
 an epic or outcome is not.* Two intentions from the same area are common; two
 about the same epic are not, and a carried-over link would file the next one
 somewhere it does not belong.
+
+**2026-10-05 (review follow-up) — The backlog's write protocol, and its projections.**
+
+Review of the combined branch found seven defects, all real. Five came from one
+weakness: each tab's copy of the backlog and the shared database had no rules
+for disagreeing, and the store papered over that with blind upserts.
+
+*The database enforces the rules now, each inside one transaction.* A check in
+one transaction acted on in the next is a check another tab can slip between,
+which is how two tabs opening an empty database both seeded Work and Personal.
+`taskDb.ts` (schema v2, adding a `meta` store) now:
+
+- never puts a record older, by `updatedAt`, than the copy on disk, and hands
+  the newer copy back as `stale`;
+- keeps a *generation* that every replacement bumps, and refuses — as
+  `superseded` — a write made against an older one;
+- seeds only when the areas store is empty, in the same transaction.
+
+*The store keeps up its side.* All disk work in a tab runs through one queue,
+so an edit made during an import lands after it rather than being discarded as
+superseded. A failed import is owed as an import (`replacePending`) and retried
+whole, from memory, rather than re-queued as upserts that could never remove
+what the import left out. A newer record from the disk or from another tab
+drops this tab's pending copy as well as replacing what it shows; before, the
+older copy stayed queued and the next unrelated write sent it out again. A
+`replaced` broadcast or a `superseded` write voids everything pending and
+reloads, because those edits were made to a backlog that no longer exists. Ties
+go to the copy that reached the disk, which lets the later of two equal-time
+writes stand.
+
+*Projections share one index per snapshot.* `isInActiveTree` rebuilt two maps
+per call and `activeTasks` called it per task: 25 seconds at 10,000 tasks, on
+pages that render every second. `indexBacklog` builds lookups and the active
+chain once per items array (WeakMap, safe because the store never mutates a
+published array) and per set of area records — matched by element, not by array
+identity, after a caller passing `[work]` rebuilt it on every call. The pages
+memoise on the backlog, never on `now`.
+
+*Two UI defects.* The purpose prompt derives its selection from the ticks that
+still name an active task, so a task deleted or finished elsewhere cannot start
+a block with nothing visible in it. The pop-out's Open Mono now moves the tab to
+the day route before focusing it; from the tasks page or the guide, focus alone
+showed a page with nothing to answer.
+
+*Second round: work that overlaps a disk operation.* Five more defects, all in
+the windows the first round's awaits opened. The fixes are deliberately small:
+one counter, one comparison, one stamping rule.
+
+- *`localImports` counts this tab's imports.* A replacement settles only the
+  pending records its own snapshot carried, and clears the owed import only if
+  no newer one arrived while it landed. Before, it cleared everything, so an
+  edit or a second import made meanwhile was shown but never saved. A write
+  whose answer arrives after a local import is ignored, as is another tab's
+  `changed` broadcast while an import is owed: adopting either into the
+  imported backlog had the owed replacement persist records the import left
+  out.
+- *Hydration composes its result after its last await,* from memory as it is
+  then. It used to capture memory before seeding and publish that capture
+  afterwards, overwriting an import made during the seed.
+- *A `replaced` notice no newer than this tab's generation is ignored,* both on
+  receipt and when its queued reload runs. A late notice used to reload over
+  edits made against a newer backlog.
+- *`updatedAt` is a version, not only a time.* An edit's version is the later of
+  now and one past the version it replaces (`nextVersion`). Stamped from the
+  clock alone, a record imported from a clock running ahead could not be edited
+  until this clock caught up — the disk refused every edit as older. The dates a
+  person reads (`doneAt`, `archivedAt`, `deletedAt`) stay on the real clock.
+
+Each of the five has a regression test that fails against the first round's
+store and passes against this one. They trigger the overlapping action from
+inside the IndexedDB transaction in flight, which is the window each defect
+lived in, rather than relying on timing.
+
+*Third round: the same windows, three more places.*
+
+- *A reload stands down if this tab imported while it was reading.* The import
+  is the newest request anyone has made and its replacement is already queued;
+  the reload used to overwrite it and clear the owed flag, so it was lost with
+  no warning. This is distinct from an import that was already owed — stuck
+  behind a failing disk — when another tab's import lands. That one still
+  yields to the import that reached the disk, deliberately: every other tab is
+  already showing it.
+- *Equal versions: the first committed wins.* `nextVersion` makes them real —
+  two tabs editing a record whose version is ahead of the clock both stamp it
+  one past that version. The disk used to let the second overwrite, while tabs
+  adopted broadcasts in arrival order, and the two orders could disagree. Now
+  an equal version with different contents is refused and returned as `stale`,
+  like an older one; an identical copy is a retry and is written. A broadcast at
+  a given version is then always what the disk holds, so "incoming wins ties"
+  is correct by construction rather than by luck.
+- *Hydration reads one consistent snapshot, and hears replacements while it
+  does.* `seedIfEmpty` returns areas, items and generation from its own
+  transaction, so a tab that finds another tab's import where it expected an
+  empty database takes all of it, not its areas beside an earlier, empty read
+  of items. The load listens from before its first read and runs as a queued
+  job, so a replacement notice that arrives meanwhile is acted on after the
+  load, against the generation it actually read.
+
+*Fourth round: the same two mechanisms, tightened.*
+
+- *A reload's import guard counts from when the reload was decided,* not from
+  when its queued job runs. The job can wait behind a slow write, and an
+  import made during that wait is newer than the notice that asked for the
+  reload; checking only from the job's start let the reload clear it.
+- *A `changed` broadcast heard before the load has read the disk waits behind
+  the load,* and is judged against the generation the load found. Judged on
+  arrival, it was compared with the placeholder generation 0, so a late
+  broadcast from an older generation was merged into the newer snapshot.
+  Once loaded, broadcasts are handled on arrival as before, because the
+  pending-drop rules above depend on that timing.
+
+**2026-10-05 (restructure) — The backlog store, simplified: all-or-nothing imports, one queue.**
+
+Four rounds of review each found new races between tabs, and the fifth finding
+came from the fourth round's own fixes: a `changed` broadcast deferred during
+the load read the import counter only when its turn came, so it reloaded over
+a failed import made after it was heard, and cleared the warning. Every one of
+those races traces to one choice: an import could stay *owed* in memory
+(`replacePending`) while other disk work ran, so every place that decided
+something needed a guard on `localImports`, and every new path had to remember
+it. The fix removes the owed state rather than guard it again.
+
+*An import is all or nothing.* `replaceAll` writes the disk first, then
+replaces memory, then broadcasts. If the disk refuses, it rejects and nothing
+has changed: memory, pending and the warning are as they were. `backup.ts`
+reads the file, then lands the backlog, then replaces the day
+(`applyImport`, split out of `importJSON`), so a refused backlog leaves the
+day untouched too, and Settings shows the error. This changes what a person
+sees: a failed import used to show in memory and retry in the background. A
+backlog with no database at all (memory-only mode) still takes the import in
+memory, every imported record left owed so the warning cannot clear over it.
+The import is all or nothing for the backlog; if the day log's own save fails
+afterwards, "Not saving" reports it as it does for any session write.
+
+*Edits are refused while an import is in flight.* From the call until it
+settles, memory still shows the backlog being replaced, and an edit to it
+cannot be carried onto the import correctly — it would bring back records the
+import left out, or revert fields it changed. The verbs do nothing, and
+`addItem`/`addArea` return null, which every caller already handles for a
+blank title. Anything pending when the import lands predates it and goes with
+the replaced backlog. One consequence: if IndexedDB ever hung mid-transaction,
+an import would never settle and edits would stay refused in that tab, where
+before the day log would still have imported. A hung transaction already
+stalls every write, so this was accepted rather than designed around.
+
+*One queue, for disk work and broadcasts alike.* The load, flushes, imports
+and every broadcast heard run as jobs on the per-tab queue, so `generation`
+only changes inside a job, and each check against it is made once, by the job
+that acts on it. That replaces the receipt-time checks, `reloadIfBehind`'s
+second look and the deferral before the load. A `changed` broadcast at this
+tab's generation is *also* adopted the moment it arrives: queued alone, an edit
+made while it waited would build on the copy it replaced and either lose to
+it (at a tied version) or undo it. Adoption is idempotent, so judging the
+message again in its turn costs nothing, and repairs a reload that read the
+disk just before the other tab's write.
+
+*Deleted:* `replacePending`, `localImports`, `settle`, `reloadIfBehind`,
+`onChanged`'s deferral, the replace branch of `flush`, and the import cases in
+the load and reload. *Kept:* version ordering and `stale` adoption, the
+generation check and `superseded` reload, atomic seeding, `nextVersion`,
+per-source health, and every public verb.
+
+*No Web Lock.* The handover proposed one exclusive `navigator.locks` lock
+around all disk work. On inspection it removes no guard by itself — the guards
+went because an import became one job in its tab's order — and since the
+`taskDb.ts` backstops had to stay for browsers without locks, the correctness
+argument has to hold without it anyway. It would have bought fewer stale or
+superseded writes between tabs, at the cost of a second code path, a fake lock
+manager and a doubled test run. `schedule()` is the one place to add it if
+that ever matters.
+
+*Tests rewritten, not deleted.* Three tests described scenarios that no longer
+exist, and each now asserts the guarantee that replaced it: "retries a failed
+import as an import" is now "refuses a failed import whole, leaving the
+backlog and what it owed as they were"; "keeps an edit made while an import is
+landing" is now "refuses an edit made while an import is landing"; and "lets an
+edit made during an import land after it" now makes the edit once the import
+has resolved and checks it is written against the new generation. New tests
+cover the finding above under the new rule, a broadcast heard while an import
+lands, immediate adoption, the memory-only import, an import before the store
+has loaded, and `importBackup`'s order (`backup.test.ts`). Each new guard was
+checked by removing it and watching its test fail.
+
+*Follow-up: backups take turns, and an export waits for the backlog.* Two more
+findings, both in `backup.ts`. An export taken before the backlog had loaded
+wrote the store's starting empty arrays as an explicit empty backlog — a
+valid-looking file that, imported, deleted everything saved. And imports were
+serialised only where they touched the task store, so a file from before
+tasks existed, which never waits on the disk, could replace the day while an
+earlier file's backlog was still landing, and then have that file's day land
+over it. Every import and export now runs in turn on one chain in
+`backup.ts`; an export also waits for `whenHydrated()`, and records what the
+imports before it produced. Settings disables Export until the backlog has
+loaded and both buttons while an import runs, but the guard lives in the
+functions, not the buttons. As with an import, an IndexedDB that never answered
+would leave an export waiting; hydration settles on failure, so only a hang
+does that.
+
+**2026-10-05 (layout) — The tasks page is a board per area, and areas can be deleted.**
+
+The page drew the hierarchy as nested cards in one column: an area's inbox, then
+each epic as a card holding its tasks and its outcomes, each outcome a card
+inside that. Three levels of nesting in a 3xl column left a task in an outcome
+indented twice and squeezed, and nothing about an epic could be taken in at a
+glance. Each area is now a band split by a vertical rule. The left of the rule
+is what the area is made of — its name, a card per epic, the inbox last — and
+the right, level with each, is what that holds: an outcome per column with its
+tasks beneath it, then the tasks straight under the epic, and beside the inbox
+its tasks. The area's actions sit level with its name. The page widened from
+the guide's reading measure to the header's; the Today list and the intro stay
+at a reading width.
+
+*Rows, not one grid.* Every row of a band is its own two-column grid, and the
+left cell of each carries the rule, so rows stacked without gaps draw one
+unbroken line. A single grid with subgrid rows draws the same picture but could
+not make an epic's row one region holding both its card and its board, which is
+what `Epic: …` names and what the e2e specs find tasks inside.
+
+*Columns wrap rather than scroll.* The board is an `auto-fill` grid of columns
+at least 13rem wide, so an epic with many outcomes grows downwards and the page
+never scrolls sideways; on a phone that is one column, and below `md` each row's
+two halves stack, the board indented under a short rule. Task titles wrap rather
+than truncate, because a column is too narrow to cut a title and still say which
+task it is.
+
+*Deleting an area cascades, like deleting an epic.* `deleteArea` tombstones the
+area and every live item beneath it in one write, for `deleteItem`'s reason:
+tasks left alive under a deleted area would belong to nothing anyone can see.
+It asks first, inline, naming the count, and only when there is something to
+lose. A tombstoned area still counts as an area for seeding, so deleting both
+seeds never brings them back. Links to a deleted area — an intention's — already
+show nothing, as links to a deleted epic did.
+
+*Every add field is folded behind its `+ Add …` button.* Area, epic, outcome
+and task alike. The board has one in every column, every epic and every area,
+and open they outweighed the tasks they add to — the page read as a form to fill
+in rather than as the backlog. Once opened, a field stays open after each add,
+cleared and focused, because things are written down in runs. It folds on Escape
+or ×, which hand focus back to its button, and when another field is opened
+while it is empty, so at most one empty field shows and nothing typed is thrown
+away. Folding on blur was tried first and is a trap: a press elsewhere blurs the
+field before the release completes the click, the fold moves the page under the
+pointer, and the click lands on whatever slid into place — in practice, never
+the `+ Add …` button below that it was aimed at. The e2e run caught it.
+`+ Add outcome` is a dashed slot in the row of outcome columns, after the last,
+because a new outcome is a new column and appears where the button was.
+Each button's accessible name says where it adds (`Add a task to Login pages`),
+since its visible text cannot; the e2e specs reach every field through one
+helper, `addOnTasksPage`, that opens it only when it is not already showing.
+
+**2026-10-05 (later review) — Deletes win, imports must fit together, and the
+move control mounts on demand.**
+
+A review of the whole change surface raised six findings. Five were real; each
+was fixed at the smallest scale that removes it.
+
+*A delete wins in the end, by convergence rather than by transaction.* A
+cascade tombstones the subtree the deleting tab can see, and another tab can
+be editing that subtree at the same moment. A child renamed there a moment
+earlier holds a newer version than its tombstone, so the disk keeps the
+rename; a child added there just before the delete was heard was never in the
+subtree. Both left something live under a tombstone, in no view. The reviewer
+proposed discovering descendants and validating parents inside the database
+transaction — the multi-step cross-tab judgement the restructure had just
+removed. Instead, `liveUnderDeleted` (pure) finds live records under a deleted
+area or item, and the store's `finishDeletes` tombstones them as an ordinary
+edit wherever records from elsewhere enter memory: the load, a reload, an
+import, another tab's write, and the disk's newer copies. Every tab that sees
+a leftover deletes it, versions stamped past what they replace, so the disk
+takes them; two tabs sweeping the same child resolve as any tie does. A child
+moved *out* before the delete is under a live parent and stays. The same rule
+covers `deleteArea`.
+
+*A tab with no database keeps its warning.* An import in memory-only mode left
+its records pending so the warning could not clear, but another tab's newer
+copies of those records dropped them all, and adoption reported success while
+the disk still held what the import left out. Pending upserts cannot stand for
+a replacement. `diskless`, set when the database fails to open, now keeps
+adoption from ever clearing the warning; nothing such a tab holds can be saved
+by it.
+
+*An imported backlog must fit together.* Sanitising dropped an unreadable area
+or epic but kept its readable children, and the import then replaced the
+backlog with tasks belonging to nothing. `backlogProblem` (pure) checks, after
+sanitising, that ids are unique across areas and items, every parent is in
+the file, and every child sits under a kind that can hold it; otherwise the
+whole import is refused with the reason. Mono never writes a backlog that
+fails it — tombstones are kept, ids are random, moves are checked — so a
+failure means a damaged or edited file. Cycles need no check of their own:
+tasks hold nothing, epics sit only under areas and outcomes only under epics,
+so any loop fails the kind check. A deleted parent passes, and
+`finishDeletes` tidies what is under it.
+
+*An archived task is put away.* Nothing on the page archives a single task,
+but a file can carry one. The inbox and every column listed it as work while
+the purpose prompt left it out, and the folded list had no Restore for it.
+`openTasksUnder` (and `inboxOf` through it) leaves archived tasks out, and the
+folded list takes them in, with Restore.
+
+*The move control is a button until asked.* Every task row mounted a select of
+every place: a thousand tasks across sixty places was sixty thousand option
+elements, re-rendered with the page each second. Each row now shows where its
+task lives as a button, and mounts the select only when pressed, opening it at
+once through `showPicker` where the browser allows. It stays a select until a
+place is picked rather than folding on blur, for the add fields' reason: a
+fold moves the row under a click on its way elsewhere. Bounding how many rows
+render at once is not done; it waits until a real backlog needs it.
+
+*Not changed: an explicitly empty import is reseeded.* Seeding counts
+tombstones, and every real export carries area records, since seeding happens
+on first load and areas are only ever archived or deleted, never purged. Only a
+hand-made `{ areas: [] }` file reseeds, and reseeding is the kinder answer: with
+no area, the purpose prompt has nowhere to file a task, so no block could start.
+
+**2026-10-05 (deletes, again) — A delete writes only what was deleted, and is
+final.**
+
+This supersedes two earlier calls: "Delete is the only action that cascades"
+(first task-model entry) and the `finishDeletes` repair (later-review entry).
+
+A review reproduced three faults in them, all real:
+
+- *A cascade erased a task another tab had already moved out.* The deleting
+  tab tombstoned what *it* believed sat under the epic, stamped from its own
+  clock. With ordinary rising timestamps that tombstone was newer than the
+  other tab's saved move, so it won, put the task back under the deleted epic
+  and deleted it. The earlier regression test gave the move a version a minute
+  ahead and so passed for the wrong reason. The repair added a second route: a
+  late broadcast describing the task where it used to be was "repaired" past
+  the saved move.
+- *A rename could defeat a delete.* A rename and a delete in the same
+  millisecond share a version; if the rename commits first the disk refused
+  the parent's tombstone but took the children's, so the epic came back empty.
+- *A damaged import could loop.* At `2 ** 53`, adding one changes nothing, so
+  each repair's tombstone tied with what it replaced, came back stale, and
+  queued another.
+
+*Deleting writes one tombstone; the subtree goes by ancestry.* `isGone` asks
+whether an item or anything above it is deleted, the same way `isInActiveTree`
+already hides a finished or archived epic's tasks. Asked of the backlog as it
+stands, it has one answer in every tab: a task moved out first is under a live
+parent and stays; one renamed, added or moved in underneath is gone. Nothing
+is undeleted, so nothing ever needs the subtree tombstoned. `liveUnderDeleted`,
+`finishDeletes`, `descendantsOf` and the cascade in `deleteItem`/`deleteArea`
+are gone. `BlockTasks` drops a block's task once it is gone by ancestry, as it
+did when the cascade tombstoned it, and the delete confirmation counts
+`liveDescendantsOf` — live items reached only through live ones.
+
+*A delete is final, everywhere a copy is judged.* `outranks` (domain): a
+tombstone beats a live copy whatever their versions, a live copy never beats a
+tombstone, otherwise version order with first-committed ties as before.
+`putIfNewer` on disk, `adoptNewer` and `mergeIncoming` in memory and `newer` in
+the load all use it, so they cannot settle differently. A delete that races a
+rename lands without a retry, and a tab that had not heard of a delete cannot
+undo it with an edit: its write comes back stale with the tombstone, which it
+adopts. There is no undelete, so no live copy newer than a tombstone is ever
+legitimate.
+
+*Imported versions must be incrementable.* `sanitiseVersion` accepts
+`updatedAt` only as a non-negative safe integer below `Number.MAX_SAFE_INTEGER`
+and drops the record otherwise, like any record it cannot read. With no repair
+left there is no automatic retry to loop, but a record at such a version could
+never be edited — every edit would tie with it and be refused.
+
+Tests rewritten, not deleted: the two cascade tests now assert that only the
+root is written and the subtree is gone; the overlap tests assert what is
+visible rather than which records carry tombstones, and the moved-out case uses
+ordinary versions. New: a late older copy after a move-out, a delete tying a
+rename (in the same tick, before either tab hears the other), and an edit to
+something already deleted. Reverting the disk rule, the memory rule, or
+restoring the cascade each fails tests.
+
+**2026-10-05 (deletes, the last gap) — Nothing leaves a deleted subtree, and
+no edit outruns the last version.**
+
+Two more findings, both real.
+
+*A move could bring a task back out of a deleted epic.* The edit guard asked
+only whether the item itself was tombstoned, so a task gone by ancestry could
+be moved into a live parent and return. From this tab that is now refused:
+`editItem` and `parentKindOf` ask `isGone`, so nothing gone can be edited,
+moved or added to. From a tab that has not heard of the delete — within a
+broadcast's delay, or for good where `BroadcastChannel` is missing — the disk
+refuses instead: `write` puts a move (a live copy with a new parent) only if
+the disk's copy is not already beneath a tombstone, walking up its parents
+with one read each inside the same transaction. A move that commits before
+the delete survives, because the task is under a live parent when the delete
+lands; commit order is the arbiter. A tombstone in the same write does not
+count against the move, since one tab moving a task out and then deleting its
+old epic made the move first. Only moves are checked: an edit in place leaves
+the record where it is, gone.
+
+A refused move hands back the disk's copy, which is *older* than the one this
+tab sent, so version order alone would have kept the refused move in memory
+and diverged from the disk. `flush` now takes the disk's copy outright for
+anything memory still holds exactly as sent; in every other stale case the
+disk's copy was newer and would have won anyway.
+
+*An edit could take a version past what the importer reads.* Versions run
+from 0 to `Number.MAX_SAFE_INTEGER` (`isVersion`, in the domain beside
+`nextVersion`, which moved there so the store and the importer share one
+bound). `nextVersion` returns null when there is no next version, and the
+store refuses the edit before anything changes. A record imported at the last
+version is read, and stays as it is; one imported a version earlier can be
+edited exactly once. Every version Mono writes, it can read back. Only a
+damaged or edited file gets near the bound.
+
+*Follow-up: a write is judged against the disk as it began.* Three more
+findings against the move check, all real and all in stale tabs batching
+edits. Re-deleting an epic already deleted elsewhere, in the same write as a
+move out of it, let the move through: the check exempted every tombstone in
+the write, including one that only repeated a delete already on disk. A move
+made before its epic was moved into an area deleted elsewhere was refused,
+because the epic's put landed while the task's walk was still reading. And a
+refused move handed back the task's old copy but not the tombstone behind it,
+so a tab without broadcasts went on offering the deleted task as work. The
+write now reads everything first and puts only once every read has answered,
+so each check sees the disk as the write found it. That removed the exemption
+rather than refining it: a delete in the same write is simply not there yet, and
+one already on disk is. The walk returns the tombstone it hit, and the write
+hands it back with the refused copy for the writer to adopt.
+
+*Scope: two tabs need BroadcastChannel.* Several rounds of findings concerned
+a tab that never hears of another's edits, which in practice means a browser
+without `BroadcastChannel`; every current target has it, and elsewhere the
+gap is the moment a broadcast takes to arrive. Running Mono in two tabs is now
+supported only where it exists. Without it a tab shows what it loaded until
+reloaded. The disk's rules still refuse anything from it that would undo a
+delete or overwrite a newer copy, but keeping its view current is out of
+scope, and further findings that depend on a tab hearing nothing are not
+fixed. Recorded in `docs/manual-qa.md` and at `listen` in `tasks.ts`.

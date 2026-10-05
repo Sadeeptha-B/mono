@@ -37,6 +37,7 @@ import { MINI_WINDOW_SIZE, outsideMiniWindowRange } from './size'
 import { GhostButton } from '@/components/ui'
 import { AmbienceButton } from '@/ambient/AmbienceButton'
 import { formatClock, formatDuration } from '@/domain/time'
+import { DAY_HASH } from '@/hooks/useRoute'
 import type { TimerMode } from '@/domain/time'
 import type { Phase } from '@/domain/machine'
 import type { DayProgress } from '@/domain/dayProgress'
@@ -161,6 +162,21 @@ export function MiniWindow(props: Props) {
   )
 }
 
+/**
+ * Bring the tab forward on the day, where both questions this window hands back
+ * are answered.
+ *
+ * Focusing alone was not enough. The tab may be on the tasks page or the guide,
+ * and a block started from this window opens its purpose prompt on the stage,
+ * which neither page shows — so the click arrived at a page with nothing to
+ * answer. The route is a hash, so changing it swaps the view without unmounting
+ * anything, exactly as the header's own links do.
+ */
+function openDayInTab(): void {
+  if (window.location.hash !== DAY_HASH) window.location.hash = DAY_HASH
+  window.focus()
+}
+
 const blocksAhead = (blocks: number): string =>
   `${blocks} block${blocks === 1 ? '' : 's'} ahead`
 
@@ -174,7 +190,7 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
       // request for a tab it did not open, which is why this is a nudge rather
       // than the only way back; the window's own title bar carries a
       // back-to-tab button that always works.
-      return <MiniUnshaped onOpenTab={() => window.focus()} />
+      return <MiniUnshaped onOpenTab={openDayInTab} />
 
     case 'outsideHours':
       return (
@@ -207,7 +223,7 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
           minutes={
             view.blockKind === 'short' ? settings.shortMinutes : settings.deepMinutes
           }
-          onOpenTab={() => window.focus()}
+          onOpenTab={openDayInTab}
           onCannotDecide={props.onCannotDecide}
           onCancel={props.onAbandon}
         />

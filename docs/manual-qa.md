@@ -47,6 +47,13 @@ than gain its own vertical scroll. Repeat once with larger browser text enabled.
 The backlog lives in IndexedDB, which the e2e specs exercise in a fresh profile
 each time. What they cannot show is a real profile over days, or two real tabs.
 
+Two tabs at once are supported only where `BroadcastChannel` exists, which is
+every current browser Mono targets. Without it a tab never hears another's
+edits and goes on showing what it loaded until it is reloaded; the disk still
+refuses anything from it that would undo a delete or overwrite a newer copy,
+but what it shows is not kept current, and that is not a case to test or fix.
+The two-tab checks below assume it is there.
+
 1. Add tasks on the tasks page, close the browser entirely, reopen Mono. Every
    task, tick and area must be there. Check DevTools → Application → Storage
    shows the site as persisted after the first visit.
@@ -55,14 +62,37 @@ each time. What they cannot show is a real profile over days, or two real tabs.
    bring the old name back.
 3. Export from Settings, delete a task, import the file. The task must return.
    Import an export from before tasks existed: the backlog must be unchanged.
+   Then, in DevTools → Application → Storage, simulate a custom storage quota
+   far below what the site uses, and import a large export. Settings must say
+   nothing was imported, and both the day and the backlog must be exactly as
+   they were.
 4. In a profile with site data blocked, add a task. The header must say Mono is
    not saving, and keep saying so after an ordinary block completes.
 5. With an epic holding an outcome and tasks open in two tabs, delete the epic
    in one. The other must lose the whole subtree without a reload, and nothing
-   from it must reappear after either tab is reloaded.
-6. Open Mono at a time before working hours. The intentions question's timer
+   from it must reappear after either tab is reloaded. Then, in the same two tabs, add a task to an epic in one
+   and delete that epic in the other as close together as you can: after a
+   moment, neither tab may show the task, and it must not come back on reload. And
+   move a task out of an epic in one tab, then delete that epic in the other
+   before the move shows there: the task must survive where it was moved to,
+   in both tabs and after a reload.
+6. Import a file in one tab while another tab has unsaved edits. To get them,
+   simulate a tiny storage quota as in 3, edit a task in the second tab until
+   the header says Mono is not saving, then lift the quota without editing
+   again. (Blocking site data will not do: a tab with no database cannot reload
+   an import.) After the import, the second tab must show the imported backlog
+   without being reloaded, its warning must clear, and its unsaved edits must
+   not reappear on either tab after a reload.
+7. Keep a tab from before this build open, then open the new build in a second
+   tab. The new tab must load normally (the old one steps aside for the
+   database upgrade); the old tab may stop saving until it is reloaded.
+8. Open Mono at a time before working hours. The intentions question's timer
    must run and chime (with sound on, after any click on the page) even though
    no block can start yet.
+9. On the tasks page, press a task's "In …" place in Chrome, Firefox and
+   Safari, and on a phone. The list of places must open on that one press
+   where the browser supports it, and on the next press otherwise; picking a
+   place must move the task.
 
 ## The pop-out window
 

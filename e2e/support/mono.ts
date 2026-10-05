@@ -150,3 +150,27 @@ export async function importSession(page: Page, contents: unknown) {
   })
   await page.keyboard.press('Escape')
 }
+
+const ADD_ARTICLE = { task: 'a task', epic: 'an epic', outcome: 'an outcome' } as const
+
+/**
+ * Write a task, epic or outcome into its parent on the tasks page.
+ *
+ * Every add field there is folded behind its `+ Add …` button until asked for,
+ * and stays open after an add so a run of them can be written in a row, so the
+ * button is clicked only when the field is not already showing.
+ */
+export async function addOnTasksPage(
+  page: Page,
+  kind: keyof typeof ADD_ARTICLE,
+  parent: string,
+  title: string,
+) {
+  const main = page.getByRole('main')
+  const field = main.getByLabel(`New ${kind} in ${parent}`, { exact: true })
+  if (!(await field.isVisible())) {
+    await main.getByRole('button', { name: `Add ${ADD_ARTICLE[kind]} to ${parent}`, exact: true }).click()
+  }
+  await field.fill(title)
+  await field.press('Enter')
+}

@@ -32,7 +32,7 @@
  * nothing downstream of this prompt learns that outcomes exist.
  */
 
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 
 import { fieldClass, GhostButton, InlineSelect, PrimaryButton, StagePrompt } from '../ui'
 import {
@@ -87,7 +87,8 @@ export function PurposePanel({
   const allAreas = useTasks((s) => s.areas)
   const addItem = useTasks((s) => s.addItem)
 
-  const [selected, setSelected] = useState<string[]>([])
+  // What the user ticked. Not what the block is for: see `selected` below.
+  const [ticked, setTicked] = useState<string[]>([])
   // `null` while the purpose is still following the tasks; text once edited.
   const [ownPurpose, setOwnPurpose] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
@@ -97,12 +98,23 @@ export function PurposePanel({
   const newTaskInput = useRef<HTMLInputElement>(null)
 
   // Only tasks whose epic, outcome and area are all still in play: finishing or
-  // archiving any of those takes its tasks out of the offer with it.
-  const open = activeTasks(items, allAreas)
-  const byId = new Map(items.map((i) => [i.id, i]))
+  // archiving any of those takes its tasks out of the offer with it. Derived
+  // per backlog snapshot, never per tick — this panel renders every second.
+  const open = useMemo(() => activeTasks(items, allAreas), [items, allAreas])
+  const byId = useMemo(() => new Map(items.map((i) => [i.id, i])), [items])
+  const places = useMemo(() => placesForTasks(items, allAreas), [items, allAreas])
+
+  // The ticks that still name a task in play. A task can leave from under a
+  // tick — deleted or finished in another tab, its epic archived — and its
+  // checkbox goes with it; the tick must too, or Start would stay enabled for a
+  // block recording a task nobody can see. Derived rather than pruned, so the
+  // purpose, Start and the submission all read the same answer.
+  const selected = useMemo(() => {
+    const live = new Set(open.map((t) => t.id))
+    return ticked.filter((id) => live.has(id))
+  }, [ticked, open])
   const chosen = selected.map((id) => byId.get(id)).filter((t): t is Item => t !== undefined)
   const purpose = ownPurpose ?? defaultPurpose(purposeParts(selected, items, allAreas))
-  const places = placesForTasks(items, allAreas)
   const pathFor = (task: Item) => pathOf(task.id, items, allAreas).join(PATH_SEPARATOR)
   const trimmed = purpose.trim()
 
@@ -124,15 +136,19 @@ export function PurposePanel({
   // Outcomes worth ticking whole: open, in play, and still holding open tasks.
   // The same rule as the tasks — one already partly or fully ticked stays shown
   // whatever the filter says.
-  const outcomes = items
-    .filter(
-      (o) =>
-        o.kind === 'outcome' &&
-        o.status === 'open' &&
-        isInActiveTree(o.id, items, allAreas) &&
-        tasksOfOutcome(o.id, items, allAreas).length > 0,
-    )
-    .map((o) => ({ outcome: o, tasks: tasksOfOutcome(o.id, items, allAreas) }))
+  const outcomes = useMemo(
+    () =>
+      items
+        .filter(
+          (o) =>
+            o.kind === 'outcome' &&
+            o.status === 'open' &&
+            isInActiveTree(o.id, items, allAreas) &&
+            tasksOfOutcome(o.id, items, allAreas).length > 0,
+        )
+        .map((o) => ({ outcome: o, tasks: tasksOfOutcome(o.id, items, allAreas) })),
+    [items, allAreas],
+  )
   const touched = (tasks: readonly Item[]) => tasks.some((t) => selected.includes(t.id))
   const outcomeMatches = outcomes.filter(
     ({ outcome }) => needle === '' || outcome.title.toLowerCase().includes(needle),
@@ -182,14 +198,14 @@ export function PurposePanel({
   }, [])
 
   const toggle = (id: string) =>
-    setSelected((current) =>
+    setTicked((current) =>
       current.includes(id) ? current.filter((t) => t !== id) : [...current, id],
     )
 
   // Ticking an outcome picks every open task it holds, or lets go of all of
   // them when they are all already picked.
   const toggleOutcome = (tasks: readonly Item[]) =>
-    setSelected((current) => {
+    setTicked((current) => {
       const ids = tasks.map((t) => t.id)
       if (ids.every((id) => current.includes(id))) return current.filter((id) => !ids.includes(id))
       return [...current, ...ids.filter((id) => !current.includes(id))]
@@ -200,7 +216,7 @@ export function PurposePanel({
     const id = addItem({ kind: 'task', title: newTitle, parentId: placeForNew })
     if (id === null) return
     if (intentionForNew !== null) onLinkTask(id, intentionForNew)
-    setSelected((current) => [...current, id])
+    setTicked((current) => [...current, id])
     setNewTitle('')
   }
 

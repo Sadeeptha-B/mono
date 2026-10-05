@@ -3,6 +3,7 @@
 import { expect, test } from '@playwright/test'
 import {
   addIntention,
+  addOnTasksPage,
   goToStage,
   intentionList,
   openMono,
@@ -57,8 +58,7 @@ test('intentions can be linked to an area, edited and removed', async ({ page })
 test('an intention can point at an epic by its path', async ({ page }) => {
   await openMono(page)
   await page.getByRole('link', { name: 'Tasks', exact: true }).click()
-  await page.getByRole('main').getByLabel('New epic in Work', { exact: true }).fill('Mono auth')
-  await page.getByRole('main').getByLabel('New epic in Work', { exact: true }).press('Enter')
+  await addOnTasksPage(page, 'epic', 'Work', 'Mono auth')
   await page.getByRole('link', { name: 'Back to today' }).click()
 
   await goToStage(page, "Today's intentions")

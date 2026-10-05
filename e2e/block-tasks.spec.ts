@@ -4,6 +4,7 @@ import { expect, test } from '@playwright/test'
 import {
   addBlockTask,
   addIntention,
+  addOnTasksPage,
   goToStage,
   openMono,
   stage,
@@ -119,15 +120,13 @@ async function withAuthEpic(page: Parameters<typeof stage>[0]) {
   await stage(page).getByRole('button', { name: 'Start the day' }).click()
 
   await page.getByRole('link', { name: 'Tasks', exact: true }).click()
-  const main = page.getByRole('main')
-  for (const [label, title] of [
-    ['New epic in Work', 'Mono auth'],
-    ['New outcome in Mono auth', 'Login pages'],
-    ['New task in Login pages', 'Login form'],
-    ['New task in Login pages', 'Session cookie'],
+  for (const [kind, parent, title] of [
+    ['epic', 'Work', 'Mono auth'],
+    ['outcome', 'Mono auth', 'Login pages'],
+    ['task', 'Login pages', 'Login form'],
+    ['task', 'Login pages', 'Session cookie'],
   ] as const) {
-    await main.getByLabel(label, { exact: true }).fill(title)
-    await main.getByLabel(label, { exact: true }).press('Enter')
+    await addOnTasksPage(page, kind, parent, title)
   }
   await page.getByRole('link', { name: 'Back to today' }).click()
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
@@ -169,6 +168,23 @@ test('a task written on the prompt can be filed straight into an outcome', async
   await expect(
     page.getByRole('main').getByRole('region', { name: 'Outcome: Login pages' }),
   ).toContainText('Remember me')
+})
+
+test('a ticked task deleted in another tab cannot start the block', async ({ page, context }) => {
+  await toPurposePrompt(page)
+  await addBlockTask(page, 'Doomed')
+  await expect(startButton(page)).toBeEnabled()
+
+  // A second tab on the same browser profile: same database, same channel.
+  const other = await context.newPage()
+  await openMono(other)
+  await other.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await other.getByRole('main').getByRole('button', { name: 'Delete Doomed' }).click()
+
+  // The checkbox goes, and so does the tick behind it.
+  await expect(stage(page).getByRole('checkbox', { name: 'Doomed' })).toHaveCount(0)
+  await expect(startButton(page)).toBeDisabled()
+  await expect(purposeField(page)).toHaveValue('')
 })
 
 test('an archived epic takes its tasks out of the prompt', async ({ page }) => {

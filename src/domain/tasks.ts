@@ -77,6 +77,12 @@ export type Item = {
   /** Display order among siblings. */
   order: number
   createdAt: Ms
+  /**
+   * The record's version, which orders copies of it across tabs and the disk.
+   * Usually the moment of the last edit, but never behind the version it
+   * replaced — see `nextVersion` in the store — so read it as an order, not as
+   * a time to show anyone.
+   */
   updatedAt: Ms
   /** When it was marked done. Absent while open or dropped. */
   doneAt?: Ms
@@ -119,9 +125,229 @@ export const isLive = (record: { deletedAt?: Ms }): boolean => record.deletedAt 
 export const activeAreas = (areas: readonly Area[]): Area[] =>
   areas.filter((a) => isLive(a) && a.archivedAt === undefined).sort(byOrder)
 
+// -----------------------------------------------------------------------------
+// Projections, over one index per backlog snapshot.
+// -----------------------------------------------------------------------------
+
+/**
+ * Lookups over the items alone: by id, and children by parent.
+ *
+ * Every projection below reads the backlog through these rather than scanning
+ * it, because they are asked often — the task picker and the tasks page both
+ * render once a second for the clock — and a scan inside a per-task question
+ * is quadratic. At ten thousand tasks that was the difference between a frame
+ * and a frozen tab.
+ *
+ * Built once per items array and kept in a WeakMap keyed on it. That is safe
+ * because the store never mutates an array it has published: every change makes
+ * a new one, and the old one, with its index, is collected once nothing holds
+ * it. The cache is invisible to callers — same inputs, same answers — so the
+ * functions here stay pure in every sense that matters to their tests.
+ */
+type ItemIndex = {
+  byId: Map<string, Item>
+  /** Every child, tombstones included, by parent id, in display order. */
+  allChildren: Map<string, Item[]>
+  /** Live children only, by parent id, in display order. */
+  liveChildren: Map<string, Item[]>
+}
+
+const itemIndexes = new WeakMap<readonly Item[], ItemIndex>()
+
+function indexItems(items: readonly Item[]): ItemIndex {
+  const cached = itemIndexes.get(items)
+  if (cached) return cached
+
+  const byId = new Map<string, Item>()
+  const allChildren = new Map<string, Item[]>()
+  for (const item of items) {
+    byId.set(item.id, item)
+    const siblings = allChildren.get(item.parentId)
+    if (siblings) siblings.push(item)
+    else allChildren.set(item.parentId, [item])
+  }
+  const liveChildren = new Map<string, Item[]>()
+  for (const [parent, children] of allChildren) {
+    children.sort(byOrder)
+    const live = children.filter(isLive)
+    if (live.length > 0) liveChildren.set(parent, live)
+  }
+
+  const index = { byId, allChildren, liveChildren }
+  itemIndexes.set(items, index)
+  return index
+}
+
+/**
+ * Everything the active-tree questions need, for one items array and one areas
+ * array. Memoised the same way as `indexItems`, on both identities. The
+ * answers that cost a pass over the backlog are computed on first use and kept.
+ */
+type BacklogIndex = ItemIndex & {
+  areasById: Map<string, Area>
+  inActiveTree: (itemId: string) => boolean
+  gone: (itemId: string) => boolean
+  activeTasks: () => readonly Item[]
+  activeTasksByParent: () => ReadonlyMap<string, readonly Item[]>
+  places: () => readonly Place[]
+}
+
+/**
+ * Indexes by items array, each remembered with the areas it was built for.
+ *
+ * The areas are matched by their elements rather than by the array itself. A
+ * caller that filters or spreads the areas — `[work]`, `activeAreas(areas)` —
+ * makes a new array of the same records on every call, and keying on that
+ * array's identity rebuilt the whole index each time, which is the quadratic
+ * cost this exists to remove. There are only ever a handful of areas, so the
+ * comparison is cheap.
+ */
+const backlogIndexes = new WeakMap<readonly Item[], { areas: readonly Area[]; index: BacklogIndex }[]>()
+
+const sameRecords = (a: readonly Area[], b: readonly Area[]): boolean =>
+  a === b || (a.length === b.length && a.every((area, i) => area === b[i]))
+
+function indexBacklog(items: readonly Item[], areas: readonly Area[]): BacklogIndex {
+  let built = backlogIndexes.get(items)
+  const cached = built?.find((entry) => sameRecords(entry.areas, areas))?.index
+  if (cached) return cached
+
+  const base = indexItems(items)
+  const areasById = new Map(areas.map((a) => [a.id, a]))
+
+  // Whether an id can be the parent of something in play: an active area, or a
+  // live, unarchived, open epic or outcome whose own parent can be.
+  const parentIsActive = ancestryWalk((id) => {
+    const area = areasById.get(id)
+    if (area) return isLive(area) && area.archivedAt === undefined
+    const item = base.byId.get(id)
+    if (!item || !isLive(item) || item.archivedAt !== undefined || item.status !== 'open') return false
+    return item.parentId
+  })
+
+  const inActiveTree = (itemId: string): boolean => {
+    const self = base.byId.get(itemId)
+    if (!self || !isLive(self) || self.archivedAt !== undefined) return false
+    return parentIsActive(self.parentId)
+  }
+
+  // Whether anything at or above an id is deleted. A missing parent is not a
+  // deleted one.
+  const parentIsGone = ancestryWalk((id) => {
+    const area = areasById.get(id)
+    if (area) return !isLive(area)
+    const item = base.byId.get(id)
+    if (!item) return false
+    return isLive(item) ? item.parentId : true
+  })
+  const gone = (itemId: string): boolean => {
+    const self = base.byId.get(itemId)
+    return !self || !isLive(self) || parentIsGone(self.parentId)
+  }
+
+  let tasks: readonly Item[] | null = null
+  const activeTasks = () =>
+    (tasks ??= openTasks(items).filter((t) => inActiveTree(t.id)))
+
+  let byParent: Map<string, Item[]> | null = null
+  const activeTasksByParent = () => {
+    if (byParent) return byParent
+    const grouped = new Map<string, Item[]>()
+    for (const task of activeTasks()) {
+      const siblings = grouped.get(task.parentId)
+      if (siblings) siblings.push(task)
+      else grouped.set(task.parentId, [task])
+    }
+    byParent = grouped
+    return grouped
+  }
+
+  let places: readonly Place[] | null = null
+  const placesOnce = () => {
+    if (places) return places
+    const open = (parentId: string, kind: 'epic' | 'outcome') =>
+      (base.liveChildren.get(parentId) ?? []).filter(
+        (i) => i.kind === kind && i.status === 'open' && i.archivedAt === undefined,
+      )
+    const found: Place[] = []
+    for (const area of activeAreas(areas)) {
+      found.push({ id: area.id, kind: 'area', label: area.name, depth: 0 })
+      for (const epic of open(area.id, 'epic')) {
+        const epicLabel = `${area.name}${PATH_SEPARATOR}${epic.title}`
+        found.push({ id: epic.id, kind: 'epic', label: epicLabel, depth: 1 })
+        for (const outcome of open(epic.id, 'outcome')) {
+          found.push({
+            id: outcome.id,
+            kind: 'outcome',
+            label: `${epicLabel}${PATH_SEPARATOR}${outcome.title}`,
+            depth: 2,
+          })
+        }
+      }
+    }
+    places = found
+    return found
+  }
+
+  const index: BacklogIndex = {
+    ...base,
+    areasById,
+    inActiveTree,
+    gone,
+    activeTasks,
+    activeTasksByParent,
+    places: placesOnce,
+  }
+  if (!built) {
+    built = []
+    backlogIndexes.set(items, built)
+  }
+  // A few views of the same items at most (all areas, active areas); bounded so
+  // a caller that keeps inventing area sets cannot grow it without end.
+  built.unshift({ areas: [...areas], index })
+  built.length = Math.min(built.length, 4)
+  return index
+}
+
+/**
+ * A question about an id's ancestry, answered by walking up its parents.
+ * `step` answers for one id, or names the parent to ask about next. Every
+ * answer is remembered for each id on the way, so a whole backlog costs one
+ * visit per item, and a cycle — only possible in data from outside — answers
+ * false rather than walking forever.
+ */
+function ancestryWalk(step: (id: string) => boolean | string): (startId: string) => boolean {
+  const known = new Map<string, boolean>()
+  return (startId) => {
+    const path: string[] = []
+    let id = startId
+    let answer: boolean
+    for (;;) {
+      const remembered = known.get(id)
+      if (remembered !== undefined) {
+        answer = remembered
+        break
+      }
+      if (path.includes(id)) {
+        answer = false
+        break
+      }
+      const next = step(id)
+      if (typeof next === 'boolean') {
+        answer = next
+        break
+      }
+      path.push(id)
+      id = next
+    }
+    for (const visited of path) known.set(visited, answer)
+    return answer
+  }
+}
+
 /** The live items directly under `parentId`, in display order. */
 export const childrenOf = (parentId: string, items: readonly Item[]): Item[] =>
-  items.filter((i) => i.parentId === parentId && isLive(i)).sort(byOrder)
+  (indexItems(items).liveChildren.get(parentId) ?? []).slice()
 
 /**
  * An area's inbox: its open tasks that belong to nothing smaller.
@@ -130,33 +356,92 @@ export const childrenOf = (parentId: string, items: readonly Item[]): Item[] =>
  * one-offs in this area", and that is the point.
  */
 export const inboxOf = (areaId: string, items: readonly Item[]): Item[] =>
-  childrenOf(areaId, items).filter((i) => i.kind === 'task' && i.status === 'open')
+  openTasksUnder(areaId, items)
+
+/**
+ * The tasks directly under a parent that are still to do: open, and not put
+ * away. Archiving is a way of putting away as much as finishing is, so an
+ * archived task belongs with the done and dropped ones, where it can be
+ * restored, and not in the list of work — the picker already leaves it out.
+ */
+export const openTasksUnder = (parentId: string, items: readonly Item[]): Item[] =>
+  childrenOf(parentId, items).filter(
+    (i) => i.kind === 'task' && i.status === 'open' && i.archivedAt === undefined,
+  )
 
 /** Every live, open task, wherever it sits. */
 export const openTasks = (items: readonly Item[]): Item[] =>
   items.filter((i) => i.kind === 'task' && i.status === 'open' && isLive(i)).sort(byOrder)
 
 /**
- * Every item beneath `id`, at any depth, tombstoned or not, nearest first.
- *
- * Tombstones included because the one caller that needs the whole subtree is
- * deletion, and a child deleted earlier is still part of what is being deleted.
- * Guarded against cycles for the reason `areaOf` is.
+ * The live items beneath `id`, at any depth, nearest first: what deleting it
+ * takes from view. Only through live records — anything under a child deleted
+ * earlier went with that child — and guarded against cycles for the reason
+ * `areaOf` is.
  */
-export function descendantsOf(id: string, items: readonly Item[]): Item[] {
+export function liveDescendantsOf(id: string, items: readonly Item[]): Item[] {
+  const { liveChildren } = indexItems(items)
   const found: Item[] = []
   const seen = new Set([id])
   const queue = [id]
   while (queue.length > 0) {
     const parent = queue.shift()!
-    for (const item of items) {
-      if (item.parentId !== parent || seen.has(item.id)) continue
+    for (const item of liveChildren.get(parent) ?? []) {
+      if (seen.has(item.id)) continue
       seen.add(item.id)
       found.push(item)
       queue.push(item.id)
     }
   }
   return found
+}
+
+/**
+ * Whether an item is deleted: tombstoned itself, or beneath a deleted epic,
+ * outcome or area. An id this backlog does not hold counts as gone.
+ *
+ * A delete tombstones only the thing deleted. What sits under it goes with it
+ * by ancestry, the way finishing or archiving an epic hides its tasks, and
+ * never comes back: nothing is ever undeleted, nothing gone can be edited,
+ * and the disk refuses to move anything out of a deleted subtree. Tombstoning the subtree
+ * as well used to race other tabs: the deleting tab could only stamp what *it*
+ * believed was underneath, so a task another tab had just moved out could be
+ * deleted where it no longer was, and one added a moment before the delete
+ * was heard was missed. Asked of the backlog as it stands, the question has
+ * one answer everywhere: a task moved out first is under a live parent and
+ * stays; one renamed or added underneath is gone.
+ */
+export const isGone = (itemId: string, items: readonly Item[], areas: readonly Area[]): boolean =>
+  indexBacklog(items, areas).gone(itemId)
+
+/**
+ * Why a backlog cannot be taken whole, or null when it can.
+ *
+ * Asked of an import, which replaces everything: a backlog whose records do
+ * not fit together would leave some of them in no view at all. Mono never
+ * writes such a thing — tombstones are kept, so a parent is never missing, ids
+ * are random, and every move is checked against `canParent` — so finding one
+ * means the file was damaged or edited, and the safe answer is to take none of
+ * it. A deleted parent is fine: what is under it is gone with it
+ * (`isGone`). A cycle needs no check of its own: tasks hold nothing, epics sit only
+ * under areas and outcomes only under epics, so any loop puts something under
+ * a parent that cannot hold it.
+ */
+export function backlogProblem(contents: {
+  areas: readonly Area[]
+  items: readonly Item[]
+}): string | null {
+  const kinds = new Map<string, ParentKind>()
+  for (const record of [...contents.areas, ...contents.items]) {
+    if (kinds.has(record.id)) return 'two of its records share an id'
+    kinds.set(record.id, 'kind' in record ? record.kind : 'area')
+  }
+  for (const item of contents.items) {
+    const parent = kinds.get(item.parentId)
+    if (parent === undefined) return `“${item.title}” belongs to something the file does not have`
+    if (!canParent(item.kind, parent)) return `“${item.title}” sits somewhere a ${item.kind} cannot`
+  }
+  return null
 }
 
 /**
@@ -172,34 +457,15 @@ export function descendantsOf(id: string, items: readonly Item[]): Item[] {
  * chain stopped being active, and come back unchanged the moment it is again.
  * A broken chain or a cycle reads as inactive rather than as everywhere.
  */
-export function isInActiveTree(
+export const isInActiveTree = (
   itemId: string,
   items: readonly Item[],
   areas: readonly Area[],
-): boolean {
-  const itemsById = new Map(items.map((i) => [i.id, i]))
-  const areasById = new Map(areas.map((a) => [a.id, a]))
-  const self = itemsById.get(itemId)
-  if (!self || !isLive(self) || self.archivedAt !== undefined) return false
-
-  const seen = new Set([itemId])
-  let id = self.parentId
-  while (!seen.has(id)) {
-    seen.add(id)
-    const area = areasById.get(id)
-    if (area) return isLive(area) && area.archivedAt === undefined
-    const item = itemsById.get(id)
-    if (!item || !isLive(item) || item.archivedAt !== undefined || item.status !== 'open') {
-      return false
-    }
-    id = item.parentId
-  }
-  return false
-}
+): boolean => indexBacklog(items, areas).inActiveTree(itemId)
 
 /** Open tasks whose whole chain is active: what a block may be for. */
-export const activeTasks = (items: readonly Item[], areas: readonly Area[]): Item[] =>
-  openTasks(items).filter((t) => isInActiveTree(t.id, items, areas))
+export const activeTasks = (items: readonly Item[], areas: readonly Area[]): readonly Item[] =>
+  indexBacklog(items, areas).activeTasks()
 
 /**
  * The names above an item, area first: `['Work', 'Mono auth', 'Login pages']`
@@ -211,16 +477,15 @@ export function pathOf(
   items: readonly Item[],
   areas: readonly Area[],
 ): string[] {
-  const itemsById = new Map(items.map((i) => [i.id, i]))
-  const areasById = new Map(areas.map((a) => [a.id, a]))
+  const { byId, areasById } = indexBacklog(items, areas)
   const names: string[] = []
   const seen = new Set([itemId])
-  let id = itemsById.get(itemId)?.parentId
+  let id = byId.get(itemId)?.parentId
   while (id !== undefined && !seen.has(id)) {
     seen.add(id)
     const area = areasById.get(id)
     if (area) return [area.name, ...names]
-    const item = itemsById.get(id)
+    const item = byId.get(id)
     if (!item) break
     names.unshift(item.title)
     id = item.parentId
@@ -240,25 +505,8 @@ export type Place = { id: string; kind: ParentKind; label: string; depth: number
  * full paths, because a select shows one line and "Login pages" alone does not
  * say whose.
  */
-export function placesForTasks(items: readonly Item[], areas: readonly Area[]): Place[] {
-  const places: Place[] = []
-  for (const area of activeAreas(areas)) {
-    places.push({ id: area.id, kind: 'area', label: area.name, depth: 0 })
-    for (const epic of openContainers(area.id, 'epic', items)) {
-      const epicLabel = `${area.name}${PATH_SEPARATOR}${epic.title}`
-      places.push({ id: epic.id, kind: 'epic', label: epicLabel, depth: 1 })
-      for (const outcome of openContainers(epic.id, 'outcome', items)) {
-        places.push({
-          id: outcome.id,
-          kind: 'outcome',
-          label: `${epicLabel}${PATH_SEPARATOR}${outcome.title}`,
-          depth: 2,
-        })
-      }
-    }
-  }
-  return places
-}
+export const placesForTasks = (items: readonly Item[], areas: readonly Area[]): readonly Place[] =>
+  indexBacklog(items, areas).places()
 
 /** The open, unarchived epics or outcomes directly under a parent. */
 export const openContainers = (
@@ -283,8 +531,7 @@ export function areaOf(
   items: readonly Item[],
   areas: readonly Area[],
 ): Area | null {
-  const itemsById = new Map(items.map((i) => [i.id, i]))
-  const areasById = new Map(areas.map((a) => [a.id, a]))
+  const { byId, areasById } = indexBacklog(items, areas)
   const seen = new Set<string>()
 
   let id = itemId
@@ -292,7 +539,7 @@ export function areaOf(
     seen.add(id)
     const area = areasById.get(id)
     if (area) return area
-    const item = itemsById.get(id)
+    const item = byId.get(id)
     if (!item) return null
     id = item.parentId
   }
@@ -340,7 +587,7 @@ export const tasksOfOutcome = (
   outcomeId: string,
   items: readonly Item[],
   areas: readonly Area[],
-): Item[] => activeTasks(items, areas).filter((t) => t.parentId === outcomeId)
+): readonly Item[] => indexBacklog(items, areas).activeTasksByParent().get(outcomeId) ?? []
 
 /**
  * The names a block's default purpose is made of, in the order things were
@@ -359,7 +606,7 @@ export function purposeParts(
   items: readonly Item[],
   areas: readonly Area[],
 ): string[] {
-  const byId = new Map(items.map((i) => [i.id, i]))
+  const { byId } = indexBacklog(items, areas)
   const picked = new Set(selected)
   const parts: string[] = []
   const claimed = new Set<string>()
@@ -433,15 +680,42 @@ export const unarchive = (item: Item, at: Ms): Item => {
 }
 
 /**
- * The newer of two copies of the same record.
+ * Whether copy `a` of a record beats copy `b`.
  *
- * Last write wins, per record. Two tabs editing the same task within the same
- * millisecond is not a case worth a merge strategy for a single user; two tabs
- * where one is holding a stale copy is, and this is what stops the stale one
- * writing over the fresh one.
+ * A delete is final: a tombstone beats any live copy, whatever their
+ * versions, and no live copy beats a tombstone. Mono has no undelete, so a
+ * live copy newer than a tombstone can only be an edit made by a tab that had
+ * not yet heard of the delete — a rename racing it, a move made a moment
+ * before — and letting it win would bring back something deliberately
+ * deleted. Otherwise last write wins, by version. Two tabs editing the same
+ * task in the same millisecond is not a case worth a merge strategy for a
+ * single user; two tabs where one is holding a stale copy is, and this is what
+ * stops the stale one writing over the fresh one. `taskDb.ts` applies the same
+ * rule on disk, so memory and disk cannot settle differently.
  */
-export const newer = <T extends { updatedAt: Ms }>(a: T, b: T): T =>
-  b.updatedAt > a.updatedAt ? b : a
+export const outranks = <T extends { updatedAt: Ms; deletedAt?: Ms }>(a: T, b: T): boolean =>
+  isLive(a) !== isLive(b) ? !isLive(a) : a.updatedAt > b.updatedAt
+
+/**
+ * Whether a number can be a record's version: a whole number of milliseconds
+ * from zero to `Number.MAX_SAFE_INTEGER`, the range in which every version and
+ * the one after it are exact. The importer accepts exactly these, and
+ * `nextVersion` never leaves them, so whatever Mono exports it can read back.
+ */
+export const isVersion = (value: number): boolean => Number.isSafeInteger(value) && value >= 0
+
+/**
+ * The version an edit gets: now, or one past the version it replaces when the
+ * clock is behind that version — after an import from a machine whose clock
+ * ran ahead, or after this clock was set back. Null when there is no next
+ * version to give: a record already at `Number.MAX_SAFE_INTEGER` cannot be
+ * edited, rather than be stamped with a version the importer would refuse.
+ * Only a damaged or edited file can bring one that far.
+ */
+export const nextVersion = (previous: Ms, at: Ms): Ms | null => {
+  const next = Math.max(at, previous + 1)
+  return isVersion(next) ? next : null
+}
 
 const byOrder = (a: { order: number }, b: { order: number }): number => a.order - b.order
 
