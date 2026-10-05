@@ -2939,3 +2939,48 @@ point.
 *`#/tasks` is the third route*, deferred like the guide and sharing its header,
 including the timer strip, now `HeaderStatus`. Epics and outcomes are in the
 model and storage but not on the page yet.
+
+**2026-10-05 (later) — Epics and outcomes reach the UI.**
+
+The model had them from the start; the tasks page, the purpose prompt and the
+intentions question now do too. The interesting decisions are about what
+happens to the inside of an epic when the epic changes.
+
+*Finished by hand, and finishing touches nothing inside.* An epic or outcome is
+done when its owner says so, never because its tasks ran out — a deliverable can
+be finished with tasks still open that no longer matter. Done, dropped and
+archived all hide the subtree by ancestry rather than by writing to it:
+`isInActiveTree` asks whether everything above an item is live, unarchived and
+open, and `activeTasks` is what the picker offers. The tasks keep their own
+status, so reopening or restoring the epic brings each back exactly as it was. A
+cascade of writes would have needed a cascade back, and a task finished on its
+own before the epic was closed would have come back wrongly reopened.
+
+*Archive is a field, not a status.* `Item.archivedAt` sits beside `status`
+because an epic can be put away half done and must come back half done. Only
+the top of the subtree is stamped, so restoring is one write. The same rule now
+covers archived areas, which closes the gap where their tasks were still
+offered in the picker.
+
+*Delete is the one verb that cascades.* A deleted epic whose tasks lived on
+would leave them alive and unreachable. `deleteItem` tombstones the item and
+every live descendant in one transaction, and the page asks first, inline,
+naming the count — only when there is something inside to lose.
+
+*An outcome can be ticked whole, as a shortcut.* It picks every open task it
+holds, shows mixed when only some are picked, and lends its title to the default
+purpose when all are (`purposeParts`; not for a one-task outcome, whose task
+title is the more specific name). The block still records task ids only, so
+nothing downstream learned that outcomes exist.
+
+*The store's verbs became item verbs.* `addItem`, `completeItem`,
+`archiveItem` and the rest work on all three kinds, because finishing an epic is
+the same act as finishing a task. Places a task can go are listed by full path
+(`placesForTasks`), and every picker of a place — the task row's move, the new
+task on the purpose prompt, an intention's link — is now a native select over
+that list: chips stopped scaling once there could be dozens of places.
+
+*An intention's link to an area is remembered for the next intention; a link to
+an epic or outcome is not.* Two intentions from the same area are common; two
+about the same epic are not, and a carried-over link would file the next one
+somewhere it does not belong.

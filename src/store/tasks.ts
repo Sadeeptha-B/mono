@@ -33,8 +33,10 @@
 import { create } from 'zustand'
 
 import {
+  archive,
   canParent,
   complete,
+  descendantsOf,
   drop,
   isLive,
   newArea,
@@ -42,8 +44,10 @@ import {
   newItem,
   nextOrder,
   reopen,
+  unarchive,
   type Area,
   type Item,
+  type ItemKind,
   type ParentKind,
 } from '@/domain/tasks'
 import type { Ms } from '@/domain/types'
@@ -69,19 +73,36 @@ type TaskStore = BacklogContents & {
   archiveArea: (id: string) => void
   unarchiveArea: (id: string) => void
 
-  /**
-   * A new open task under an area or an item. Returns its id, or null when the
-   * title is blank or the parent cannot hold a task.
+  /*
+   * The item verbs work on epics, outcomes and tasks alike: they are one shape
+   * with a `kind`, and finishing an epic is the same act as finishing a task.
+   * None of them touches an item's children except `deleteItem` — an epic that
+   * is done, dropped or archived hides its subtree by ancestry
+   * (`isInActiveTree`), so bringing it back restores everything exactly.
    */
-  addTask: (input: { title: string; parentId: string }) => string | null
-  renameTask: (id: string, title: string) => void
+
+  /**
+   * A new open item under an area or another item. Returns its id, or null when
+   * the title is blank or the parent cannot hold that kind (`canParent`).
+   */
+  addItem: (input: { kind: ItemKind; title: string; parentId: string }) => string | null
+  renameItem: (id: string, title: string) => void
   /** Ignored when the new parent cannot hold this kind, or lies inside it. */
-  moveTask: (id: string, parentId: string) => void
-  completeTask: (id: string) => void
-  dropTask: (id: string) => void
-  reopenTask: (id: string) => void
-  /** A tombstone, so history and other tabs can tell deleted from unknown. */
-  deleteTask: (id: string) => void
+  moveItem: (id: string, parentId: string) => void
+  completeItem: (id: string) => void
+  dropItem: (id: string) => void
+  reopenItem: (id: string) => void
+  archiveItem: (id: string) => void
+  unarchiveItem: (id: string) => void
+  /**
+   * Tombstone the item and everything beneath it, in one write.
+   *
+   * The one verb that reaches into a subtree, because a deleted epic whose
+   * tasks lived on would leave them pointing at a parent nothing shows: alive,
+   * unreachable, and still offered nowhere. One transaction, so a failure
+   * leaves either the whole subtree or none of it deleted on disk.
+   */
+  deleteItem: (id: string) => void
 
   /** Replace the whole backlog, from an import. */
   replaceAll: (contents: BacklogContents) => Promise<void>
@@ -143,24 +164,22 @@ export const useTasks = create<TaskStore>()((set, get) => {
         return { ...rest, updatedAt: at }
       }),
 
-    addTask: ({ title, parentId }) => {
+    addItem: ({ kind, title, parentId }) => {
       const { areas, items } = get()
       const parent = parentKindOf(parentId, areas, items)
-      if (title.trim() === '' || parent === null || !canParent('task', parent)) return null
+      if (title.trim() === '' || parent === null || !canParent(kind, parent)) return null
       const id = newId()
       const siblings = items.filter((i) => i.parentId === parentId)
-      putItem(
-        newItem({ id, kind: 'task', title, parentId, order: nextOrder(siblings) }, Date.now()),
-      )
+      putItem(newItem({ id, kind, title, parentId, order: nextOrder(siblings) }, Date.now()))
       return id
     },
 
-    renameTask: (id, title) =>
+    renameItem: (id, title) =>
       editItem(id, (item, at) =>
         title.trim() === '' ? null : { ...item, title: title.trim(), updatedAt: at },
       ),
 
-    moveTask: (id, parentId) =>
+    moveItem: (id, parentId) =>
       editItem(id, (item, at) => {
         const { areas, items } = get()
         const parent = parentKindOf(parentId, areas, items)
@@ -170,10 +189,31 @@ export const useTasks = create<TaskStore>()((set, get) => {
         return { ...item, parentId, order: nextOrder(siblings), updatedAt: at }
       }),
 
-    completeTask: (id) => editItem(id, (item, at) => (item.status === 'done' ? null : complete(item, at))),
-    dropTask: (id) => editItem(id, (item, at) => (item.status === 'dropped' ? null : drop(item, at))),
-    reopenTask: (id) => editItem(id, (item, at) => (item.status === 'open' ? null : reopen(item, at))),
-    deleteTask: (id) => editItem(id, (item, at) => ({ ...item, deletedAt: at, updatedAt: at })),
+    completeItem: (id) =>
+      editItem(id, (item, at) => (item.status === 'done' ? null : complete(item, at))),
+    dropItem: (id) =>
+      editItem(id, (item, at) => (item.status === 'dropped' ? null : drop(item, at))),
+    reopenItem: (id) =>
+      editItem(id, (item, at) => (item.status === 'open' ? null : reopen(item, at))),
+    archiveItem: (id) =>
+      editItem(id, (item, at) => (item.archivedAt !== undefined ? null : archive(item, at))),
+    unarchiveItem: (id) =>
+      editItem(id, (item, at) => (item.archivedAt === undefined ? null : unarchive(item, at))),
+
+    deleteItem: (id) => {
+      const { items } = get()
+      const item = items.find((i) => i.id === id)
+      if (!item || !isLive(item)) return
+      const at = Date.now()
+      // Children already tombstoned keep the instant they were deleted at.
+      const doomed = [item, ...descendantsOf(id, items).filter(isLive)].map((i) => ({
+        ...i,
+        deletedAt: at,
+        updatedAt: at,
+      }))
+      set((s) => ({ items: doomed.reduce(upsert, s.items) }))
+      save({ items: doomed })
+    },
 
     replaceAll: async (contents) => {
       pending.areas.clear()

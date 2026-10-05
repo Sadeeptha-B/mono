@@ -38,7 +38,9 @@ test('intentions can be linked to an area, edited and removed', async ({ page })
   await goToStage(page, "Today's intentions")
 
   await stage(page).getByLabel('Next intention', { exact: true }).fill('Mono auth')
-  await stage(page).getByRole('group', { name: 'Part of' }).getByRole('button', { name: 'Work' }).click()
+  await stage(page)
+    .getByLabel('What this intention is part of')
+    .selectOption({ label: 'Work' })
   await stage(page).getByRole('button', { name: 'Add intention' }).click()
   await expect(intentionList(page).getByRole('listitem')).toHaveText(/Mono auth\s*Work/)
 
@@ -50,6 +52,24 @@ test('intentions can be linked to an area, edited and removed', async ({ page })
   await intentionList(page).getByRole('button', { name: 'Remove Mono login pages' }).click()
   await expect(intentionList(page)).toHaveCount(0)
   await expect(start(page)).toBeDisabled()
+})
+
+test('an intention can point at an epic by its path', async ({ page }) => {
+  await openMono(page)
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await page.getByRole('main').getByLabel('New epic in Work', { exact: true }).fill('Mono auth')
+  await page.getByRole('main').getByLabel('New epic in Work', { exact: true }).press('Enter')
+  await page.getByRole('link', { name: 'Back to today' }).click()
+
+  await goToStage(page, "Today's intentions")
+  await stage(page).getByLabel('Next intention', { exact: true }).fill('Ship the login pages')
+  await stage(page)
+    .getByLabel('What this intention is part of')
+    .selectOption({ label: 'Work › Mono auth' })
+  await stage(page).getByRole('button', { name: 'Add intention' }).click()
+  await expect(intentionList(page).getByRole('listitem')).toHaveText(
+    /Ship the login pages\s*Work › Mono auth/,
+  )
 })
 
 test('the question gives itself a few minutes, then stops and offers more', async ({ page }) => {

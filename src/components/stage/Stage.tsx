@@ -25,7 +25,7 @@ import { AmbienceButton } from '@/ambient/AmbienceButton'
 
 import type { SetupStageId } from './stages'
 import type { IntentionTimer } from './IntentionsPanel'
-import type { Area } from '@/domain/tasks'
+import type { Place } from '@/domain/tasks'
 import type { Phase } from '@/domain/machine'
 import type {
   ActiveSegment,
@@ -80,8 +80,8 @@ type Props = {
   /** Which of today's intentions each task belongs to. */
   taskIntentions: Readonly<Record<string, string>>
   onLinkTask: (taskId: string, intentionId: string | null) => void
-  /** Areas an intention can point at, from the backlog. */
-  areas: readonly Area[]
+  /** Areas, epics and outcomes an intention can point at, from the backlog. */
+  places: readonly Place[]
   /** What the plan can still hold. */
   planned: { blocks: number; minutes: number }
   intentionTimer: IntentionTimer | null
@@ -134,7 +134,7 @@ export function Stage(props: Props) {
             onUpdateCommitment={props.onUpdateCommitment}
             onRemoveCommitment={props.onRemoveCommitment}
             intentions={props.intentions}
-            areas={props.areas}
+            places={props.places}
             planned={props.planned}
             intentionTimer={props.intentionTimer}
             intentionMinutes={settings.intentionMinutes}

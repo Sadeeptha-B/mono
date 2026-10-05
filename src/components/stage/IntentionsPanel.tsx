@@ -27,18 +27,19 @@
  */
 
 import { unlockAudio } from '@/ambient/audio'
-import { EditGlyph, fieldClass, GhostButton, StagePrompt } from '../ui'
+import { EditGlyph, fieldClass, GhostButton, InlineSelect, StagePrompt } from '../ui'
 import { formatDuration, formatTimer } from '@/domain/time'
-import type { Area } from '@/domain/tasks'
+import type { Place } from '@/domain/tasks'
 import type { Intention, IntentionLink, IntentionPatch, Ms } from '@/domain/types'
 
 /** The two instants the intentions timer runs between. */
 export type IntentionTimer = { startedAt: Ms; endsAt: Ms }
 
 /** What is being typed: a new intention, or an edit to one already named. */
-export type IntentionDraft = { title: string; areaId: string | null; editing: string | null }
+/** `placeId` is the area, epic or outcome the intention points at, if any. */
+export type IntentionDraft = { title: string; placeId: string | null; editing: string | null }
 
-export const emptyIntentionDraft: IntentionDraft = { title: '', areaId: null, editing: null }
+export const emptyIntentionDraft: IntentionDraft = { title: '', placeId: null, editing: null }
 
 export function IntentionsPanel({
   now,
@@ -48,7 +49,7 @@ export function IntentionsPanel({
   onStartTimer,
   planned,
   intentions,
-  areas,
+  places,
   draft,
   onDraft,
   onAdd,
@@ -65,8 +66,11 @@ export function IntentionsPanel({
   /** What the day can still hold, as context for what to intend. */
   planned: { blocks: number; minutes: number }
   intentions: readonly Intention[]
-  /** Areas an intention may point at. Empty until the backlog has loaded. */
-  areas: readonly Area[]
+  /**
+   * Everywhere an intention may point: areas, open epics and open outcomes, as
+   * full paths. Empty until the backlog has loaded.
+   */
+  places: readonly Place[]
   draft: IntentionDraft
   onDraft: (draft: IntentionDraft) => void
   onAdd: (input: Omit<Intention, 'id'>) => void
@@ -74,7 +78,11 @@ export function IntentionsPanel({
   onRemove: (id: string) => void
 }) {
   const title = draft.title.trim()
-  const link: IntentionLink | null = draft.areaId === null ? null : { kind: 'area', id: draft.areaId }
+  const place = places.find((p) => p.id === draft.placeId)
+  // A place is only ever an area, an epic or an outcome — tasks are never
+  // offered — so its kind is always one a link can carry.
+  const link: IntentionLink | null =
+    place && place.kind !== 'task' ? { kind: place.kind, id: place.id } : null
 
   const submit = () => {
     if (!title) return
@@ -84,15 +92,17 @@ export function IntentionsPanel({
     void unlockAudio()
     if (draft.editing) onUpdate(draft.editing, { title, link })
     else onAdd({ title, ...(link ? { link } : {}) })
-    // The area stays chosen: the next intention is usually from the same part
-    // of life as the last one.
-    onDraft({ ...emptyIntentionDraft, areaId: draft.areaId })
+    // An area stays chosen: the next intention is usually from the same part of
+    // life as the last one. An epic or outcome does not — two intentions about
+    // the same epic are rare, and a link carried over unnoticed would file the
+    // next one somewhere it does not belong.
+    onDraft({ ...emptyIntentionDraft, placeId: place?.kind === 'area' ? place.id : null })
   }
 
   const startEditing = (intention: Intention) =>
     onDraft({
       title: intention.title,
-      areaId: intention.link?.kind === 'area' ? intention.link.id : null,
+      placeId: intention.link?.id ?? null,
       editing: intention.id,
     })
 
@@ -120,7 +130,7 @@ export function IntentionsPanel({
             <IntentionRow
               key={intention.id}
               intention={intention}
-              areaName={areaName(intention.link, areas)}
+              placeName={placeName(intention.link, places)}
               editing={intention.id === draft.editing}
               onEdit={() => startEditing(intention)}
               onRemove={() => {
@@ -147,31 +157,22 @@ export function IntentionsPanel({
           className={`${fieldClass} py-3 text-lg`}
         />
 
-        {/* An optional pointer into the backlog. Chips rather than a select,
-            because there are a handful of areas and choosing one is a glance,
-            and choosing the one already chosen is how you say "none". */}
-        {areas.length > 0 && (
-          <div role="group" aria-label="Part of" className="mt-3 flex flex-wrap items-center gap-2">
-            <span className="text-xs text-muted">Part of</span>
-            {areas.map((area) => {
-              const chosen = draft.areaId === area.id
-              return (
-                <button
-                  key={area.id}
-                  type="button"
-                  aria-pressed={chosen}
-                  onClick={() => onDraft({ ...draft, areaId: chosen ? null : area.id })}
-                  className={[
-                    'rounded-lg border px-3 py-1.5 text-xs transition',
-                    chosen
-                      ? 'border-deep bg-deep/15 text-deep'
-                      : 'border-muted/70 text-body hover:bg-surface-raised hover:text-bright',
-                  ].join(' ')}
-                >
-                  {area.name}
-                </button>
-              )
-            })}
+        {/* An optional pointer into the backlog: an area, or an epic or
+            outcome by its path. A select, because once epics exist there can be
+            dozens of places, and a row of chips that long is a list to read. */}
+        {places.length > 0 && (
+          <div className="mt-3 text-xs">
+            <InlineSelect
+              label="What this intention is part of"
+              prefix="Part of"
+              value={draft.placeId ?? ''}
+              onChange={(value) => onDraft({ ...draft, placeId: value === '' ? null : value })}
+              options={[
+                { value: '', name: 'Nothing in particular' },
+                ...places.map((p) => ({ value: p.id, name: p.label })),
+              ]}
+              wide
+            />
           </div>
         )}
 
@@ -244,13 +245,13 @@ function IntentionsClock({
 
 function IntentionRow({
   intention,
-  areaName,
+  placeName,
   editing,
   onEdit,
   onRemove,
 }: {
   intention: Intention
-  areaName: string | null
+  placeName: string | null
   editing: boolean
   onEdit: () => void
   onRemove: () => void
@@ -263,7 +264,7 @@ function IntentionRow({
     >
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm text-bright">{intention.title}</div>
-        {areaName && <div className="text-xs text-muted">{areaName}</div>}
+        {placeName && <div className="truncate text-xs text-muted">{placeName}</div>}
       </div>
       <button
         type="button"
@@ -286,13 +287,13 @@ function IntentionRow({
 }
 
 /**
- * Only areas can be linked from here today; epics and outcomes arrive with
- * their own page. A link to something archived or gone still shows nothing
- * rather than an id.
+ * What a linked intention points at, by its path. A link to something since
+ * finished, archived or deleted shows nothing rather than an id: the intention
+ * still stands, only its pointer has gone quiet.
  */
-function areaName(link: IntentionLink | undefined, areas: readonly Area[]): string | null {
-  if (link?.kind !== 'area') return null
-  return areas.find((a) => a.id === link.id)?.name ?? null
+function placeName(link: IntentionLink | undefined, places: readonly Place[]): string | null {
+  if (!link) return null
+  return places.find((p) => p.id === link.id)?.label ?? null
 }
 
 function capacityDetail(planned: { blocks: number; minutes: number }): string {

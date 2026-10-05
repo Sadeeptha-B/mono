@@ -240,6 +240,7 @@ describe('the v4 schema', () => {
       createdAt: 1,
       updatedAt: 2,
       doneAt: 2,
+      archivedAt: 3,
     }
     const file = JSON.stringify({
       version: 4,

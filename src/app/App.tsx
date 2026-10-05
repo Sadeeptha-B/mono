@@ -64,7 +64,7 @@ import { dayKey, formatDuration, isWithinRegions, nextRegionStart } from '@/doma
 import type { TimerMode } from '@/domain/time'
 import { useSession, useStorageHealth, toPlanInput, selectRegions } from '@/store/session'
 import { useTasks } from '@/store/tasks'
-import { activeAreas } from '@/domain/tasks'
+import { placesForTasks } from '@/domain/tasks'
 import { playChime } from '@/ambient/audio'
 import type { IntentionTimer } from '@/components/stage/IntentionsPanel'
 import { minutesToMs, type BlockKind, type Ms } from '@/domain/types'
@@ -214,7 +214,9 @@ export function App() {
    * and on any re-visit, only from its own button.
    */
   const [intentionTimer, setIntentionTimer] = useState<IntentionTimer | null>(null)
-  const areas = activeAreas(useTasks((s) => s.areas))
+  // Where an intention can point. Read from the backlog store, which the day
+  // otherwise never needs; it re-renders this component only when tasks change.
+  const places = placesForTasks(useTasks((s) => s.items), useTasks((s) => s.areas))
 
   const { phase, session } = store
   const today = dayKey(now)
@@ -721,7 +723,7 @@ export function App() {
                 intentions={session.intentions}
                 taskIntentions={session.taskIntentions}
                 onLinkTask={store.linkTask}
-                areas={areas}
+                places={places}
                 planned={planned}
                 intentionTimer={intentionTimer}
                 onStartIntentionTimer={() => startIntentionTimer(Date.now())}

@@ -77,7 +77,7 @@ import {
   setupStageName,
   type SetupStageId,
 } from './stages'
-import type { Area } from '@/domain/tasks'
+import type { Place } from '@/domain/tasks'
 import { formatClock, formatDuration, nextHalfHour } from '@/domain/time'
 import {
   commitmentSpan,
@@ -106,7 +106,7 @@ export function DaySetupPanel({
   onUpdateCommitment,
   onRemoveCommitment,
   intentions,
-  areas,
+  places,
   planned,
   intentionTimer,
   intentionMinutes,
@@ -134,8 +134,8 @@ export function DaySetupPanel({
   onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onRemoveCommitment: (id: string) => void
   intentions: readonly Intention[]
-  /** Areas an intention can point at. */
-  areas: readonly Area[]
+  /** Areas, epics and outcomes an intention can point at. */
+  places: readonly Place[]
   /** What the plan can still hold, quoted by the intentions question. */
   planned: { blocks: number; minutes: number }
   intentionTimer: IntentionTimer | null
@@ -353,7 +353,7 @@ export function DaySetupPanel({
           onStartTimer={onStartIntentionTimer}
           planned={planned}
           intentions={intentions}
-          areas={areas}
+          places={places}
           draft={intentionDraft}
           onDraft={setIntentionDraft}
           onAdd={onAddIntention}

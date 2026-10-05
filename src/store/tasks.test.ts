@@ -76,7 +76,7 @@ describe('hydration', () => {
     tasks.useTasks.setState({
       areas: [{ id: 'work', name: 'Work', order: 0, createdAt: 1, updatedAt: 1 }],
     })
-    const id = tasks.useTasks.getState().addTask({ title: 'Call Priya', parentId: 'work' })
+    const id = tasks.useTasks.getState().addItem({ kind: 'task', title: 'Call Priya', parentId: 'work' })
 
     await tasks.hydrateTasks(factory)
     expect(tasks.useTasks.getState().items.map((i) => i.id)).toEqual([id])
@@ -103,13 +103,13 @@ describe('editing', () => {
   it('persists a task through its whole life', async () => {
     const tab = await openTab(factory)
     const work = activeAreas(tab.useTasks.getState().areas)[0]!.id
-    const id = tab.useTasks.getState().addTask({ title: '  Call Priya ', parentId: work })!
+    const id = tab.useTasks.getState().addItem({ kind: 'task', title: '  Call Priya ', parentId: work })!
 
     expect(inboxOf(work, tab.useTasks.getState().items).map((i) => i.title)).toEqual([
       'Call Priya',
     ])
 
-    tab.useTasks.getState().completeTask(id)
+    tab.useTasks.getState().completeItem(id)
     await settle()
     const reloaded = await openTab(factory)
     const stored = reloaded.useTasks.getState().items.find((i) => i.id === id)
@@ -120,32 +120,32 @@ describe('editing', () => {
   it('refuses a blank title or a parent that cannot hold a task', async () => {
     const tab = await openTab(factory)
     const work = activeAreas(tab.useTasks.getState().areas)[0]!.id
-    expect(tab.useTasks.getState().addTask({ title: '   ', parentId: work })).toBeNull()
-    expect(tab.useTasks.getState().addTask({ title: 'x', parentId: 'nowhere' })).toBeNull()
+    expect(tab.useTasks.getState().addItem({ kind: 'task', title: '   ', parentId: work })).toBeNull()
+    expect(tab.useTasks.getState().addItem({ kind: 'task', title: 'x', parentId: 'nowhere' })).toBeNull()
 
-    const task = tab.useTasks.getState().addTask({ title: 'a', parentId: work })!
-    expect(tab.useTasks.getState().addTask({ title: 'b', parentId: task })).toBeNull()
+    const task = tab.useTasks.getState().addItem({ kind: 'task', title: 'a', parentId: work })!
+    expect(tab.useTasks.getState().addItem({ kind: 'task', title: 'b', parentId: task })).toBeNull()
   })
 
   it('moves a task between areas, and ignores a move into nowhere', async () => {
     const tab = await openTab(factory)
     const [work, personal] = activeAreas(tab.useTasks.getState().areas)
-    const id = tab.useTasks.getState().addTask({ title: 'Groceries', parentId: work!.id })!
+    const id = tab.useTasks.getState().addItem({ kind: 'task', title: 'Groceries', parentId: work!.id })!
 
-    tab.useTasks.getState().moveTask(id, personal!.id)
+    tab.useTasks.getState().moveItem(id, personal!.id)
     expect(inboxOf(personal!.id, tab.useTasks.getState().items).map((i) => i.id)).toEqual([id])
 
-    tab.useTasks.getState().moveTask(id, 'nowhere')
+    tab.useTasks.getState().moveItem(id, 'nowhere')
     expect(tab.useTasks.getState().items.find((i) => i.id === id)?.parentId).toBe(personal!.id)
   })
 
   it('deletes with a tombstone, and a deleted task cannot be edited', async () => {
     const tab = await openTab(factory)
     const work = activeAreas(tab.useTasks.getState().areas)[0]!.id
-    const id = tab.useTasks.getState().addTask({ title: 'Old', parentId: work })!
+    const id = tab.useTasks.getState().addItem({ kind: 'task', title: 'Old', parentId: work })!
 
-    tab.useTasks.getState().deleteTask(id)
-    tab.useTasks.getState().renameTask(id, 'New')
+    tab.useTasks.getState().deleteItem(id)
+    tab.useTasks.getState().renameItem(id, 'New')
 
     const item = tab.useTasks.getState().items.find((i) => i.id === id)
     expect(item?.deletedAt).toBeTypeOf('number')
@@ -165,12 +165,12 @@ describe('storage failures', () => {
       .mockImplementation(() => {
         throw new DOMException('full', 'QuotaExceededError')
       })
-    const first = tab.useTasks.getState().addTask({ title: 'First', parentId: work })!
+    const first = tab.useTasks.getState().addItem({ kind: 'task', title: 'First', parentId: work })!
     await settle()
     expect(tab.useStorageHealth.getState().failures.tasks).not.toBeNull()
 
     failing.mockRestore()
-    tab.useTasks.getState().addTask({ title: 'Second', parentId: work })
+    tab.useTasks.getState().addItem({ kind: 'task', title: 'Second', parentId: work })
     await settle()
     expect(tab.useStorageHealth.getState().failures.tasks).toBeNull()
 
@@ -196,12 +196,12 @@ describe('other tabs', () => {
     const b = await openTab(factory)
     const work = activeAreas(a.useTasks.getState().areas)[0]!.id
 
-    const id = a.useTasks.getState().addTask({ title: 'Shared', parentId: work })!
+    const id = a.useTasks.getState().addItem({ kind: 'task', title: 'Shared', parentId: work })!
     await vi.waitFor(() =>
       expect(b.useTasks.getState().items.map((i) => i.id)).toContain(id),
     )
 
-    a.useTasks.getState().completeTask(id)
+    a.useTasks.getState().completeItem(id)
     await vi.waitFor(() =>
       expect(b.useTasks.getState().items.find((i) => i.id === id)?.status).toBe('done'),
     )
@@ -219,5 +219,67 @@ describe('other tabs', () => {
     await vi.waitFor(() =>
       expect(b.useTasks.getState().areas.map((x) => x.id)).toEqual(['only']),
     )
+  })
+})
+
+describe('epics and outcomes', () => {
+  it('nest where the parenting rules allow, and nowhere else', async () => {
+    const tab = await openTab(factory)
+    const work = activeAreas(tab.useTasks.getState().areas)[0]!.id
+    const add = tab.useTasks.getState().addItem
+
+    const epic = add({ kind: 'epic', title: 'Mono auth', parentId: work })!
+    const outcome = add({ kind: 'outcome', title: 'Login pages', parentId: epic })!
+    expect(add({ kind: 'task', title: 'Login form', parentId: outcome })).not.toBeNull()
+
+    expect(add({ kind: 'outcome', title: 'Loose', parentId: work })).toBeNull()
+    expect(add({ kind: 'epic', title: 'Nested', parentId: epic })).toBeNull()
+  })
+
+  it('archive and restore without touching what is inside', async () => {
+    const tab = await openTab(factory)
+    const work = activeAreas(tab.useTasks.getState().areas)[0]!.id
+    const { addItem, archiveItem, unarchiveItem } = tab.useTasks.getState()
+    const epic = addItem({ kind: 'epic', title: 'Mono auth', parentId: work })!
+    const task = addItem({ kind: 'task', title: 'Login form', parentId: epic })!
+
+    archiveItem(epic)
+    const before = tab.useTasks.getState().items.find((i) => i.id === task)
+    expect(tab.useTasks.getState().items.find((i) => i.id === epic)?.archivedAt).toBeTypeOf('number')
+
+    unarchiveItem(epic)
+    expect('archivedAt' in tab.useTasks.getState().items.find((i) => i.id === epic)!).toBe(false)
+    expect(tab.useTasks.getState().items.find((i) => i.id === task)).toBe(before)
+  })
+
+  it('delete the whole subtree, and only it, in a write that survives a reload', async () => {
+    const tab = await openTab(factory)
+    const work = activeAreas(tab.useTasks.getState().areas)[0]!.id
+    const { addItem, deleteItem } = tab.useTasks.getState()
+    const epic = addItem({ kind: 'epic', title: 'Mono auth', parentId: work })!
+    const outcome = addItem({ kind: 'outcome', title: 'Login pages', parentId: epic })!
+    const inside = addItem({ kind: 'task', title: 'Login form', parentId: outcome })!
+    const outside = addItem({ kind: 'task', title: 'Call Priya', parentId: work })!
+
+    deleteItem(epic)
+    await settle()
+
+    const reloaded = await openTab(factory)
+    const byId = new Map(reloaded.useTasks.getState().items.map((i) => [i.id, i]))
+    for (const id of [epic, outcome, inside]) expect(byId.get(id)?.deletedAt).toBeTypeOf('number')
+    expect(byId.get(outside)?.deletedAt).toBeUndefined()
+  })
+
+  it('refuse to move an epic underneath one of its own tasks', async () => {
+    const tab = await openTab(factory)
+    const work = activeAreas(tab.useTasks.getState().areas)[0]!.id
+    const { addItem, moveItem } = tab.useTasks.getState()
+    const epic = addItem({ kind: 'epic', title: 'Mono auth', parentId: work })!
+    const task = addItem({ kind: 'task', title: 'Login form', parentId: work })!
+
+    moveItem(task, epic)
+    expect(tab.useTasks.getState().items.find((i) => i.id === task)?.parentId).toBe(epic)
+    moveItem(epic, task)
+    expect(tab.useTasks.getState().items.find((i) => i.id === epic)?.parentId).toBe(work)
   })
 })

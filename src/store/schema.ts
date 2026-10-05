@@ -657,6 +657,7 @@ function sanitiseItem(value: unknown): Item | null {
   const createdAt = sanitiseNumber(value.createdAt)
   const updatedAt = sanitiseNumber(value.updatedAt)
   const doneAt = sanitiseOptionalNumber(value.doneAt)
+  const archivedAt = sanitiseOptionalNumber(value.archivedAt)
   const deletedAt = sanitiseOptionalNumber(value.deletedAt)
   const kind = ITEM_KINDS.find((k) => k === value.kind) ?? null
   const status = ITEM_STATUSES.find((s) => s === value.status) ?? null
@@ -668,6 +669,7 @@ function sanitiseItem(value: unknown): Item | null {
     createdAt === null ||
     updatedAt === null ||
     doneAt === null ||
+    archivedAt === null ||
     deletedAt === null ||
     kind === null ||
     status === null
@@ -684,6 +686,7 @@ function sanitiseItem(value: unknown): Item | null {
     createdAt,
     updatedAt,
     ...(doneAt === undefined ? {} : { doneAt }),
+    ...(archivedAt === undefined ? {} : { archivedAt }),
     ...(deletedAt === undefined ? {} : { deletedAt }),
   }
 }

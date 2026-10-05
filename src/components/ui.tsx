@@ -229,3 +229,47 @@ export function MinutesInput({
     </div>
   )
 }
+
+/**
+ * A native select with a short word in front of it: "In", "Today", "Part of".
+ *
+ * Native because it is the right control for a list of a few to a few dozen
+ * named places in a dense row — the platform's own picker on a phone, type to
+ * jump on a desktop — and because a custom one would be a component to keep
+ * accessible for no gain. Shared by the tasks page, the purpose prompt and the
+ * intentions question, which all ask "where does this go?".
+ */
+export function InlineSelect({
+  label,
+  prefix,
+  value,
+  onChange,
+  options,
+  wide = false,
+}: {
+  label: string
+  prefix: string
+  value: string
+  onChange: (value: string) => void
+  options: readonly { value: string; name: string }[]
+  /** Room for a full path rather than a single name. */
+  wide?: boolean
+}) {
+  return (
+    <label className="flex min-w-0 items-center gap-1.5 text-muted">
+      <span>{prefix}</span>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        aria-label={label}
+        className={`${wide ? 'max-w-[18rem]' : 'max-w-[11rem]'} min-w-0 truncate rounded-md border border-muted/70 bg-ink px-1.5 py-0.5 text-body focus:border-deep focus:outline-none`}
+      >
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>
+            {option.name}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+}
