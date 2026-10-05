@@ -16,7 +16,7 @@ Three of these are worth stating plainly, because each is easy to assume away:
   uses `chrome-headless-shell`, which has no extension layer at all. The e2e
   specs cover the half that is Mono's — that it publishes the right intent, with
   the right absolute end, at the right moments. Everything on the far side of
-  that message is section six below.
+  that message is the last section below.
 
 Work through the section that matches what you touched. Chrome and Edge are the
 browsers that matter for the pop-out and extension; iOS Safari is also a
@@ -41,6 +41,25 @@ than gain its own vertical scroll. Repeat once with larger browser text enabled.
    Switch to elapsed time first and check that it also advances by five minutes.
 2. Start a block and sleep the machine across its end. You should get the
    "You were away" prompt with the right elapsed span.
+
+## Tasks and the backlog
+
+The backlog lives in IndexedDB, which the e2e specs exercise in a fresh profile
+each time. What they cannot show is a real profile over days, or two real tabs.
+
+1. Add tasks on the tasks page, close the browser entirely, reopen Mono. Every
+   task, tick and area must be there. Check DevTools → Application → Storage
+   shows the site as persisted after the first visit.
+2. Open Mono in two tabs. Rename a task in one; the other must show the new
+   name without a reload, and editing it in the second tab afterwards must not
+   bring the old name back.
+3. Export from Settings, delete a task, import the file. The task must return.
+   Import an export from before tasks existed: the backlog must be unchanged.
+4. In a profile with site data blocked, add a task. The header must say Mono is
+   not saving, and keep saying so after an ordinary block completes.
+5. Open Mono at a time before working hours. The intentions question's timer
+   must run and chime (with sound on, after any click on the page) even though
+   no block can start yet.
 
 ## The pop-out window
 

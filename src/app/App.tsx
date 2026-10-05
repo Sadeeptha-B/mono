@@ -51,7 +51,7 @@ import { PopOutButton } from '@/pip/PopOutButton'
 import { useMiniWindow } from '@/pip/useMiniWindow'
 
 import { useNow } from '@/hooks/useNow'
-import { useRoute, GUIDE_HASH } from '@/hooks/useRoute'
+import { useRoute, GUIDE_HASH, TASKS_HASH } from '@/hooks/useRoute'
 import { useReconciliation } from '@/hooks/useReconciliation'
 import { useBlockEndAlerts, useUnlock } from '@/hooks/useNotifications'
 import { useAmbience } from '@/ambient/useAmbience'
@@ -70,7 +70,12 @@ import type { IntentionTimer } from '@/components/stage/IntentionsPanel'
 import { minutesToMs, type BlockKind, type Ms } from '@/domain/types'
 
 /**
- * The one piece of the app that is not in the bundle that opens it.
+ * The pieces of the app that are not in the bundle that opens it.
+ *
+ * The tasks page is the second, deferred for the same reason and in the same
+ * way: it is a route you navigate to, and nothing on the first paint renders
+ * it. The task *store* is not deferred — the purpose prompt reads it — only the
+ * page that edits it.
  *
  * The guide is a separate route you have to navigate to, and its prose is
  * around 28 KB that the first paint was parsing in order to render a timer.
@@ -115,7 +120,8 @@ function useDeferred<T>(load: () => Promise<T>): { view: T | null; failed: boole
 }
 
 /**
- * The guide, saying why it is not here.
+ * A deferred page, saying why it is not here. The guide's wording, which the
+ * tasks page shares with only its name changed.
  *
  * There is deliberately no retry button, and the reason is a property of the
  * platform rather than a decision about the design. A dynamic import that
@@ -134,7 +140,14 @@ function useDeferred<T>(load: () => Promise<T>): { view: T | null; failed: boole
  * be opened cold in its own tab, and what is missing there is the whole
  * screen, not something layered over one.
  */
-function GuideDidNotLoad({ onOpenSettings }: { onOpenSettings: () => void }) {
+function PageDidNotLoad({
+  name,
+  onOpenSettings,
+}: {
+  /** "guide", "tasks page": what the heading says did not load. */
+  name: string
+  onOpenSettings: () => void
+}) {
   const unsaved = useStorageHealth((s) => s.failedAt) !== null
   const back = () => {
     window.location.hash = ''
@@ -145,7 +158,7 @@ function GuideDidNotLoad({ onOpenSettings }: { onOpenSettings: () => void }) {
       role="alert"
       className="w-[min(26rem,calc(100vw-1.5rem))] rounded-2xl border border-line bg-surface p-6 shadow-2xl"
     >
-      <h2 className="text-lg font-medium text-bright">The guide did not load</h2>
+      <h2 className="text-lg font-medium text-bright">The {name} did not load</h2>
       <p className="mt-1.5 text-sm leading-relaxed text-muted">
         {unsaved
           ? 'It failed to arrive over the network. This browser is also refusing to save, so today is only in this tab — export it before you reload anything.'
@@ -178,6 +191,7 @@ export function App() {
   const toggleTimerMode = () =>
     setTimerMode((mode) => (mode === 'remaining' ? 'elapsed' : 'remaining'))
   const guide = useDeferred(() => import('@/components/Guide/GuidePage'))
+  const tasksPage = useDeferred(() => import('@/components/Tasks/TasksPage'))
   const [composer, setComposer] = useState<Composer | null>(null)
   const [setupStage, setSetupStage] = useState<SetupStageId>(FIRST_SETUP_STAGE)
   // The opening questions, re-opened after the day was already shaped. It is
@@ -553,7 +567,33 @@ export function App() {
           />
         ) : (
           <div className="flex min-h-dvh items-center justify-center bg-ink p-4">
-            {guide.failed && <GuideDidNotLoad onOpenSettings={openSettings} />}
+            {guide.failed && <PageDidNotLoad name="guide" onOpenSettings={openSettings} />}
+          </div>
+        )}
+        {settings}
+        {miniWindow}
+      </>
+    )
+  }
+
+  // The same arrangement as the guide's, for the same reasons: a view swap, so
+  // the block keeps running, and the page's own background while it arrives.
+  if (route === 'tasks') {
+    return (
+      <>
+        {tasksPage.view ? (
+          <tasksPage.view.TasksPage
+            now={now}
+            active={session.active}
+            timerMode={timerMode}
+            onOpenSettings={openSettings}
+            mini={mini}
+          />
+        ) : (
+          <div className="flex min-h-dvh items-center justify-center bg-ink p-4">
+            {tasksPage.failed && (
+              <PageDidNotLoad name="tasks page" onOpenSettings={openSettings} />
+            )}
           </div>
         )}
         {settings}
@@ -597,6 +637,9 @@ export function App() {
             <PopOutButton mini={mini} />
             {/* A real link, so the guide can be opened in its own tab and
                 survives a reload like the document it is. */}
+            <a href={TASKS_HASH} className={headerControlClass}>
+              Tasks
+            </a>
             <a href={GUIDE_HASH} className={headerControlClass}>
               Guide
             </a>
@@ -708,7 +751,7 @@ export function App() {
               />
 
               {/* Where in the day you are. A control whenever nothing is
-                  running — the two opening questions can be answered in either
+                  running — the opening questions can be answered in any
                   order, and reached again between blocks, because the shape of
                   a day keeps changing — and an indicator the rest of the time.
                   It never offers a way past "One thing": naming the block is

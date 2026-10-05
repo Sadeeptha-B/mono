@@ -110,7 +110,7 @@ export function Stage(props: Props) {
     case 'idle':
       // A day that has not been asked its opening questions outranks everything
       // else, including being outside working hours — declaring those hours is
-      // the first of the two questions, so refusing to plan until they are set
+      // one of the questions, so refusing to plan until they are set
       // and then not asking would be a closed loop. The panel folds the clock
       // in as context instead.
       //

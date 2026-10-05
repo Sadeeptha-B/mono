@@ -1,8 +1,8 @@
 /**
  * The whole of Mono's routing.
  *
- * There are exactly two views — the day, and the guide — so this is a hash
- * check rather than a router. The hash is deliberate: it survives a reload,
+ * There are exactly three views — the day, the guide, and the tasks — so this
+ * is a hash check rather than a router. The hash is deliberate: it survives a reload,
  * it can be opened in a second tab, and the header entries are real links, so
  * middle-click and "open in new tab" behave the way people expect of a
  * document.
@@ -14,9 +14,10 @@
 
 import { useSyncExternalStore } from 'react'
 
-export type Route = 'day' | 'guide'
+export type Route = 'day' | 'guide' | 'tasks'
 
 export const GUIDE_HASH = '#/guide'
+export const TASKS_HASH = '#/tasks'
 export const DAY_HASH = '#/'
 
 const subscribe = (listener: () => void): (() => void) => {
@@ -29,5 +30,5 @@ const getSnapshot = (): string => window.location.hash
 export function useRoute(): Route {
   // The server snapshot is only here to satisfy the signature; there is no SSR.
   const hash = useSyncExternalStore(subscribe, getSnapshot, () => '')
-  return hash === GUIDE_HASH ? 'guide' : 'day'
+  return hash === GUIDE_HASH ? 'guide' : hash === TASKS_HASH ? 'tasks' : 'day'
 }

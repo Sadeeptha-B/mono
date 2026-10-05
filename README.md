@@ -57,7 +57,7 @@ src/domain/      pure: types, event log, planner, state machine, time, vitals
 src/store/       the only place that reads the clock, makes ids, persists
 src/hooks/       the ticker, reconciliation, notifications
 src/ambient/     rooms, procedural sound, theme, controls, shared scene geometry
-src/components/  the two panels, the stage prompts, the guide, the companion
+src/components/  the two panels, the stage prompts, the guide, the tasks page, the companion
 src/pip/         the always-on-top mini window
 src/contract/    the one type the browser extension shares with the app
 src/blocking/    publishing what the session is doing, for the extension
@@ -113,11 +113,22 @@ from the current settings, so changing a duration changes the explanation too.
 A decision like "do you need a break?" is only answerable while you can see the
 rest of the day, so it never gets covered up.
 
+The **tasks page** at `#/tasks` is a page for the guide's reason: you go there
+and stay a while. It holds the backlog — areas of life, each with an inbox of
+the tasks that sit directly under it — and today's intentions with the tasks
+gathered under each. The stage only ever sees intentions and the tasks a block
+is for; filing and tidying happens on the page, away from the timer.
+
 Session state is a fold over an append-only event log
-([src/domain/events.ts](src/domain/events.ts)). Only the log is persisted; the
-rest is rebuilt from it on load. It is also the raw material for history —
-completed blocks, the purpose each one was given, and what the companion knows
-about how the day has gone.
+([src/domain/events.ts](src/domain/events.ts)). The log is persisted and the
+rest of the session is rebuilt from it on load. It is also the raw material for
+history — completed blocks, the purpose and tasks each one was given, the day's
+intentions, and what the companion knows about how the day has gone.
+
+The backlog is the one thing that is not in the log. Tasks are long-lived
+records edited in place, so they live in IndexedDB as current state
+([src/store/tasks.ts](src/store/tasks.ts)), and the log refers to them only by
+id. Export carries both.
 
 ## Behaviour worth knowing
 
@@ -151,11 +162,17 @@ shaped around:
   boundary, it asks what happened and records the unaccounted stretch, so the
   day still adds up.
 - **The plan resets at midnight**, but never mid-block, and history is kept.
-- **The day opens with two questions** on the stage: what is already fixed, then
-  today's hours. Commitments come first because they are the part of the day you
-  cannot move, so they decide how much is left to declare. Neither gates the
-  other, both stay reachable between blocks, and the calendar follows the hours
-  question as it is typed.
+- **The day opens with three questions** on the stage: what is already fixed,
+  today's hours, then what today is for. Commitments come first because they are
+  the part of the day you cannot move, so they decide how much is left to
+  declare, and intentions come last because they depend on the other two. None
+  gates another, all stay reachable between blocks, and the calendar follows the
+  hours question as it is typed. Starting the day needs one intention; the
+  question carries its own timer, which stops at zero and records nothing.
+- **Every focus block is for at least one task**, picked from today's
+  intentions, found in the backlog or written on the spot, plus a purpose of its
+  own that starts as the tasks' titles. Ticking a task done belongs to the
+  backlog and finishing a block to the block; neither writes the other.
 - **Outside working hours Mono says so** and names the next stretch, rather than
   offering a block in time you declared unstructured. The way to work anyway is
   to change the hours.
@@ -288,9 +305,11 @@ full permission and authority boundaries are in
 ## Limitations
 
 If the browser refuses to save — a full quota, or site data blocked — Mono says
-so in the header and keeps running on the session it has in memory. The log is
-the one thing here that cannot be rebuilt from anything else, so the warning
-leads to Export rather than to a retry. There is no cap on the log: a heavy day
+so in the header and keeps running on the session it has in memory. The log
+and the backlog are the two things here that cannot be rebuilt from anything
+else, so the warning leads to Export rather than to a retry. The backlog's
+writes are retried with the next one, and the warning clears only once every
+task held in memory has reached the disk. There is no cap on the log: a heavy day
 is a few kilobytes, and truncating the journal to make room would cost more than
 it saves.
 
