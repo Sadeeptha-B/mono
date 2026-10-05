@@ -88,7 +88,10 @@ export const isBlockRunning = (phase: Phase, active: ActiveSegment | null): bool
 
 export type Action =
   | { type: 'startBlock'; at: Ms; blockKind: BlockKind }
-  /** Name the block and say which backlog tasks it is for. */
+  /**
+   * Name the block and say which backlog tasks it is for. At least one task and
+   * a purpose that is not blank, or the prompt stays where it is.
+   */
   | { type: 'setPurpose'; at: Ms; purpose: string; taskIds: string[] }
   | { type: 'cannotDecide'; at: Ms }
   | { type: 'timerElapsed'; at: Ms }
@@ -140,7 +143,13 @@ export function transition(
 
     case 'definingPurpose': {
       if (action.type === 'setPurpose') {
+        // Refused rather than started without them. The prompt does not offer
+        // Start with nothing ticked or nothing named; this is the same rule for
+        // a stale click or a direct dispatch, so no focus block reaches the log
+        // without saying what it is for. A block that cannot say is the
+        // priorities block's job, through `cannotDecide`.
         const taskIds = [...new Set(action.taskIds)]
+        if (taskIds.length === 0 || action.purpose.trim() === '') return stay(phase)
         // The block starts now, not when the prompt opened, so the timer is
         // honest about the time the user spent deciding.
         return {

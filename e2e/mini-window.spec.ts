@@ -3,6 +3,7 @@
 import { expect, test, type Page } from '@playwright/test'
 import { PALETTES } from '../src/ambient/palette.ts'
 import {
+  addBlockTask,
   openMono,
   rgb,
   stage,
@@ -317,6 +318,7 @@ test('a block starting brings the pop-out with it, by default', async ({ page })
   // Nothing popped out yet: naming the block is still happening in the tab, and
   // a window arriving now would take the focus off the field being typed in.
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+  await addBlockTask(page)
   await page.getByLabel('Purpose for this block', { exact: true }).fill('Write the migration')
   await expect(page.locator(MINI)).toHaveCount(0)
 
@@ -358,6 +360,23 @@ test('the priorities timer brings the pop-out with it too', async ({ page }) => 
   await page.getByRole('button', { name: "I can't pick one" }).click()
 
   await expect(page.frameLocator(MINI).getByText('Priorities')).toBeVisible()
+})
+
+test("picking a block's tasks is handed back to the tab", async ({ page }) => {
+  await stubMiniWindow(page)
+  await openMono(page)
+  await shapeDay(page)
+
+  await page.getByRole('button', { name: 'Pop out' }).click()
+  const mini = page.frameLocator(MINI)
+  await mini.getByRole('button', { name: /Start (deep|short) block/ }).click()
+
+  // The list to pick from is the tab's; this window says so, and keeps only
+  // the answers that need no list.
+  await expect(mini.getByText("Pick this block's tasks in the tab")).toBeVisible()
+  await expect(mini.getByRole('textbox')).toHaveCount(0)
+  await mini.getByRole('button', { name: "I can't pick one" }).click()
+  await expect(mini.getByText('Priorities')).toBeVisible()
 })
 
 test('a focus room persists and dresses the pop-out document', async ({ page }) => {

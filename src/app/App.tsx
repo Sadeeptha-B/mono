@@ -420,9 +420,9 @@ export function App() {
     if (session.settings.popOutOnStart) mini.open()
   }
 
-  const setPurpose = (purpose: string) => {
+  const setPurpose = (purpose: string, taskIds: string[]) => {
     popOutForBlock()
-    store.dispatch({ type: 'setPurpose', at: Date.now(), purpose, taskIds: [] })
+    store.dispatch({ type: 'setPurpose', at: Date.now(), purpose, taskIds })
   }
 
   const cannotDecide = () => {
@@ -515,7 +515,6 @@ export function App() {
         planned={planned}
         costOf={(minutes) => breakCost(planInput, now, minutes, timeline)}
         onStartBlock={startBlock}
-        onSetPurpose={setPurpose}
         onCannotDecide={cannotDecide}
         onAbandon={() => store.dispatch({ type: 'abandonBlock', at: Date.now() })}
         onTakeBreak={() => store.dispatch({ type: 'takeBreak', at: Date.now() })}
@@ -677,6 +676,8 @@ export function App() {
                 onUpdateCommitment={store.updateCommitment}
                 onRemoveCommitment={store.removeCommitment}
                 intentions={session.intentions}
+                taskIntentions={session.taskIntentions}
+                onLinkTask={store.linkTask}
                 areas={areas}
                 planned={planned}
                 intentionTimer={intentionTimer}

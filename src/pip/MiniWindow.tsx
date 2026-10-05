@@ -27,7 +27,7 @@ import {
   MiniDone,
   MiniNothingFits,
   MiniOutsideHours,
-  MiniPurpose,
+  MiniPickInTab,
   MiniReady,
   MiniTimer,
   MiniUnshaped,
@@ -64,7 +64,6 @@ type Props = {
   planned: { blocks: number; minutes: number }
   costOf: (minutes: number) => { blocksLost: number; focusMinutesLost: number }
   onStartBlock: (kind: BlockKind) => void
-  onSetPurpose: (purpose: string) => void
   onCannotDecide: () => void
   onAbandon: () => void
   onTakeBreak: () => void
@@ -199,13 +198,16 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
       )
 
     case 'purpose':
+      // Picking a block's tasks happens in the tab, which has the backlog and
+      // today's intentions to pick from. Not being able to pick is still
+      // answerable here, and so is not starting at all.
       return (
-        <MiniPurpose
+        <MiniPickInTab
           blockKind={view.blockKind}
           minutes={
             view.blockKind === 'short' ? settings.shortMinutes : settings.deepMinutes
           }
-          onSubmit={props.onSetPurpose}
+          onOpenTab={() => window.focus()}
           onCannotDecide={props.onCannotDecide}
           onCancel={props.onAbandon}
         />
@@ -220,6 +222,11 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
             timerMode={props.timerMode}
             onToggleTimerMode={props.onToggleTimerMode}
           />
+          {/* No task list here while the block runs. The purpose above already
+              says what the block is for in one line, the opening size is tuned
+              to hold exactly the timer, that line and the controls, and a list
+              always on top is a list of reasons to look at it. The tasks come
+              back at the end of the block, where ticking them is the point. */}
           <div className="mt-3 flex flex-wrap gap-2">
             {view.segment === 'break' ? (
               <GhostButton type="button" onClick={props.onEndBreak}>
@@ -238,6 +245,7 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
     case 'done':
       return (
         <MiniDone
+          taskIds={active?.kind === 'block' ? active.taskIds : []}
           nextBlockKind={view.nextBlockKind}
           onTakeBreak={props.onTakeBreak}
           onSkipBreak={props.onSkipBreak}
