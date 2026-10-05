@@ -14,14 +14,18 @@ import {
   describeBreakCost,
   FREE_BREAK,
 } from '../breakCost'
+import { BlockTasks } from '../BlockTasks'
 import { GhostButton, PrimaryButton, StagePrompt } from '../ui'
 import type { BlockKind } from '@/domain/types'
 
 export function BlockCompletePanel({
+  taskIds,
   nextBlockKind,
   onTakeBreak,
   onSkipBreak,
 }: {
+  /** The block's tasks, last chance to tick off what got done. */
+  taskIds: readonly string[]
   nextBlockKind: BlockKind | null
   onTakeBreak: () => void
   onSkipBreak: (kind: BlockKind) => void
@@ -39,6 +43,12 @@ export function BlockCompletePanel({
             : 'Or go straight into the next block.'
         }
       />
+
+      {/* Before the buttons, because it is the one thing here that only makes
+          sense to answer now: what this block actually got done. */}
+      <div className="mb-5">
+        <BlockTasks taskIds={taskIds} />
+      </div>
 
       <div className="flex flex-wrap gap-2">
         {!nothingFits && (

@@ -13,6 +13,7 @@
  * answer. They open in place on the calendar now.
  */
 
+import { BlockTasks } from '../BlockTasks'
 import { FocusTimer } from '../FocusTimer'
 import { BlockCompletePanel, BreakDurationPanel } from './BreakPanels'
 import { DaySetupPanel } from './DaySetupPanel'
@@ -76,6 +77,9 @@ type Props = {
   onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onRemoveCommitment: (id: string) => void
   intentions: readonly Intention[]
+  /** Which of today's intentions each task belongs to. */
+  taskIntentions: Readonly<Record<string, string>>
+  onLinkTask: (taskId: string, intentionId: string | null) => void
   /** Areas an intention can point at, from the backlog. */
   areas: readonly Area[]
   /** What the plan can still hold. */
@@ -88,7 +92,7 @@ type Props = {
   onDayShaped: () => void
   onEditHours: () => void
   onStartBlock: (kind: BlockKind) => void
-  onSetPurpose: (purpose: string) => void
+  onSetPurpose: (purpose: string, taskIds: string[]) => void
   onCannotDecide: () => void
   onAbandon: () => void
   onTakeBreak: () => void
@@ -176,6 +180,9 @@ export function Stage(props: Props) {
             phase.blockKind === 'short' ? settings.shortMinutes : settings.deepMinutes
           }
           reflectMinutes={settings.reflectMinutes}
+          intentions={props.intentions}
+          taskIntentions={props.taskIntentions}
+          onLinkTask={props.onLinkTask}
           onSubmit={props.onSetPurpose}
           onCannotDecide={props.onCannotDecide}
           onCancel={props.onAbandon}
@@ -193,6 +200,7 @@ export function Stage(props: Props) {
             timerMode={props.timerMode}
             onToggleTimerMode={props.onToggleTimerMode}
           />
+          {active?.kind === 'block' && <BlockTasks taskIds={active.taskIds} />}
           <div className="mt-6 flex flex-wrap gap-2">
             <GhostButton type="button" onClick={props.onAbandon}>
               End early
@@ -205,6 +213,7 @@ export function Stage(props: Props) {
     case 'blockComplete':
       return (
         <BlockCompletePanel
+          taskIds={active?.kind === 'block' ? active.taskIds : []}
           nextBlockKind={props.nextBlockKind}
           onTakeBreak={props.onTakeBreak}
           onSkipBreak={props.onSkipBreak}

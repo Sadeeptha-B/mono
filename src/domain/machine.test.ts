@@ -94,6 +94,30 @@ describe('starting a block', () => {
     )
     expect(result.session.active?.endsAt).toBe(at(14) + minutesToMs(25))
   })
+
+  it('records the tasks it is for, once each', () => {
+    const { session } = run([
+      { type: 'startBlock', at: at(14), blockKind: 'deep' },
+      { type: 'setPurpose', at: at(14), purpose: 'Login', taskIds: ['a', 'b', 'a'] },
+    ])
+    expect(session.active).toMatchObject({ taskIds: ['a', 'b'] })
+  })
+
+  it('stays on the prompt without a task, or with a blank purpose', () => {
+    const noTasks = run([
+      { type: 'startBlock', at: at(14), blockKind: 'deep' },
+      { type: 'setPurpose', at: at(14), purpose: 'Login', taskIds: [] },
+    ])
+    expect(noTasks.phase.name).toBe('definingPurpose')
+    expect(noTasks.events).toHaveLength(0)
+
+    const blank = run([
+      { type: 'startBlock', at: at(14), blockKind: 'deep' },
+      { type: 'setPurpose', at: at(14), purpose: '   ', taskIds: ['a'] },
+    ])
+    expect(blank.phase.name).toBe('definingPurpose')
+    expect(blank.session.active).toBeNull()
+  })
 })
 
 describe('not being able to name a purpose', () => {

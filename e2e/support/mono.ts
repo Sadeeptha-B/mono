@@ -117,9 +117,26 @@ export async function shapeDay(page: Page) {
   await startDay(page)
 }
 
+/**
+ * Write a task down on the purpose prompt and tick it for this block.
+ *
+ * The default title is deliberately unlike any purpose a spec types, so a
+ * text query for the purpose never also finds the task listed under the timer.
+ */
+export async function addBlockTask(page: Page, title = 'The task at hand') {
+  await stage(page).getByLabel('New task', { exact: true }).fill(title)
+  await stage(page).getByRole('button', { name: 'Add task' }).click()
+}
+
+/**
+ * Start a block with a purpose. Every focus block carries a task, so this
+ * writes one first; the purpose typed afterwards replaces the one the task's
+ * title would have suggested.
+ */
 export async function startBlock(page: Page, purpose: string) {
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
-  await page.getByLabel('Purpose for this block').fill(purpose)
+  await addBlockTask(page)
+  await page.getByLabel('Purpose for this block', { exact: true }).fill(purpose)
   await page.getByRole('button', { name: 'Start', exact: true }).click()
 }
 

@@ -13,8 +13,11 @@
  * **The day's shape is not answerable here.** Hours and commitments are only
  * answerable with the calendar drawn beside them — the whole reason Mono has no
  * modals — and there is no calendar in a window this size. So an unshaped day
- * gets a signpost back to the tab and nothing else. This is the one question the
- * mini window declines.
+ * gets a signpost back to the tab and nothing else. Picking a block's tasks is
+ * declined for a related reason — it is a list of the backlog to browse, and
+ * this window has no room for one — so `purpose` keeps its own view but the
+ * panel behind it points back to the tab too, keeping only the answers that need
+ * no list. See `MiniPickInTab`.
  *
  * **`dayShaped`, not `setupOpen`.** The stage re-opens the opening questions
  * whenever the user goes back to them, and that is where the *user* is looking

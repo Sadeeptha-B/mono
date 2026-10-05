@@ -22,7 +22,7 @@
  * not. A shared constant would have to pick one of those and be wrong somewhere.
  */
 
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 
 import {
   BREAK_DURATIONS,
@@ -30,7 +30,8 @@ import {
   describeBreakCost,
   FREE_BREAK,
 } from '@/components/breakCost'
-import { fieldClass, GhostButton, PrimaryButton } from '@/components/ui'
+import { BlockTasks } from '@/components/BlockTasks'
+import { GhostButton, PrimaryButton } from '@/components/ui'
 import { timerFace } from '@/components/timerFace'
 import { formatClock, formatDuration, type TimerMode } from '@/domain/time'
 import type { ActiveSegment, BlockKind, Ms } from '@/domain/types'
@@ -212,62 +213,42 @@ export function MiniNothingFits() {
 }
 
 /**
- * "One thing", out here.
+ * "One thing", out here — as far as it can be answered out here.
  *
- * The field does not take focus on mount unless this window already has it.
- * Both windows mount their own copy of this question at the same instant, and
- * `focus()` on an element in an unfocused window can raise that window — so an
- * ungated call would fight the other copy for the desktop, and the loser is
- * whoever the user was actually typing in.
+ * Naming a block now starts with picking its tasks, from today's intentions and
+ * the backlog, or writing one down. That is a list to browse and a form to
+ * fill, and it needs the room the tab has; squeezed into this window it would be
+ * the one panel you had to scroll to answer. So this says where the question is
+ * and keeps the two answers that need no list: not starting after all, and not
+ * being able to pick, which starts the priorities block from here as it always
+ * has.
+ *
+ * Nothing in it takes focus. The tab has the field the user is about to type
+ * in, and a focused control here could raise this window over it.
  */
-export function MiniPurpose({
+export function MiniPickInTab({
   blockKind,
   minutes,
-  onSubmit,
+  onOpenTab,
   onCannotDecide,
   onCancel,
 }: {
   blockKind: BlockKind
   minutes: number
-  onSubmit: (purpose: string) => void
+  onOpenTab: () => void
   onCannotDecide: () => void
   onCancel: () => void
 }) {
-  const [purpose, setPurpose] = useState('')
-  const input = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (input.current?.ownerDocument.hasFocus()) input.current.focus()
-  }, [])
-
-  const trimmed = purpose.trim()
-
   return (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (trimmed) onSubmit(trimmed)
-      }}
-    >
+    <div>
       <MiniPrompt
         eyebrow={`${minutes} minute ${blockKind === 'deep' ? 'deep' : 'short'} block`}
         title="One thing"
-      />
-      <input
-        ref={input}
-        value={purpose}
-        onChange={(e) => setPurpose(e.target.value)}
-        placeholder="Finish the planner tests"
-        // Named apart from the stage's field on purpose: the two are on screen
-        // together whenever this window is open, and one accessible name for
-        // two controls is ambiguous to anything reading the page.
-        aria-label="Purpose for this block (mini window)"
-        maxLength={120}
-        className={`${fieldClass} mt-2 py-2 text-sm`}
+        detail="Pick this block's tasks in the tab, where your intentions are."
       />
       <Row>
-        <PrimaryButton type="submit" disabled={!trimmed}>
-          Start
+        <PrimaryButton type="button" onClick={onOpenTab}>
+          Open Mono
         </PrimaryButton>
         <GhostButton type="button" onClick={onCancel}>
           Not yet
@@ -280,15 +261,18 @@ export function MiniPurpose({
           I can't pick one
         </button>
       </Row>
-    </form>
+    </div>
   )
 }
 
 export function MiniDone({
+  taskIds,
   nextBlockKind,
   onTakeBreak,
   onSkipBreak,
 }: {
+  /** Ticked here as on the stage: this is the moment to say what got done. */
+  taskIds: readonly string[]
   nextBlockKind: BlockKind | null
   onTakeBreak: () => void
   onSkipBreak: (kind: BlockKind) => void
@@ -299,6 +283,7 @@ export function MiniDone({
         eyebrow="Block done"
         title={nextBlockKind === null ? 'That was the last one' : 'Need a break?'}
       />
+      <BlockTasks taskIds={taskIds} compact />
       <Row>
         {nextBlockKind !== null && (
           <PrimaryButton type="button" onClick={() => onSkipBreak(nextBlockKind)}>
