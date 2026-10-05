@@ -23,6 +23,8 @@ import { GhostButton } from '../ui'
 import { AmbienceButton } from '@/ambient/AmbienceButton'
 
 import type { SetupStageId } from './stages'
+import type { IntentionTimer } from './IntentionsPanel'
+import type { Area } from '@/domain/tasks'
 import type { Phase } from '@/domain/machine'
 import type {
   ActiveSegment,
@@ -30,6 +32,8 @@ import type {
   Commitment,
   CommitmentPatch,
   DefaultRegion,
+  Intention,
+  IntentionPatch,
   Ms,
   Settings,
   WorkRegion,
@@ -71,6 +75,16 @@ type Props = {
   onAddCommitment: (input: Omit<Commitment, 'id'>) => void
   onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onRemoveCommitment: (id: string) => void
+  intentions: readonly Intention[]
+  /** Areas an intention can point at, from the backlog. */
+  areas: readonly Area[]
+  /** What the plan can still hold. */
+  planned: { blocks: number; minutes: number }
+  intentionTimer: IntentionTimer | null
+  onStartIntentionTimer: () => void
+  onAddIntention: (input: Omit<Intention, 'id'>) => void
+  onUpdateIntention: (id: string, patch: IntentionPatch) => void
+  onRemoveIntention: (id: string) => void
   onDayShaped: () => void
   onEditHours: () => void
   onStartBlock: (kind: BlockKind) => void
@@ -115,6 +129,15 @@ export function Stage(props: Props) {
             onAddCommitment={props.onAddCommitment}
             onUpdateCommitment={props.onUpdateCommitment}
             onRemoveCommitment={props.onRemoveCommitment}
+            intentions={props.intentions}
+            areas={props.areas}
+            planned={props.planned}
+            intentionTimer={props.intentionTimer}
+            intentionMinutes={settings.intentionMinutes}
+            onStartIntentionTimer={props.onStartIntentionTimer}
+            onAddIntention={props.onAddIntention}
+            onUpdateIntention={props.onUpdateIntention}
+            onRemoveIntention={props.onRemoveIntention}
             onDone={props.onDayShaped}
           />
         )

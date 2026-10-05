@@ -18,8 +18,8 @@
 import type { Phase } from '@/domain/machine'
 import type { Ms } from '@/domain/types'
 
-/** The two questions the day opens with, in the order they are asked. */
-export type SetupStageId = 'commitments' | 'hours'
+/** The three questions the day opens with, in the order they are asked. */
+export type SetupStageId = 'commitments' | 'hours' | 'intentions'
 
 export type StageId =
   | SetupStageId
@@ -42,10 +42,16 @@ export type StageMeta = {
  * you cannot change, and it decides how much of the day is yours to declare —
  * answering "when am I working?" first means answering it again once you
  * remember the school run.
+ *
+ * Intentions come last for the same kind of reason: they are the one answer
+ * that depends on the other two. What you mean to do with a day is only
+ * realistic once you know how much of it is yours, and the question says how
+ * much that is.
  */
 export const STAGES: readonly StageMeta[] = [
   { id: 'commitments', name: "What's already fixed", setup: true },
   { id: 'hours', name: "Today's hours", setup: true },
+  { id: 'intentions', name: "Today's intentions", setup: true },
   { id: 'ready', name: 'Ready', setup: false },
   { id: 'purpose', name: 'One thing', setup: false },
   { id: 'priorities', name: 'Priorities', setup: false },
@@ -56,11 +62,22 @@ export const STAGES: readonly StageMeta[] = [
 
 export const FIRST_SETUP_STAGE: SetupStageId = 'commitments'
 
-export const otherSetupStage = (stage: SetupStageId): SetupStageId =>
-  stage === 'commitments' ? 'hours' : 'commitments'
+const SETUP_ORDER: readonly SetupStageId[] = ['commitments', 'hours', 'intentions']
+
+/** The question before this one, or null for the first. */
+export const previousSetupStage = (stage: SetupStageId): SetupStageId | null =>
+  SETUP_ORDER[SETUP_ORDER.indexOf(stage) - 1] ?? null
+
+/** The question after this one, or null for the last. */
+export const nextSetupStage = (stage: SetupStageId): SetupStageId | null =>
+  SETUP_ORDER[SETUP_ORDER.indexOf(stage) + 1] ?? null
+
+/** What a setup question is called, on its dot and on the buttons that lead to it. */
+export const setupStageName = (stage: SetupStageId): string =>
+  STAGES.find((s) => s.id === stage)?.name ?? stage
 
 /**
- * Whether the two opening questions can be reached from the strip right now.
+ * Whether the opening questions can be reached from the strip right now.
  *
  * Only while nothing is running, which is a stronger rule than "before the day
  * is shaped" and a weaker one than "never again afterwards". Shaping the day
