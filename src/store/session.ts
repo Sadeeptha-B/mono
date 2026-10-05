@@ -33,30 +33,13 @@ import type {
   Settings,
   WorkRegion,
 } from '@/domain/types'
+import { newId } from './ids'
+import { useStorageHealth } from './storageHealth'
+
+// Re-exported so the header and settings keep one import for "is Mono saving".
+export { useStorageHealth }
 
 const STORAGE_KEY = 'mono.session'
-
-/**
- * Whether the last save actually landed.
- *
- * A store of its own, and it has to be one: this is the only state in Mono that
- * describes *storage*, so writing it into the session store would attempt
- * another save in order to record that a save failed. Not persisted for the
- * same reason — the fact it holds is about this browser right now, and a
- * reload re-establishes it on the first write either way.
- */
-export const useStorageHealth = create<{
-  /** When a write was last refused, or null while saving works. */
-  failedAt: Ms | null
-  noteFailure: (at: Ms) => void
-  noteSuccess: () => void
-}>()((set) => ({
-  failedAt: null,
-  // First failure wins: the interesting instant is when saving stopped, not
-  // the last time it was tried and still would not go.
-  noteFailure: (at) => set((s) => (s.failedAt === null ? { failedAt: at } : s)),
-  noteSuccess: () => set((s) => (s.failedAt === null ? s : { failedAt: null })),
-}))
 
 /**
  * `localStorage`, with the two ways it can refuse caught.
@@ -169,9 +152,6 @@ type SessionStore = {
   exportJSON: () => string
   importJSON: (json: string) => void
 }
-
-const newId = (): string =>
-  globalThis.crypto?.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(36).slice(2)}`
 
 /**
  * Recover the phase from a rebuilt session after a reload or an import.

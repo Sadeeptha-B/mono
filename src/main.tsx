@@ -7,6 +7,7 @@ import { applyRoomTheme } from './ambient/theme'
 import { publishBlockingIntent } from './blocking/publish'
 import { registerServiceWorker } from './pwa/registerServiceWorker'
 import { useSession } from './store/session'
+import { hydrateTasks } from './store/tasks'
 import './index.css'
 
 const root = document.getElementById('root')
@@ -46,6 +47,11 @@ createRoot(root).render(
 )
 
 registerServiceWorker()
+
+// The backlog lives in IndexedDB, which only answers asynchronously. The day
+// does not wait for it — nothing about the timer or the plan reads a task —
+// and the task UI shows nothing until it arrives.
+void hydrateTasks()
 
 // Tell the site-blocking extension what the session is doing, if one is there to
 // listen. Nothing downstream of this call knows or cares whether one is.
