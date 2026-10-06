@@ -47,10 +47,17 @@
  * because every column is a place a task can live.
  *
  * Every edit here is a backlog edit — the task store writes the one record it
- * changed — except linking a task to an intention, which is a fact about today
- * and goes to the log like the intentions themselves. A task that is dropped
- * or done keeps its link for the day, and the page simply stops listing it as
- * open.
+ * changed — except linking a task to an intention, or marking one done, which
+ * are facts about today and go to the log like the intentions themselves. A
+ * task that is dropped or done keeps its link for the day, and the page simply
+ * stops listing it as open.
+ *
+ * Actions are icons (`IconButton`): rename, done, drop, archive, reopen,
+ * restore, delete. A column is narrow, and as words they took more of a row
+ * than the title they acted on. Each says in its accessible name what it acts
+ * on and shows its verb on hover. The words left are answers to a question —
+ * a delete asking about what is inside — and the fields' own `Done` and `Save`,
+ * which finish what is being typed rather than act on a record.
  */
 
 import {
@@ -69,7 +76,21 @@ import {
 import { HeaderMark } from '../HeaderMark'
 import { GroupedTasks } from '../GroupedTasks'
 import { HeaderStatus } from '../HeaderStatus'
-import { IntentionFields, useIntentionBacklog, useSaveIntention } from '../IntentionFields'
+import {
+  IntentionDoneToggle,
+  IntentionFields,
+  useIntentionBacklog,
+  useSaveIntention,
+} from '../IntentionFields'
+import {
+  ArchiveIcon,
+  CheckIcon,
+  DeleteIcon,
+  DoneRingIcon,
+  DropIcon,
+  ReopenIcon,
+  RestoreIcon,
+} from '../icons'
 import { StorageWarning } from '../StorageWarning'
 import {
   AddFold,
@@ -77,6 +98,7 @@ import {
   fieldClass,
   GhostButton,
   headerControlClass,
+  IconButton,
   InlineSelect,
   PageLinks,
 } from '../ui'
@@ -277,8 +299,14 @@ export function TasksPage({
                           <ul className="mt-2 flex max-w-md flex-col gap-1.5">
                             {archived.map((area) => (
                               <li key={area.id} className="flex items-center justify-between gap-3 text-sm">
-                                <span className="text-muted">{area.name}</span>
-                                <TextButton onClick={() => unarchiveArea(area.id)}>Restore</TextButton>
+                                <span className="min-w-0 wrap-break-word text-muted">{area.name}</span>
+                                <IconButton
+                                  onClick={() => unarchiveArea(area.id)}
+                                  label={`Restore ${area.name}`}
+                                  hint="Restore"
+                                >
+                                  <RestoreIcon />
+                                </IconButton>
                               </li>
                             ))}
                           </ul>
@@ -445,6 +473,7 @@ function IntentionsToday({
                 editing: intention.id,
               })
             }
+            onToggleDone={() => updateIntention(intention.id, { done: intention.done !== true })}
             onDelete={() => removeIntention(intention.id)}
             onUnlink={(taskId) => linkTask(taskId, null)}
           />
@@ -466,33 +495,49 @@ function IntentionsToday({
 
 /**
  * One intention: its title and what can be done to it, and its tasks under the
- * places they live in, each place said once rather than on every task.
+ * places they live in, each place said once rather than on every task. Marked
+ * done, it stays where it is, crossed out, with its tasks still under it.
  */
 function TodayGroup({
   intention,
   groups,
+  onToggleDone,
   onEdit,
   onDelete,
   onUnlink,
 }: {
   intention: Intention
   groups: readonly TaskTreeNode[]
+  onToggleDone: () => void
   onEdit: () => void
   onDelete: () => void
   onUnlink: (taskId: string) => void
 }) {
+  const done = intention.done === true
   return (
-    <div>
-      <div className="flex items-baseline gap-3">
-        <h3 className="min-w-0 flex-1 text-sm text-bright wrap-break-word">{intention.title}</h3>
-        <TextButton onClick={onEdit} label={`Edit intention ${intention.title}`}>
-          Edit
-        </TextButton>
+    <div className={done ? 'opacity-70' : ''}>
+      <div className="flex items-baseline gap-2">
+        <IntentionDoneToggle intention={intention} onToggle={onToggleDone} />
+        <h3
+          className={`min-w-0 flex-1 text-sm wrap-break-word ${
+            done ? 'text-muted line-through' : 'text-bright'
+          }`}
+        >
+          {intention.title}
+        </h3>
+        <IconButton onClick={onEdit} label={`Edit intention ${intention.title}`} hint="Edit">
+          <EditGlyph />
+        </IconButton>
         {/* At once, as on the opening question: its tasks stay in the backlog,
             only their place under it goes. */}
-        <TextButton onClick={onDelete} label={`Delete intention ${intention.title}`}>
-          Delete
-        </TextButton>
+        <IconButton
+          danger
+          onClick={onDelete}
+          label={`Delete intention ${intention.title}`}
+          hint="Delete"
+        >
+          <DeleteIcon />
+        </IconButton>
       </div>
       {groups.length === 0 ? (
         <p className="mt-1 text-xs text-muted">
@@ -578,13 +623,13 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
         }
       >
         {renaming === null && (
-          <div className="flex flex-wrap gap-x-4 gap-y-1 md:justify-end md:pt-1.5">
-            <TextButton onClick={() => setRenaming(area.name)} label={`Rename ${area.name}`}>
-              Rename
-            </TextButton>
-            <TextButton onClick={() => archiveArea(area.id)} label={`Archive ${area.name}`}>
-              Archive
-            </TextButton>
+          <div className="flex flex-wrap items-center gap-x-1 gap-y-1 md:justify-end md:pt-0.5">
+            <IconButton onClick={() => setRenaming(area.name)} label={`Rename ${area.name}`} hint="Rename">
+              <EditGlyph />
+            </IconButton>
+            <IconButton onClick={() => archiveArea(area.id)} label={`Archive ${area.name}`} hint="Archive">
+              <ArchiveIcon />
+            </IconButton>
             <DeleteButton
               title={area.name}
               inside={liveInside(area.id, tree.items)}
@@ -749,6 +794,10 @@ function OutcomeColumn({ outcome, ...tree }: TreeProps & { outcome: Item }) {
  * rename, finish, archive, delete. What it holds is drawn beside or beneath it
  * by the row or column it heads, not inside it.
  *
+ * The actions sit level with the small `Epic` or `Outcome` over the title, so
+ * the title has the card's whole width to wrap in. A delete that asks first
+ * takes a line of its own under them.
+ *
  * One component for both, because an outcome is an epic one level down.
  */
 function ContainerCard({ item, allItems }: { item: Item; allItems: readonly Item[] }) {
@@ -763,36 +812,29 @@ function ContainerCard({ item, allItems }: { item: Item; allItems: readonly Item
 
   return (
     <div className="rounded-xl border border-muted bg-surface/40 px-3 py-2.5">
-      <span className="text-[10px] font-medium tracking-widest text-muted uppercase">{noun}</span>
-      {renaming === null ? (
-        <>
-          <div className="mt-0.5 flex items-start gap-2">
-            <Heading className="min-w-0 flex-1 text-sm text-bright wrap-break-word">
-              {item.title}
-            </Heading>
-            <button
-              type="button"
-              onClick={() => setRenaming(item.title)}
-              aria-label={`Rename ${item.title}`}
-              className="shrink-0 text-muted transition hover:text-bright"
-            >
+      <div className="flex flex-wrap items-center justify-between gap-x-2">
+        <span className="text-[10px] font-medium tracking-widest text-muted uppercase">{noun}</span>
+        {renaming === null && (
+          <span className="-mr-1.5 -mb-0.5 flex flex-wrap items-center justify-end">
+            <IconButton onClick={() => setRenaming(item.title)} label={`Rename ${item.title}`} hint="Rename">
               <EditGlyph />
-            </button>
-          </div>
-          <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1">
-            <TextButton onClick={() => completeItem(item.id)} label={`Mark ${item.title} done`}>
-              Done
-            </TextButton>
-            <TextButton onClick={() => archiveItem(item.id)} label={`Archive ${item.title}`}>
-              Archive
-            </TextButton>
+            </IconButton>
+            <IconButton onClick={() => completeItem(item.id)} label={`Mark ${item.title} done`} hint="Done">
+              <CheckIcon />
+            </IconButton>
+            <IconButton onClick={() => archiveItem(item.id)} label={`Archive ${item.title}`} hint="Archive">
+              <ArchiveIcon />
+            </IconButton>
             <DeleteButton
               title={item.title}
               inside={liveInside(item.id, allItems)}
               onDelete={() => deleteItem(item.id)}
             />
-          </div>
-        </>
+          </span>
+        )}
+      </div>
+      {renaming === null ? (
+        <Heading className="mt-0.5 text-sm text-bright wrap-break-word">{item.title}</Heading>
       ) : (
         <div className="mt-1 flex">
           <InlineEdit
@@ -1189,14 +1231,15 @@ function TaskRow({
         {renaming === null ? (
           <>
             <span className="min-w-0 flex-1 text-sm text-bright wrap-break-word">{task.title}</span>
-            <button
-              type="button"
+            {/* Drawn over the row's padding rather than heightening the line. */}
+            <IconButton
               onClick={() => setRenaming(task.title)}
-              aria-label={`Rename ${task.title}`}
-              className="shrink-0 text-muted transition hover:text-bright"
+              label={`Rename ${task.title}`}
+              hint="Rename"
+              className="-my-0.5 -mr-1.5"
             >
               <EditGlyph />
-            </button>
+            </IconButton>
           </>
         ) : (
           <InlineEdit
@@ -1225,13 +1268,13 @@ function TaskRow({
             ]}
           />
         )}
-        <span className="ml-auto flex gap-3">
-          <TextButton onClick={() => dropItem(task.id)} label={`Drop ${task.title}`}>
-            Drop
-          </TextButton>
-          <TextButton onClick={() => deleteItem(task.id)} label={`Delete ${task.title}`}>
-            Delete
-          </TextButton>
+        <span className="-my-1 -mr-1.5 ml-auto flex">
+          <IconButton onClick={() => dropItem(task.id)} label={`Drop ${task.title}`} hint="Drop">
+            <DropIcon />
+          </IconButton>
+          <IconButton danger onClick={() => deleteItem(task.id)} label={`Delete ${task.title}`} hint="Delete">
+            <DeleteIcon />
+          </IconButton>
         </span>
       </div>
     </li>
@@ -1278,19 +1321,23 @@ function DeleteButton({
 
   if (!asking) {
     return (
-      <TextButton
+      <IconButton
+        danger
         onClick={() => (inside === 0 ? onDelete() : setAsking(true))}
         label={`Delete ${title}`}
+        hint="Delete"
       >
-        Delete
-      </TextButton>
+        <DeleteIcon />
+      </IconButton>
     )
   }
+  // A line of its own in the row of icons it replaces one of: the question is
+  // words, and squeezed beside the icons it wrapped a word to a line.
   return (
     <span
       role="group"
       aria-label={`Confirm deleting ${title}`}
-      className="flex flex-wrap gap-x-2 gap-y-1"
+      className="flex basis-full flex-wrap items-center gap-x-2 gap-y-1 py-1"
     >
       <span className="text-xs text-commit">
         And the {inside} item{inside === 1 ? '' : 's'} inside?
@@ -1311,56 +1358,159 @@ const liveInside = (id: string, items: readonly Item[]): number =>
  * What has been put away under one parent — done and dropped tasks, and
  * finished or archived epics and outcomes — folded, each able to come back.
  *
+ * Each is a card of its own, quieter than the open tasks above it: an outline
+ * in the page's rule colour rather than the controls' and no fill, its state
+ * as a mark in front of a title that wraps rather than being cut short, and
+ * its actions as icons. As a line of words — state, title, `Reopen`, `Delete`
+ * — the title was what gave way in a column, down to its first few letters.
+ *
  * An archived item can also be finished; restoring it brings it back as it was,
  * finished or not, so archived ones offer Restore and finished ones Reopen.
+ *
+ * A finished or archived epic or outcome shows what it took with it, nested
+ * under it as it was left (`PutAwayInside`): its outcomes and its tasks, each
+ * with its own state, since finishing one never touched them. They are only
+ * shown — they are hidden by their parent, so the parent's card is where they
+ * come back from.
+ *
+ * The cards are drawn only while the fold is open. The page re-renders every
+ * second for the header's timer, and a column of finished work nobody has
+ * asked to see is the part of the page that grows without end.
  */
 function PutAway({ items, allItems }: { items: readonly Item[]; allItems: readonly Item[] }) {
-  const reopenItem = useTasks((s) => s.reopenItem)
-  const unarchiveItem = useTasks((s) => s.unarchiveItem)
-  const deleteItem = useTasks((s) => s.deleteItem)
   if (items.length === 0) return null
+  return <PutAwayFold items={items} allItems={allItems} />
+}
 
+/**
+ * The fold itself, apart from `PutAway` so that whether it is open is
+ * forgotten when the last thing in it comes back: the next thing put away
+ * arrives folded, as it does on a fresh page.
+ */
+function PutAwayFold({ items, allItems }: { items: readonly Item[]; allItems: readonly Item[] }) {
+  const [open, setOpen] = useState(false)
   return (
-    <details className="mt-4">
+    <details className="mt-4" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary className="cursor-pointer text-xs text-muted hover:text-body">
         Done, dropped and archived ({items.length})
       </summary>
-      <ul className="mt-2 flex flex-col gap-1.5">
-        {items.map((item) => {
-          const archived = item.archivedAt !== undefined
-          const state = archived ? 'Archived' : item.status === 'done' ? 'Done' : 'Dropped'
-          return (
-            <li key={item.id} className="flex items-center gap-3 text-sm">
-              <span className="w-16 shrink-0 text-xs text-muted">{state}</span>
-              <span
-                className={`min-w-0 flex-1 truncate text-muted ${
-                  item.status === 'done' && !archived ? 'line-through' : ''
-                }`}
-              >
-                {item.kind !== 'task' && (
-                  <span className="mr-1.5 text-[10px] tracking-widest uppercase">{item.kind}</span>
-                )}
-                {item.title}
-              </span>
-              {archived ? (
-                <TextButton onClick={() => unarchiveItem(item.id)} label={`Restore ${item.title}`}>
-                  Restore
-                </TextButton>
-              ) : (
-                <TextButton onClick={() => reopenItem(item.id)} label={`Reopen ${item.title}`}>
-                  Reopen
-                </TextButton>
-              )}
-              <DeleteButton
-                title={item.title}
-                inside={liveInside(item.id, allItems)}
-                onDelete={() => deleteItem(item.id)}
-              />
-            </li>
-          )
-        })}
-      </ul>
+      {open && (
+        <ul className="mt-2 flex flex-col gap-1.5">
+          {items.map((item) => (
+            <PutAwayCard key={item.id} item={item} allItems={allItems} />
+          ))}
+        </ul>
+      )}
     </details>
+  )
+}
+
+/** Where a put-away item stands. Archived wins: it is what hides the item. */
+type PutAwayState = 'open' | 'done' | 'dropped' | 'archived'
+
+const putAwayState = (item: Item): PutAwayState =>
+  item.archivedAt !== undefined ? 'archived' : item.status
+
+const STATE_NAME: Record<PutAwayState, string> = {
+  open: 'Open',
+  done: 'Done',
+  dropped: 'Dropped',
+  archived: 'Archived',
+}
+
+/**
+ * The mark in front of a put-away title: a tick, a struck circle, a box, or an
+ * empty ring for something still open inside what was put away. Its name is
+ * read before the title and shown on hover.
+ */
+function StateMark({ state, className = '' }: { state: PutAwayState; className?: string }) {
+  const name = STATE_NAME[state]
+  return (
+    <span title={name} className={`shrink-0 ${state === 'done' ? 'text-deep/80' : 'text-muted'} ${className}`}>
+      {state === 'done' ? (
+        <CheckIcon />
+      ) : state === 'dropped' ? (
+        <DropIcon />
+      ) : state === 'archived' ? (
+        <ArchiveIcon />
+      ) : (
+        <DoneRingIcon done={false} />
+      )}
+      <span className="sr-only">{name}: </span>
+    </span>
+  )
+}
+
+function PutAwayCard({ item, allItems }: { item: Item; allItems: readonly Item[] }) {
+  const reopenItem = useTasks((s) => s.reopenItem)
+  const unarchiveItem = useTasks((s) => s.unarchiveItem)
+  const deleteItem = useTasks((s) => s.deleteItem)
+  const state = putAwayState(item)
+
+  return (
+    <li className="rounded-lg border border-line px-2.5 py-2">
+      {/* Wraps, so a delete that asks first drops to a line of its own
+          rather than squeezing the title. */}
+      <div className="flex flex-wrap items-start gap-x-2">
+        <StateMark state={state} className="mt-[3px]" />
+        <div className="min-w-0 flex-1 basis-24 text-sm text-muted wrap-break-word">
+          {item.kind !== 'task' && (
+            <span className="block text-[10px] tracking-widest uppercase">{item.kind}</span>
+          )}
+          <span className={state === 'done' ? 'line-through' : ''}>{item.title}</span>
+        </div>
+        <span className="-my-0.5 -mr-1.5 ml-auto flex flex-wrap items-center justify-end">
+          {state === 'archived' ? (
+            <IconButton onClick={() => unarchiveItem(item.id)} label={`Restore ${item.title}`} hint="Restore">
+              <RestoreIcon />
+            </IconButton>
+          ) : (
+            <IconButton onClick={() => reopenItem(item.id)} label={`Reopen ${item.title}`} hint="Reopen">
+              <ReopenIcon />
+            </IconButton>
+          )}
+          <DeleteButton
+            title={item.title}
+            inside={liveInside(item.id, allItems)}
+            onDelete={() => deleteItem(item.id)}
+          />
+        </span>
+      </div>
+      {item.kind !== 'task' && <PutAwayInside parent={item} allItems={allItems} />}
+    </li>
+  )
+}
+
+/**
+ * What a put-away epic or outcome holds, as it was left: each child with its
+ * own state, an outcome's tasks under it in turn. Only shown — see `PutAway`.
+ */
+function PutAwayInside({ parent, allItems }: { parent: Item; allItems: readonly Item[] }) {
+  const children = childrenOf(parent.id, allItems)
+  if (children.length === 0) return null
+  return (
+    <ul
+      aria-label={`Inside ${parent.title}`}
+      className="mt-1.5 ml-1.5 flex flex-col gap-1 border-l border-line pl-2.5"
+    >
+      {children.map((child) => {
+        const state = putAwayState(child)
+        return (
+          <li key={child.id} className="min-w-0">
+            <div className="flex items-start gap-1.5 text-xs text-muted">
+              <StateMark state={state} className="mt-px" />
+              <div className="min-w-0 flex-1 wrap-break-word">
+                {child.kind !== 'task' && (
+                  <span className="mr-1.5 text-[10px] tracking-widest uppercase">{child.kind}</span>
+                )}
+                <span className={state === 'done' ? 'line-through' : ''}>{child.title}</span>
+              </div>
+            </div>
+            {child.kind !== 'task' && <PutAwayInside parent={child} allItems={allItems} />}
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 

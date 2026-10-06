@@ -52,6 +52,44 @@ test('intentions can be edited and removed', async ({ page }) => {
   await expect(start(page)).toBeDisabled()
 })
 
+test('an intention is marked done by hand, and reads done wherever it is listed', async ({
+  page,
+}) => {
+  await openMono(page)
+  await goToStage(page, 'Intentions')
+  await addIntention(page, 'Mono auth')
+  await addIntention(page, 'Billing ticket')
+
+  await intentionList(page).getByRole('button', { name: 'Mark intention Mono auth done' }).click()
+  await expect(
+    intentionList(page).getByRole('button', { name: 'Reopen intention Mono auth' }),
+  ).toBeVisible()
+  await expect(intentionList(page).getByText('Mono auth', { exact: true })).toHaveCSS(
+    'text-decoration-line',
+    'line-through',
+  )
+  await start(page).click()
+
+  // The purpose prompt shows it done, and can reopen it and finish it again.
+  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+  await stage(page).getByRole('button', { name: 'Reopen intention Mono auth' }).click()
+  await stage(page).getByRole('button', { name: 'Mark intention Mono auth done' }).click()
+  await stage(page).getByRole('button', { name: 'Not yet' }).click()
+
+  // So does the tasks page, and it is the day's to keep: a reload still has it.
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  const today = page.getByRole('main').getByRole('region', { name: 'My intentions for today' })
+  await page.reload()
+  await expect(today.getByRole('button', { name: 'Reopen intention Mono auth' })).toBeVisible()
+  await today.getByRole('button', { name: 'Reopen intention Mono auth' }).click()
+  await expect(
+    today.getByRole('button', { name: 'Mark intention Mono auth done' }),
+  ).toBeVisible()
+  await expect(
+    today.getByRole('button', { name: 'Mark intention Billing ticket done' }),
+  ).toBeVisible()
+})
+
 test('an intention takes its tasks from the backlog, shown under the places they live in', async ({
   page,
 }) => {

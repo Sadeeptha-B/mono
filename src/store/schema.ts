@@ -64,6 +64,11 @@ export type ExportedShape = PersistedShape & { version: number; tasks?: Exported
  * for the build that cannot read those: a v3 build would import a v4 file,
  * silently drop every task in it, and look as though it had worked. A version
  * it refuses is the honest answer.
+ *
+ * An intention's `done` arrived later without a bump, deliberately. A build
+ * that predates it reads the intention and drops only the mark, and an edit
+ * that only marked it is dropped whole — the day is still the day, with one
+ * fewer tick on it. That is not the silent loss a bump exists to refuse.
  */
 export const SCHEMA_VERSION = 4
 
@@ -566,23 +571,35 @@ function sanitiseDefaultRegions(value: unknown): Settings['defaultRegions'] | nu
 }
 
 /**
- * An intention as the log now holds one: an id and a title. Older logs gave
- * some a link to one area, epic or outcome; it is left behind rather than read,
- * since what an intention is about is now its tasks (see `Intention`).
+ * An intention as the log now holds one: an id, a title, and whether it has
+ * been marked done. Older logs gave some a link to one area, epic or outcome;
+ * it is left behind rather than read, since what an intention is about is now
+ * its tasks (see `Intention`). A `done` that is not a boolean is left out,
+ * which reads as not done, rather than costing the intention.
  */
 function sanitiseIntention(value: unknown): Intention | null {
   if (!isRecord(value)) return null
   const id = sanitiseString(value.id)
   const title = sanitiseString(value.title)
   if (id === null || title === null) return null
-  return { id, title }
+  return typeof value.done === 'boolean' ? { id, title, done: value.done } : { id, title }
 }
 
-/** An edit, which can only rename now: one that only moved a link edits nothing. */
+/**
+ * An edit: a rename, marking it done or reopening it, or both. Each field is
+ * read on its own, so an unreadable one is dropped and the rest kept; an edit
+ * left with nothing it can change — one that only moved an old link — edits
+ * nothing.
+ */
 function sanitiseIntentionPatch(value: unknown): IntentionPatch | null {
-  if (!isRecord(value) || !('title' in value)) return null
-  const title = sanitiseString(value.title)
-  return title === null ? null : { title }
+  if (!isRecord(value)) return null
+  const patch: IntentionPatch = {}
+  if ('title' in value) {
+    const title = sanitiseString(value.title)
+    if (title !== null) patch.title = title
+  }
+  if (typeof value.done === 'boolean') patch.done = value.done
+  return Object.keys(patch).length === 0 ? null : patch
 }
 
 /**

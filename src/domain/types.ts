@@ -207,17 +207,26 @@ export type PlannedBreakPatch = Partial<Omit<PlannedBreak, 'id'>>
  * or outcome; that was a second answer to where its tasks live, which went
  * stale whenever a task was moved or linked from elsewhere, and the log reader
  * leaves it behind in older logs.
+ *
+ * `done` is the user's word that the day has had what it wanted from this
+ * intention. It is said by hand and never derived from the tasks: an intention
+ * can be met with tasks still open under it, or have every task ticked and
+ * still not be met. Saying so writes nothing to those tasks, as finishing an
+ * epic writes nothing inside it. Absent in logs written before it existed,
+ * which reads as not done.
  */
 export type Intention = {
   id: string
   title: string
+  done?: boolean
 }
 
 /**
  * Fields an edit may change. A patch is merged, and with
- * `exactOptionalPropertyTypes` an absent field can only mean "leave it".
+ * `exactOptionalPropertyTypes` an absent field can only mean "leave it" — so
+ * reopening an intention sends `done: false` rather than leaving `done` out.
  */
-export type IntentionPatch = { title?: string }
+export type IntentionPatch = { title?: string; done?: boolean }
 
 // -----------------------------------------------------------------------------
 // Session history and active work

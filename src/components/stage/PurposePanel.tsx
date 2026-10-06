@@ -43,7 +43,8 @@
  * (`IntentionFields`), in its place, and saving closes them again. Leaving for
  * the intentions question would cost the ticks and the purpose already
  * written here; a dropdown per intention would keep a form on screen that is
- * wanted once in a while.
+ * wanted once in a while. The ring in front of it marks it done, by hand,
+ * the same ring as on the intentions question and the tasks page.
  *
  * Not knowing what this block is for is answered on the question too: the
  * play button by the title gives the prompt a few minutes to decide in
@@ -64,7 +65,12 @@ import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'rea
 
 import { unlockAudio } from '@/ambient/audio'
 import { GroupedTasks } from '../GroupedTasks'
-import { IntentionFields, useIntentionBacklog, useSaveIntention } from '../IntentionFields'
+import {
+  IntentionDoneToggle,
+  IntentionFields,
+  useIntentionBacklog,
+  useSaveIntention,
+} from '../IntentionFields'
 import { QuestionClock } from '../QuestionClock'
 import { TaskTreePicker } from '../TaskTreePicker'
 import { AddFold, EditGlyph, fieldClass, GhostButton, PrimaryButton, StagePrompt } from '../ui'
@@ -126,10 +132,11 @@ export function PurposePanel({
   const [kept, setKept] = useState<string[]>([])
   // The intention being put right in place, if any — see the header.
   const [editing, setEditing] = useState<IntentionDraft | null>(null)
+  const updateIntention = useSession((s) => s.updateIntention)
   const save = useSaveIntention({
     taskIntentions,
     onAdd: useSession((s) => s.addIntention),
-    onUpdate: useSession((s) => s.updateIntention),
+    onUpdate: updateIntention,
     onLinkTask: useSession((s) => s.linkTask),
   })
 
@@ -212,7 +219,7 @@ export function PurposePanel({
             <TaskTreePicker
               label="Tasks for this block"
               prefix="Select tasks for this block"
-              tree={backlog.tree}
+              tree={backlog.pickerTree}
               selected={selected}
               onChange={(next) => {
                 setTicked(next)
@@ -252,10 +259,13 @@ export function PurposePanel({
                 ) : (
                   <IntentionTasks
                     key={intention.id}
-                    title={intention.title}
+                    intention={intention}
                     groups={backlog.group(backlog.tasksUnder(intention.id))}
                     isPicked={isPicked}
                     onTick={tick}
+                    onToggleDone={() =>
+                      updateIntention(intention.id, { done: intention.done !== true })
+                    }
                     onEdit={() =>
                       setEditing({
                         title: intention.title,
@@ -308,27 +318,41 @@ function MyIntentions({ children }: { children: ReactNode }) {
   )
 }
 
-/** An intention under its title, with its tasks in the list's usual grouping. */
+/**
+ * An intention under its title, with its tasks in the list's usual grouping.
+ *
+ * One marked done keeps its place and its tasks, crossed out and quieter: its
+ * tasks can still be ticked for a block, since leftovers are still work, and
+ * hiding them would leave a tick made before it was marked done invisible.
+ */
 function IntentionTasks({
-  title,
+  intention,
   groups,
   isPicked,
   onTick,
+  onToggleDone,
   onEdit,
 }: {
-  title: string
+  intention: Intention
   groups: readonly TaskTreeNode[]
   isPicked: (taskId: string) => boolean
   onTick: (taskIds: readonly string[], on: boolean) => void
+  onToggleDone: () => void
   onEdit: () => void
 }) {
   const headingId = useId()
+  const { title } = intention
+  const done = intention.done === true
   return (
-    <div role="group" aria-labelledby={headingId} className="min-w-0">
+    <div role="group" aria-labelledby={headingId} className={`min-w-0 ${done ? 'opacity-70' : ''}`}>
       {/* On the title's baseline and at its size: the pencil is a character,
           and left to inherit it sat larger and off the line. */}
       <div className="mb-1 flex items-baseline gap-2 text-sm">
-        <span id={headingId} className="min-w-0 truncate text-bright">
+        <IntentionDoneToggle intention={intention} onToggle={onToggleDone} />
+        <span
+          id={headingId}
+          className={`min-w-0 truncate ${done ? 'text-muted line-through' : 'text-bright'}`}
+        >
           {title}
         </span>
         <button

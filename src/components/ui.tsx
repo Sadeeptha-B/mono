@@ -1,5 +1,5 @@
 /**
- * The small shared pieces: buttons and form field styling.
+ * The small shared pieces: buttons, icon buttons and form field styling.
  *
  * These live outside `prompts/` because most of Mono's decisions are now made
  * inline on the stage rather than in a dialog, and the two should look
@@ -85,6 +85,46 @@ export function PageLinks({ current }: { current: Route }) {
  * image of the other reads as two different buttons.
  */
 export const EditGlyph = () => <span className="inline-block -scale-x-100">✎</span>
+
+/**
+ * An action drawn as an icon (`icons.tsx`, or `EditGlyph`) rather than a word:
+ * the tasks page's rename, done, drop, archive, reopen, restore and delete.
+ *
+ * A row or card there carries up to four of these, and as words they were most
+ * of what a narrow column held, pushing the titles they act on out of the way.
+ * The name an icon cannot say goes in `label`, which is the accessible name and
+ * says what it acts on — `Archive Mono auth` — and the bare verb in `hint`,
+ * which a pointer sees on hover. `danger` is for the one that cannot be undone.
+ */
+export function IconButton({
+  label,
+  hint,
+  onClick,
+  danger = false,
+  className = '',
+  children,
+}: {
+  label: string
+  hint: string
+  onClick: () => void
+  danger?: boolean
+  className?: string
+  children: ReactNode
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={hint}
+      className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md text-sm leading-none text-muted transition hover:bg-surface-raised ${
+        danger ? 'hover:text-commit' : 'hover:text-bright'
+      } ${className}`}
+    >
+      {children}
+    </button>
+  )
+}
 
 export function PrimaryButton({
   children,

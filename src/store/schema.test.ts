@@ -117,13 +117,13 @@ const EVERY_EVENT = {
   'intention/added': {
     type: 'intention/added',
     at: 18,
-    intention: { id: 'intention-added', title: 'Mono auth' },
+    intention: { id: 'intention-added', title: 'Mono auth', done: true },
   },
   'intention/updated': {
     type: 'intention/updated',
     at: 19,
     id: 'intention-updated',
-    patch: { title: 'Billing ticket' },
+    patch: { title: 'Billing ticket', done: false },
   },
   'intention/removed': { type: 'intention/removed', at: 20, id: 'intention-removed' },
   'intention/taskLinked': {
@@ -226,6 +226,22 @@ describe('the v4 schema', () => {
     expect(migratePersisted({ events, dayKey: null }, SCHEMA_VERSION).events).toEqual([
       { type: 'intention/added', at: 1, intention: { id: 'i', title: 'x' } },
       { type: 'intention/updated', at: 2, id: 'i', patch: { title: 'y' } },
+    ])
+  })
+
+  it("reads an intention's done mark, and leaves out one it cannot read", () => {
+    const events = [
+      { type: 'intention/added', at: 1, intention: { id: 'i', title: 'x', done: true } },
+      { type: 'intention/added', at: 2, intention: { id: 'j', title: 'y', done: 'yes' } },
+      { type: 'intention/updated', at: 3, id: 'i', patch: { done: false } },
+      { type: 'intention/updated', at: 4, id: 'j', patch: { title: 7, done: true } },
+      { type: 'intention/updated', at: 5, id: 'j', patch: { done: 'yes' } },
+    ]
+    expect(migratePersisted({ events, dayKey: null }, SCHEMA_VERSION).events).toEqual([
+      { type: 'intention/added', at: 1, intention: { id: 'i', title: 'x', done: true } },
+      { type: 'intention/added', at: 2, intention: { id: 'j', title: 'y' } },
+      { type: 'intention/updated', at: 3, id: 'i', patch: { done: false } },
+      { type: 'intention/updated', at: 4, id: 'j', patch: { done: true } },
     ])
   })
 

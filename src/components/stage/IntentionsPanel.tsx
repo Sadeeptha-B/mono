@@ -47,6 +47,8 @@
  * already under another moves it. Each intention in the list shows its tasks
  * under the places they live in (`GroupedTasks`), which is also what says
  * what it is related to — both areas, when its tasks come from two.
+ *
+ * The ring in front of each marks it done, by hand (`IntentionDoneToggle`).
  */
 
 import { useRef, useState } from 'react'
@@ -54,7 +56,12 @@ import { useRef, useState } from 'react'
 import { unlockAudio } from '@/ambient/audio'
 import { GroupedTasks } from '../GroupedTasks'
 import { QuestionClock } from '../QuestionClock'
-import { IntentionFields, useIntentionBacklog, useSaveIntention } from '../IntentionFields'
+import {
+  IntentionDoneToggle,
+  IntentionFields,
+  useIntentionBacklog,
+  useSaveIntention,
+} from '../IntentionFields'
 import { AddFold, EditGlyph, GhostButton, StagePrompt } from '../ui'
 import { emptyIntentionDraft, type IntentionDraft } from '@/domain/intentions'
 import { formatDuration } from '@/domain/time'
@@ -183,6 +190,7 @@ export function IntentionsPanel({
               intention={intention}
               groups={backlog.group(backlog.tasksUnder(intention.id))}
               editing={intention.id === draft.editing}
+              onToggleDone={() => onUpdate(intention.id, { done: intention.done !== true })}
               onEdit={() => startEditing(intention)}
               onRemove={() => {
                 if (draft.editing === intention.id) onDraft(emptyIntentionDraft)
@@ -236,28 +244,39 @@ export function IntentionsPanel({
   )
 }
 
-/** One intention named today, with its tasks under the places they live in. */
+/**
+ * One intention named today, with its tasks under the places they live in,
+ * and the ring that marks it done. A done one stays in its place, crossed out,
+ * its tasks still listed: they are still the day's, and reopening it is one
+ * press away.
+ */
 function IntentionRow({
   intention,
   groups,
   editing,
+  onToggleDone,
   onEdit,
   onRemove,
 }: {
   intention: Intention
   groups: readonly TaskTreeNode[]
   editing: boolean
+  onToggleDone: () => void
   onEdit: () => void
   onRemove: () => void
 }) {
+  const done = intention.done === true
   return (
     <li
       className={`flex items-baseline gap-3 rounded-lg border px-3 py-2 ${
         editing ? 'border-bright/60' : 'border-muted/70'
       }`}
     >
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-sm text-bright">{intention.title}</div>
+      <IntentionDoneToggle intention={intention} onToggle={onToggleDone} />
+      <div className={`min-w-0 flex-1 ${done ? 'opacity-70' : ''}`}>
+        <div className={`truncate text-sm ${done ? 'text-muted line-through' : 'text-bright'}`}>
+          {intention.title}
+        </div>
         {groups.length > 0 && (
           <GroupedTasks
             label={`Tasks for ${intention.title}`}
