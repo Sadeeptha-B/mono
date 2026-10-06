@@ -64,7 +64,7 @@ import { dayKey, formatDuration, isWithinRegions, nextRegionStart } from '@/doma
 import type { TimerMode } from '@/domain/time'
 import { useSession, useStorageHealth, toPlanInput, selectRegions } from '@/store/session'
 import { playChime, unlockAudio } from '@/ambient/audio'
-import type { IntentionTimer } from '@/components/stage/IntentionsPanel'
+import type { TodayTimer } from '@/components/stage/TodayPanel'
 import { minutesToMs, type BlockKind, type Ms } from '@/domain/types'
 
 /**
@@ -199,19 +199,19 @@ export function App() {
   const [revisitingSetup, setRevisitingSetup] = useState(false)
   const [seenGeneration, setSeenGeneration] = useState(() => store.generation)
   /**
-   * The intentions question's timer, as two instants.
+   * Today's question's timer, as two instants.
    *
    * Beside `setupStage` because it is the same kind of thing: about where the
    * user is in setting up the day, not a fact about the day. It is never
-   * written to the log — see `IntentionsPanel` for why it is not a block — and a
+   * written to the log — see `TodayPanel` for why it is not a block — and a
    * reload simply starts the question's time again, as it re-asks any other
    * question.
    *
    * `null` until it has run once this session. It starts by itself only the
-   * first time the intentions question is shown on an unshaped day; after that,
+   * first time today's question is shown on an unshaped day; after that,
    * and on any re-visit, only from its own button.
    */
-  const [intentionTimer, setIntentionTimer] = useState<IntentionTimer | null>(null)
+  const [todayTimer, setTodayTimer] = useState<TodayTimer | null>(null)
 
   const { phase, session } = store
   const today = dayKey(now)
@@ -311,7 +311,7 @@ export function App() {
     setSeenGeneration(store.generation)
     setSetupStage(FIRST_SETUP_STAGE)
     setRevisitingSetup(false)
-    setIntentionTimer(null)
+    setTodayTimer(null)
     setComposer(null)
     // The calendar's own drafts are cleared by remounting — the composers
     // unmount with the editor, the stage panel is keyed on the generation. This
@@ -340,29 +340,29 @@ export function App() {
 
   const stage = stageFor(phase, setupOpen, setupStage)
 
-  const startIntentionTimer = (at: Ms) =>
-    setIntentionTimer({
+  const startTodayTimer = (at: Ms) =>
+    setTodayTimer({
       startedAt: at,
       endsAt: at + minutesToMs(session.settings.intentionMinutes),
     })
-  // The first sight of the intentions question on a day not yet shaped starts
+  // The first sight of today's question on a day not yet shaped starts
   // its timer. During render, the way this component adjusts its other state,
   // so the face never paints a frame with no time on it; reading `now` here is
   // fine, it is only ever written once.
-  if (setupOpen && !dayShaped && setupStage === 'intentions' && intentionTimer === null) {
-    startIntentionTimer(now)
+  if (setupOpen && !dayShaped && setupStage === 'today' && todayTimer === null) {
+    startTodayTimer(now)
   }
   // A single boolean that flips once, which is what lets the chime be an effect
   // without `now` in its dependencies. Only while the questions are open: the
   // timer is about the question, and a chime arriving after the day has started
   // would be the app talking about something already finished.
-  const intentionTimeUp = setupOpen && intentionTimer !== null && now >= intentionTimer.endsAt
+  const todayTimeUp = setupOpen && todayTimer !== null && now >= todayTimer.endsAt
   const soundEnabled = session.settings.soundEnabled
   useEffect(() => {
-    if (intentionTimeUp && soundEnabled) playChime()
+    if (todayTimeUp && soundEnabled) playChime()
     // `soundEnabled` is read rather than watched: turning sound on afterwards
     // should not chime for a timer that ran out minutes ago.
-  }, [intentionTimeUp])
+  }, [todayTimeUp])
   /**
    * Move the stage to one of the opening questions.
    *
@@ -372,10 +372,10 @@ export function App() {
    * once — what is fixed today and which hours are yours both keep changing.
    */
   const goToSetupStage = (next: SetupStageId) => {
-    // The intentions timer starts by itself the first time that question is
+    // Today's timer starts by itself the first time that question is
     // shown on an unshaped day, during render where no window can be asked
     // for — so this click, which is what shows it, asks instead.
-    if (next === 'intentions' && !dayShaped && intentionTimer === null) popOutForDeciding()
+    if (next === 'today' && !dayShaped && todayTimer === null) popOutForDeciding()
     setSetupStage(next)
     setRevisitingSetup(true)
     if (next === 'hours' && composer?.kind === 'hours') setComposer(null)
@@ -398,9 +398,9 @@ export function App() {
     if (!dayShaped) store.shapeDay()
     setRevisitingSetup(false)
     // The timer was about getting the day started, and it has. Coming back to
-    // the intentions later is changing your mind, which gets a fresh round only
+    // today's tasks later is changing your mind, which gets a fresh round only
     // if you ask for one — not the tail end of the morning's.
-    setIntentionTimer(null)
+    setTodayTimer(null)
   }
 
   const startBlock = (kind: BlockKind): void => {
@@ -442,7 +442,7 @@ export function App() {
   }
 
   /**
-   * The same window for a question's own timer: the intentions question's and
+   * The same window for a question's own timer: today's question's and
    * the purpose prompt's few minutes to decide. Behind its own setting, because
    * this click is made while the question is still being answered in the tab —
    * see `popOutOnDecide`. Called from the click for the same reason as above.
@@ -456,8 +456,8 @@ export function App() {
     store.dispatch({ type: 'startDeciding', at: Date.now() })
   }
 
-  // The purpose prompt's deciding timer chimes at zero as the intentions
-  // question's does, and for the same reasons only while the prompt is open,
+  // The purpose prompt's deciding timer chimes at zero as today's question's
+  // does, and for the same reasons only while the prompt is open,
   // and on a single boolean that flips once.
   const decideTimeUp =
     phase.name === 'definingPurpose' && phase.deciding !== null && now >= phase.deciding.endsAt
@@ -553,12 +553,13 @@ export function App() {
         // shows out here as it does beside it.
         regions={planInput.regions}
         intentions={session.intentions}
-        intentionTimer={intentionTimer}
+        today={session.today}
+        todayTimer={todayTimer}
         // Both clocks chime at zero, and a click out here is the gesture that
         // lets that chime be heard, as the stage's own play buttons do.
-        onStartIntentionTimer={() => {
+        onStartTodayTimer={() => {
           void unlockAudio()
-          startIntentionTimer(Date.now())
+          startTodayTimer(Date.now())
         }}
         onStartDeciding={() => {
           void unlockAudio()
@@ -736,17 +737,13 @@ export function App() {
                 onUpdateCommitment={store.updateCommitment}
                 onRemoveCommitment={store.removeCommitment}
                 intentions={session.intentions}
-                taskIntentions={session.taskIntentions}
-                onLinkTask={store.linkTask}
+                today={session.today}
                 planned={planned}
-                intentionTimer={intentionTimer}
-                onStartIntentionTimer={() => {
+                todayTimer={todayTimer}
+                onStartTodayTimer={() => {
                   popOutForDeciding()
-                  startIntentionTimer(Date.now())
+                  startTodayTimer(Date.now())
                 }}
-                onAddIntention={store.addIntention}
-                onUpdateIntention={store.updateIntention}
-                onRemoveIntention={store.removeIntention}
                 onDayShaped={finishSetup}
                 onEditHours={() => openComposer({ kind: 'hours' })}
                 onStartBlock={startBlock}

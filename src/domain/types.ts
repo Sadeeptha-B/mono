@@ -81,10 +81,12 @@ export type Settings = {
   shortMinutes: Minutes
   reflectMinutes: Minutes
   /**
-   * How long the day's intentions question gives you before it stops to ask
-   * whether you want longer. A timer on the question rather than a block: it
-   * runs while the day is being set up, which is often before working hours
-   * begin, and it records nothing. See `IntentionsPanel`.
+   * How long today's question — what are you working on today? — gives you
+   * before it stops to ask whether you want longer. A timer on the question
+   * rather than a block: it runs while the day is being set up, which is often
+   * before working hours begin, and it records nothing. See `TodayPanel`. The
+   * name is older than the question it now times, and is kept so a saved
+   * setting still reads.
    */
   intentionMinutes: Minutes
   /**
@@ -115,7 +117,7 @@ export type Settings = {
    */
   popOutOnStart: boolean
   /**
-   * Open the same window when a question's own timer starts: the intentions
+   * Open the same window when a question's own timer starts: today's
    * question's, and the purpose prompt's few minutes to decide.
    *
    * Its own setting rather than a second reading of `popOutOnStart`, because
@@ -195,18 +197,23 @@ export type PlannedBreakPatch = Partial<Omit<PlannedBreak, 'id'>>
 // -----------------------------------------------------------------------------
 
 /**
- * Something today is for: "handle the billing ticket", "Mono's auth".
+ * A name for some of today's tasks: "handle the billing ticket", "the login
+ * pages".
  *
- * Broader than a block's purpose and shorter-lived than anything in the
- * backlog. An intention belongs to one day, which is why it lives in the event
- * log with the rest of the day's decisions and is cleared at midnight, while
- * the tasks it gathers live on in the backlog.
+ * Optional, and given after the tasks rather than before them. The day is
+ * answered by choosing its tasks; an intention gathers some of them under one
+ * name, and can be narrower than an outcome or broader than an epic — whatever
+ * the day needs that the backlog's own places do not already say. Written
+ * first, with nothing scoped yet, it came out as the name of an epic the
+ * backlog already had. An intention belongs to one day, which is why it lives
+ * in the event log with the rest of the day's decisions and is cleared at
+ * midnight, while the tasks it gathers live on in the backlog.
  *
- * What it is about is its tasks, put under it by `intention/taskLinked`, and
- * shown under the places they live in. It once also pointed at one area, epic
- * or outcome; that was a second answer to where its tasks live, which went
- * stale whenever a task was moved or linked from elsewhere, and the log reader
- * leaves it behind in older logs.
+ * What it is about is its tasks, carried into it by `intention/taskLinked`
+ * and shown under the places they live in. It once also pointed at one area,
+ * epic or outcome; that was a second answer to where its tasks live, which
+ * went stale whenever a task was moved or linked from elsewhere, and the log
+ * reader leaves it behind in older logs.
  *
  * `done` is the user's word that the day has had what it wanted from this
  * intention. It is said by hand and never derived from the tasks: an intention

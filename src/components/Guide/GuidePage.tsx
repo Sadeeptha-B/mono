@@ -359,10 +359,10 @@ function sectionsFor(settings: Settings): Section[] {
           <P>
             It is always on the same question as the stage, the opening ones included, but
             some it will not answer. Hours and commitments are questions about the whole
-            day, and the whole day does not fit in a window that size; intentions and a
-            block's tasks are chosen from your backlog, which does not either. For those it
-            shows where the answer stands — what is fixed, which hours, what you have named
-            so far — and points you back to the tab, where the calendar and the backlog are.
+            day, and the whole day does not fit in a window that size; today's tasks and a
+            block's are chosen from your backlog, which does not either. For those it
+            shows where the answer stands — what is fixed, which hours, how many tasks you
+            have chosen so far — and points you back to the tab, where the calendar and the backlog are.
             That is the same rule as everywhere else here, not an exception to it. The
             window keeps the answers that need neither — <Em>Not yet</Em>, and the few
             minutes to decide.
@@ -378,8 +378,8 @@ function sectionsFor(settings: Settings): Section[] {
             a block starts running — the click that begins the timer is the last thing you
             do before you go off to the work, so it is the moment worth spending on
             getting the timer in front of you. It also opens when a question's timer
-            starts: the first time you reach the intentions question, and from the play
-            button by either question. <Em>Pop the timer out when a block starts</Em> and{' '}
+            starts: the first time you reach today's question, and from the play button
+            by either question. <Em>Pop the timer out when a block starts</Em> and{' '}
             <Em>Pop the timer out when you take time to decide</Em> in settings turn those
             off, and the header button still opens one by hand.
           </P>
@@ -409,14 +409,15 @@ function sectionsFor(settings: Settings): Section[] {
             <Em>What are your commitments for today?</Em> comes first, because what you cannot
             move decides how much of the day is left to spend. Then{' '}
             <Em>are these your hours today?</Em>, pre-filled with your usual shape — a
-            glance on an ordinary morning. Last, <Em>What are your intentions for the day?</Em>, which
-            is only honest once the other two have said how much of the day there is.
+            glance on an ordinary morning. Last, <Em>What are you working on today?</Em>,
+            which is only honest once the other two have said how much of the day there
+            is.
           </P>
           <P>
             None of them gates another. The dots move between them in any order,
             nothing you have typed is lost by switching, and <Em>Start the day</Em>{' '}
             finishes from whichever you are looking at. With nothing fixed today and the
-            usual hours, one intention is the whole of it. The questions stay answerable
+            usual hours, one task is the whole of it. The questions stay answerable
             afterwards — between blocks the dots go back to any of them, because a
             meeting that appears at four is no different from one you knew about at
             nine, and <Em>Focus</Em> returns. They never skip ahead, though:
@@ -424,20 +425,39 @@ function sectionsFor(settings: Settings): Section[] {
             the questions are the calendar's to answer.
           </P>
           <P>
-            <Em>Intentions</Em> are a few broad strokes — handle the billing ticket, Mono's
-            login pages — and the day needs at least one before it starts, the first time
-            it is asked. Nothing fixed is an ordinary day; nothing meant is not, and there
-            is always something to write. Under <Em>Tasks</Em> each one takes the tasks it
-            is for, chosen from your backlog by area, epic and outcome, or written there
-            and then into any of them, and shows them under the places they live in.
-            They last the day: at midnight they go with the rest of its answers, and the
-            tasks gathered under them stay in your backlog.
+            Today is answered with tasks, and the day needs at least one before it
+            starts, the first time it is asked. Nothing fixed is an ordinary day; nothing
+            meant is not, and there is always something to write. Tick tasks under{' '}
+            <Em>All Tasks</Em>, your whole backlog, which can be searched, and where{' '}
+            <Em>+ Task</Em> writes one into any area, epic or outcome and chooses it as it
+            goes. Tasks can be marked done, reopened, renamed and deleted there too, so
+            the backlog is kept without leaving the question, and its heading folds it
+            away once you have what you need. If you only know the rough
+            shape of the work, write a task that says so: <Em>look into the double
+            charge</Em> is a perfectly good task to start a day with.
+          </P>
+          <P>
+            Under <Em>Today's tasks</Em> your tasks are shown under the places they live
+            in. If it helps, give some of them a name — ship the billing fix, the login
+            pages — with <Em>+ Intention</Em> beside the heading, and carry tasks into it by
+            dragging them, from today's list or straight from <Em>All Tasks</Em>, or by
+            picking one up with the dots in front of it and choosing <Em>Move here</Em>.
+            An intention can be narrower than an outcome or wider than an epic, whatever
+            the day needs; a task belongs to one at most, and to none quite happily. The{' '}
+            <Em>×</Em> on a task takes it out of today and leaves it in your backlog.
+          </P>
+          <P>
+            Today lasts the day: at midnight it goes with the rest of the day's answers,
+            and the tasks stay in your backlog. The next day's question offers what was
+            left unfinished under <Em>From last time</Em>, each with a <Em>+</Em> to choose
+            it again. Nothing comes across by itself, and what you do not take stops
+            being offered once another day has chosen its own tasks.
           </P>
           <P>
             The question gives itself {intending} minutes, counting from the first time you
             see it, and keeps counting while you look at the other two. At zero it chimes
             if sound is on and simply stops, offering another round — it never starts the
-            day for you, and nothing about it is recorded. Coming back to your intentions
+            day for you, and nothing about it is recorded. Coming back to today's tasks
             later in the day starts no timer unless you ask for one, with the play button
             beside the question.
           </P>
@@ -594,7 +614,7 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="One thing"
-              asks="What is this block for, and which tasks come under it? The purpose goes at the top and the tasks below it: one dropdown selects tasks for this block from your whole backlog, and can search it or write a new task into any area, epic or outcome. Below it the tasks under each of today's intentions are listed under that intention, ready to tick, and anything chosen from outside them comes first. Tick at least one. An outcome's heading ticks every task of it in that list. The purpose starts as their titles, or the outcome's name when you took all of it, and is yours to rewrite: one sentence about this stretch, not a list. Naming it is the point — you are deciding what the next stretch is worth."
+              asks="What is this block for, and which tasks come under it? The purpose goes at the top and the tasks below it. Today's tasks come first, under their intentions, ready to tick, with today's finished ones crossed out. Below them, folded under All Tasks, is the rest of your backlog, which can be searched, where a new task can be written into any area, epic or outcome, and where tasks can be marked done or reopened; anything ticked there is listed under Also for this block, and becomes one of today's tasks when the block starts. Tick at least one. An outcome's heading ticks every task of it in that list. The purpose starts as the tasks' titles, or the outcome's name when you took all of it, and is yours to rewrite — one sentence about this stretch, not a list. One well-chosen task is often a good purpose as it stands."
               choices={[
                 [
                   'Start',
@@ -604,10 +624,6 @@ function sectionsFor(settings: Settings): Section[] {
                 [
                   'Play, by the question',
                   `Stuck? Gives the question ${reflect} minutes to work out what matters, and chimes when they are up. Nothing is recorded and no plan time goes: the block starts only when you name it.`,
-                ],
-                [
-                  '✎ beside an intention',
-                  'Edits that intention where it is listed — its title and its tasks — without leaving the question.',
                 ],
                 [
                   'The ring before an intention',
@@ -665,7 +681,7 @@ function sectionsFor(settings: Settings): Section[] {
     },
     {
       id: 'tasks',
-      title: 'Tasks and intentions',
+      title: 'Tasks, today and intentions',
       body: (
         <>
           <P>
@@ -703,26 +719,24 @@ function sectionsFor(settings: Settings): Section[] {
             and deleting one takes everything in it.
           </P>
           <P>
-            The backlog lasts. Intentions belong to a day, and a block to its stretch of
-            it, but a task written in March is still there in May until you tick it,
+            The backlog lasts. Today's tasks and intentions belong to a day, and a block
+            to its stretch of it, but a task written in March is still there in May until you tick it,
             drop it or delete it. <Em>Drop</Em> is deciding not to do something, and it
             stays in the folded list as a decision; <Em>Delete</Em> is taking back a
             mistake. Both done and dropped tasks can be reopened. In that folded list a
             finished epic or outcome shows what it holds nested under it, each task as
-            it was left. The task dropdown keeps what you ticked today too, crossed out
-            under its place, so the next choice is made beside what is already done.
+            it was left. Wherever tasks are chosen, what you ticked today stays, crossed
+            out under its place, so the next choice is made beside what is already done.
           </P>
           <P>
-            Under <Em>My intentions for today</Em> the page shows your intentions, each
-            with its tasks under the areas, epics and outcomes they live in, and you can
-            add, edit and delete them there as on the opening question. The ring in front
-            of an intention marks it done, there, on the opening question or on the
-            purpose prompt: that is yours to say, not something its tasks decide, and it
-            stays listed, crossed out, until the day ends. Put a task under
-            one from its row's <Em>Intention</Em> too, and take it out with the{' '}
-            <Em>×</Em> beside it. A task belongs to one intention a day at most, and to
-            none quite happily: a small thing from outside today's intentions is a fine
-            way to use the end of a block.
+            Under <Em>Today</Em> the page shows today's tasks and intentions as the
+            opening question does, and you can write, group and take them out there the
+            same way. The sun on a task's row in the backlog chooses it for today, and
+            takes it out again. The ring in front of an intention marks it done, there, on
+            the opening question or on the purpose prompt: that is yours to say, not
+            something its tasks decide, and it stays listed, crossed out, until the day
+            ends. A small thing from outside today is a fine way to use the end of a
+            block, too, and it joins today when the block starts.
           </P>
           <P>
             Ticking a task done is the backlog's business, and finishing a block is the
@@ -822,9 +836,9 @@ function sectionsFor(settings: Settings): Section[] {
             How long the play button on the purpose prompt gives you to decide. Currently{' '}
             {reflect} minutes.
           </Setting>
-          <Setting name="Intentions timer">
-            How long the day's intentions question runs before it stops and offers to go
-            again. Currently {intending} minutes.
+          <Setting name="Today timer">
+            How long the question of what you are working on today runs before it stops
+            and offers to go again. Currently {intending} minutes.
           </Setting>
           <Setting name="Working hours">
             The recurring shape every day starts from. Editing a single day from the
@@ -860,11 +874,11 @@ function sectionsFor(settings: Settings): Section[] {
             moment — a window is only ever granted in answer to a click.
           </Setting>
           <Setting name="Pop the timer out when you take time to decide">
-            Opens the same window when a question's timer starts — the intentions
-            question's, and the few minutes a block's purpose can take — so the time stays
-            in view while you think. On unless you turn it off, and bound to a click in the
-            same way: the intentions timer starts by itself when you first open that
-            question, so the click that took you there is the one that brings the window.
+            Opens the same window when a question's timer starts — today's question's,
+            and the few minutes a block's purpose can take — so the time stays in view
+            while you think. On unless you turn it off, and bound to a click in the same
+            way: today's timer starts by itself when you first open that question, so the
+            click that took you there is the one that brings the window.
           </Setting>
           <Setting name="Chime when a block ends">
             A short two-tone chime. Browsers only allow sound after you have interacted

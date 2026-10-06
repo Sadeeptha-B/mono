@@ -63,7 +63,7 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
         />
         <MinutesField
           id="intention-minutes"
-          label="Intentions timer"
+          label="Today timer"
           value={settings.intentionMinutes}
           min={1}
           max={30}
@@ -139,7 +139,7 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
               label="Pop the timer out when you take time to decide"
             />
             <p className="text-xs leading-relaxed text-muted">
-              The same window, when the intentions question or a block's purpose starts
+              The same window, when today's question or a block's purpose starts
               its few minutes, so the time to decide stays in view while you think.
             </p>
           </>

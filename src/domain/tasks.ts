@@ -571,15 +571,16 @@ export function taskTreeWithDone(
  * Some of the backlog's tasks, under the places they sit in: the backlog tree
  * with everything else taken out, places left with nothing in them included.
  *
- * How the tasks under an intention are shown. Tasks from two areas are under
- * both areas, so nothing about where they live has to be reduced to one place,
- * and each place is said once for all the tasks in it rather than once per
- * task. Only tasks still in play are found, as in the tree it is cut from.
+ * How today's tasks are shown, and an intention's. Tasks from two areas are
+ * under both areas, so nothing about where they live has to be reduced to one
+ * place, and each place is said once for all the tasks in it rather than once
+ * per task. Only what the given tree holds is found: cut from `taskTree`, the
+ * open tasks still in play; cut from `taskTreeWithDone`, today's finished ones
+ * too, after the open ones of their place.
  */
 export function groupTasks(
   taskIds: readonly string[],
-  items: readonly Item[],
-  areas: readonly Area[],
+  tree: readonly TaskTreeNode[],
 ): readonly TaskTreeNode[] {
   const wanted = new Set(taskIds)
   const prune = (node: TaskTreeNode): TaskTreeNode | null => {
@@ -587,7 +588,7 @@ export function groupTasks(
     const tasks = node.tasks.filter((t) => wanted.has(t.id))
     return children.length > 0 || tasks.length > 0 ? { ...node, children, tasks } : null
   }
-  return taskTree(items, areas).flatMap((node) => prune(node) ?? [])
+  return tree.flatMap((node) => prune(node) ?? [])
 }
 
 /** The open, unarchived epics or outcomes directly under a parent. */

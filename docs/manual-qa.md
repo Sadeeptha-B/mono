@@ -86,7 +86,7 @@ The two-tab checks below assume it is there.
 7. Keep a tab from before this build open, then open the new build in a second
    tab. The new tab must load normally (the old one steps aside for the
    database upgrade); the old tab may stop saving until it is reloaded.
-8. Open Mono at a time before working hours. The intentions question's timer
+8. Open Mono at a time before working hours. Today's question's timer
    must run and chime (with sound on, after any click on the page) even though
    no block can start yet.
 9. On the tasks page, in Chrome, Firefox and Safari and on a real touch
@@ -95,11 +95,15 @@ The two-tab checks below assume it is there.
    move it; Escape, or pressing the grip again, must put it back where it was;
    after `Move here`, focus must be on the task's grip in its new column. Pick
    one up and mark it done or drop it: reopening it must not bring the move
-   back. Then open a task dropdown (`Tasks for this block`, `Tasks for this
-   intention`) near the bottom and the right edge of a short or narrow window:
-   it must open upwards when there is more room above, and never run off the
-   side of the screen — including after choosing a task with a long title,
-   and after turning a phone with the panel still open.
+   back. Do the same with today's list on the opening question, carrying a
+   task into an intention and back to `Not grouped`, and drag a task from
+   All Tasks onto an intention far enough above it that the stage has to
+   scroll on the way. Then, on a real phone in
+   portrait and landscape, scroll the backlog drawn on today's question and the
+   one unfolded on the purpose prompt: the box must scroll inside itself with
+   its search held at the top, a thumb reaching its end must carry on scrolling
+   the page rather than stopping dead, and nothing in it — a long title
+   included — may push the page sideways.
 
 ## The pop-out window
 
@@ -132,9 +136,9 @@ The two-tab checks below assume it is there.
 9. Throttle the network hard, or block the stylesheet, and pop out. The inline
    fallback must give a readable window rather than black text on ink — the
    window is allowed to be plain, never invisible.
-10. On a fresh day, go from Commitments to Intentions. The window must open from
-    that click with the intentions question and its clock, and the cursor must
-    still be somewhere you can type an intention without first clicking back into
+10. On a fresh day, go from Commitments to Today. The window must open from
+    that click with today's question and its clock, and the cursor must
+    still be somewhere you can type a task without first clicking back into
     the tab; if the window takes the focus, that is the cost the setting's
     docblock names. Then do the same from a block's `Take 5 mins to decide`.
     Turn `Pop the timer out when you take time to decide` off and check that

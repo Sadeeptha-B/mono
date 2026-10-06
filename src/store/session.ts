@@ -151,12 +151,20 @@ type SessionStore = {
   /** The user answered the day's opening questions. Records only that. */
   shapeDay: () => void
 
-  /** Name something today is for. Returns its id. */
+  /** Choose a task for today. Choosing it again changes nothing. */
+  addToToday: (taskId: string) => void
+  /** Put a task back out of today, and out of its intention. It stays in the backlog. */
+  removeFromToday: (taskId: string) => void
+  /** Name a group of today's tasks. Returns its id. */
   addIntention: (input: Omit<Intention, 'id'>) => string
   updateIntention: (id: string, patch: IntentionPatch) => void
-  /** Its tasks go back to belonging to no intention; they stay in the backlog. */
+  /** Its tasks stay today's, under no intention; they stay in the backlog too. */
   removeIntention: (id: string) => void
-  /** Put a task under one of today's intentions, moving it if it had one, or `null` to take it out. */
+  /**
+   * Put a task under one of today's intentions, moving it if it had one and
+   * choosing it for today if it was not, or `null` to take it out of its
+   * intention and leave it today's.
+   */
   linkTask: (taskId: string, intentionId: string | null) => void
 
   /** Roll the day over if the calendar day changed. Safe to call every tick. */
@@ -252,6 +260,11 @@ export const useSession = create<SessionStore>()(
         get().append({ type: 'settings/changed', at: Date.now(), patch }),
 
       shapeDay: () => get().append({ type: 'day/shaped', at: Date.now() }),
+
+      addToToday: (taskId) => get().append({ type: 'today/taskAdded', at: Date.now(), taskId }),
+
+      removeFromToday: (taskId) =>
+        get().append({ type: 'today/taskRemoved', at: Date.now(), taskId }),
 
       addIntention: (input) => {
         const id = newId()

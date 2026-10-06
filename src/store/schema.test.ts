@@ -132,6 +132,8 @@ const EVERY_EVENT = {
     taskId: 'task-a',
     intentionId: 'intention-added',
   },
+  'today/taskAdded': { type: 'today/taskAdded', at: 22, taskId: 'task-c' },
+  'today/taskRemoved': { type: 'today/taskRemoved', at: 23, taskId: 'task-c' },
 } satisfies CompleteEventLog
 
 const EVERY: MonoEvent[] = Object.values(EVERY_EVENT)
@@ -199,8 +201,27 @@ describe('the v4 schema', () => {
   const today = '2026-10-05'
 
   it('reads a v3 log exactly as it was, rather than discarding it on upgrade', () => {
-    const v3 = { events: EVERY.filter((e) => !e.type.startsWith('intention/')), dayKey: today }
+    const v3 = {
+      events: EVERY.filter((e) => !e.type.startsWith('intention/') && !e.type.startsWith('today/')),
+      dayKey: today,
+    }
     expect(migratePersisted(v3, 3)).toEqual(v3)
+  })
+
+  it('reads a v4 log exactly as it was, rather than discarding it on upgrade', () => {
+    const v4 = { events: EVERY.filter((e) => !e.type.startsWith('today/')), dayKey: today }
+    expect(migratePersisted(v4, 4)).toEqual(v4)
+  })
+
+  it("drops a today event that names no task", () => {
+    const events = [
+      { type: 'today/taskAdded', at: 1, taskId: 7 },
+      { type: 'today/taskRemoved', at: 2 },
+      { type: 'today/taskAdded', at: 3, taskId: 't' },
+    ]
+    expect(migratePersisted({ events, dayKey: null }, SCHEMA_VERSION).events).toEqual([
+      { type: 'today/taskAdded', at: 3, taskId: 't' },
+    ])
   })
 
   it('keeps a block whose task ids are partly unreadable, with the ones it can read', () => {

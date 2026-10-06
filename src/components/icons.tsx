@@ -91,3 +91,14 @@ export const DoneRingIcon = ({ done, className = '' }: { done: boolean; classNam
     {done && <path d="M5.2 8.2l1.9 1.9 3.7-3.9" stroke="var(--color-ink)" />}
   </Icon>
 )
+
+/**
+ * A small sun: chosen for today. Filled once chosen, for the reason the done
+ * ring is — the two states should differ by more than a thin stroke.
+ */
+export const TodayIcon = ({ chosen, className = '' }: { chosen: boolean; className?: string }) => (
+  <Icon className={className}>
+    <circle cx="8" cy="8" r="2.75" {...(chosen ? { fill: 'currentColor' } : {})} />
+    <path d="M8 1.75v1.5M8 12.75v1.5M1.75 8h1.5M12.75 8h1.5M3.6 3.6l1.05 1.05M11.35 11.35l1.05 1.05M3.6 12.4l1.05-1.05M11.35 4.65l1.05-1.05" />
+  </Icon>
+)

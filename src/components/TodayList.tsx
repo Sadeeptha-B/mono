@@ -1,0 +1,510 @@
+/**
+ * Today's tasks, gathered under the intentions some of them are given, and the
+ * field that names a new intention.
+ *
+ * Shared by the opening question and the tasks page, which both say what
+ * today is, so the two cannot read it differently.
+ *
+ * The intentions come first, right under the field that names them, then the
+ * tasks under none. Each intention is a place a task can be carried to —
+ * dragged by its row, or picked up with its grip and put down with `Move here`
+ * (`carry.tsx`) — and the list after them is the place for a task under none,
+ * which is where every task starts. It carries no heading of its own: it is
+ * simply today, and the intentions above are what is apart from it. An empty
+ * intention is one line, its hint beside its name, so naming one before any
+ * task is dragged adds a row rather than a block. An intention
+ * is named by title alone and filled by carrying tasks in. It used to be
+ * written with a title and then a choice from the whole backlog, title first,
+ * and a title written before anything was scoped came out as the name of an
+ * epic the backlog already had; carrying today's own tasks into a name asks it
+ * to describe something already chosen.
+ *
+ * The carrying is `TodayCarry`'s, which the caller puts around this list and
+ * anything else that can hand it a task. On the opening question that is the
+ * backlog beside it too: a task dragged from there into an intention is chosen
+ * for today and grouped in one move, and dropped on today's own list it is
+ * only chosen.
+ *
+ * A new intention is asked for with `+ Intention` level with the list's
+ * heading, as `+ Task` sits level with a place in the backlog, and written
+ * right under the button that asked for it: an empty intention, dashed, at the
+ * head of the list, its name a bare field with a ✓ and a ×. Kept, it takes its
+ * place after the others. A day needs no intention, and every
+ * other way of offering one — a field with a button always open, then a folded
+ * `Add intention` heading under the list — was a form standing on a question
+ * already busy with the tasks and the backlog. Enter keeps it and leaves an
+ * empty one for the next, ✓ keeps it and closes, and × or Escape close without
+ * keeping anything, handing focus back to `+ Intention`. An intention is drawn
+ * as a level of the same tree as the places, with only a fine border to mark
+ * it, for the same reason: as a card of its own it was one more kind of box.
+ *
+ * Every task sits under the places it lives in (`GroupedTasks`), each place
+ * said once, so an intention gathering tasks from two areas shows both. Tasks
+ * finished today stay, crossed out after the open ones of their place, because
+ * the list is also the day's progress; they are not carried, since there is
+ * nothing left to plan about them. A task taken out with its × leaves today
+ * and its intention, and stays in the backlog.
+ *
+ * Deleting an intention leaves its tasks today, under none: removing a name is
+ * not deciding against the work it named. Marking one done is the ring in
+ * front of it (`IntentionDoneToggle`), by hand, and touches no task.
+ *
+ * The new intention's title is held by the caller, as the opening question
+ * holds its other drafts, so moving between the questions loses nothing. A
+ * rename is held here, by intention id, and closes before paint if the
+ * intention goes — the rule every editor in Mono keeps.
+ */
+
+import { useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
+
+import { Carry, CarryGrip, CarryStatus, DropZone, MoveHere, useCarriedRow, useCarryState } from './carry'
+import { GroupedTasks } from './GroupedTasks'
+import { DeleteIcon, DoneRingIcon } from './icons'
+import { useTodayBacklog } from './useTodayBacklog'
+import { EditGlyph, fieldClass, GhostButton, IconButton } from './ui'
+import type { Item } from '@/domain/tasks'
+import { isToday, tasksOfIntention, ungroupedToday, type Today } from '@/domain/today'
+import type { Intention } from '@/domain/types'
+import { useSession } from '@/store/session'
+
+/** The place a task under no intention is carried to. Never an intention's id. */
+const NOT_GROUPED = ':not-grouped'
+
+/**
+ * Carrying tasks into today's intentions, for `TodayList` and whatever is
+ * drawn beside it inside this provider.
+ *
+ * Any open task in play can be carried, chosen for today or not. Into an
+ * intention, it is grouped there, and chosen if it was not (`linkTask` implies
+ * choosing); onto `Not grouped`, a task of today's leaves its intention and one
+ * from the backlog is simply chosen. A task already where it is dropped is not
+ * taken. One finished or gone while held is put down (see `carry.tsx`).
+ */
+export function TodayCarry({ today, children }: { today: Today; children: ReactNode }) {
+  const backlog = useTodayBacklog(today)
+  const linkTask = useSession((s) => s.linkTask)
+  const addToToday = useSession((s) => s.addToToday)
+
+  const taskById = backlog.task
+  const find = useCallback(
+    (taskId: string) => {
+      const task = taskById(taskId)
+      return task?.status === 'open' ? task : undefined
+    },
+    [taskById],
+  )
+  const takes = useCallback(
+    (task: Item, target: string) =>
+      !isToday(today, task.id) || (today[task.id] ?? NOT_GROUPED) !== target,
+    [today],
+  )
+  const move = useCallback(
+    (task: Item, target: string) => {
+      if (target !== NOT_GROUPED) linkTask(task.id, target)
+      else if (isToday(today, task.id)) linkTask(task.id, null)
+      else addToToday(task.id)
+    },
+    [today, linkTask, addToToday],
+  )
+  const carry = useCarryState({ find, takes, move })
+
+  return (
+    <Carry.Provider value={carry}>
+      {children}
+      <CarryStatus />
+    </Carry.Provider>
+  )
+}
+
+export function TodayList({
+  today,
+  intentions,
+  newIntention,
+  onNewIntention,
+  empty,
+  heading,
+}: {
+  today: Today
+  intentions: readonly Intention[]
+  /** The new intention's title while its field is open, or null while folded. */
+  newIntention: string | null
+  onNewIntention: (title: string | null) => void
+  /** What an empty day says, which depends on where the ways in are. */
+  empty: string
+  /** The list's own heading, with `+ Intention` level with it; just the button when absent. */
+  heading?: string
+}) {
+  const backlog = useTodayBacklog(today)
+  const removeFromToday = useSession((s) => s.removeFromToday)
+  const addIntention = useSession((s) => s.addIntention)
+  const updateIntention = useSession((s) => s.updateIntention)
+  const removeIntention = useSession((s) => s.removeIntention)
+  const { held } = useContext(Carry)
+
+  // An intention being renamed, closed before paint if it has gone.
+  const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null)
+  if (renaming && !intentions.some((i) => i.id === renaming.id)) setRenaming(null)
+
+  // Grouped per change to the day or the backlog, not per tick.
+  const group = backlog.group
+  const groups = useMemo(
+    () => ({
+      byIntention: new Map(intentions.map((i) => [i.id, group(tasksOfIntention(i.id, today))])),
+      none: group(ungroupedToday(today)),
+    }),
+    [intentions, today, group],
+  )
+
+  const opener = useRef<HTMLButtonElement>(null)
+  /** Close the new intention without keeping it, and hand focus back. */
+  const closeNew = () => {
+    onNewIntention(null)
+    opener.current?.focus()
+  }
+  /** Keep the intention typed: Enter leaves an empty one for the next, ✓ closes. */
+  const addNamed = (then: 'next' | 'done') => {
+    const title = newIntention?.trim() ?? ''
+    if (title !== '') addIntention({ title })
+    if (then === 'next') onNewIntention('')
+    else closeNew()
+  }
+
+  const renderTask = (task: Item) => (
+    <TodayTaskRow task={task} onRemove={() => removeFromToday(task.id)} />
+  )
+  const nothingChosen = backlog.chosen.length === 0
+
+  const addButton = (
+    <button
+      ref={opener}
+      type="button"
+      onClick={() => onNewIntention(newIntention ?? '')}
+      aria-label="Add intention"
+      className="shrink-0 text-xs text-muted transition hover:text-bright"
+    >
+      + Intention
+    </button>
+  )
+
+  return (
+    <div className="flex flex-col gap-3">
+      {heading === undefined ? (
+        <div className="-mb-1 flex justify-end">{addButton}</div>
+      ) : (
+        <div className="flex items-baseline justify-between gap-3">
+          <h3 className="text-xs font-medium tracking-wide text-muted uppercase">{heading}</h3>
+          {addButton}
+        </div>
+      )}
+
+      {newIntention !== null && (
+        <NewIntention
+          value={newIntention}
+          onChange={onNewIntention}
+          onEnter={() => addNamed('next')}
+          onKeep={() => addNamed('done')}
+          onCancel={closeNew}
+        />
+      )}
+
+      {intentions.map((intention) => {
+        const tasks = groups.byIntention.get(intention.id) ?? []
+        const done = intention.done === true
+        return (
+          <DropZone key={intention.id} target={intention.id} className="min-w-0">
+            {/* A level of the same tree as the places: its name as a heading,
+                what it holds beneath, and only a fine border to say it is an
+                intention rather than somewhere the tasks live. */}
+            <section
+              aria-label={`Intention: ${intention.title}`}
+              className={`rounded-md border border-line px-2 py-1.5 ${done ? 'opacity-70' : ''}`}
+            >
+              {renaming?.id === intention.id ? (
+                <RenameField
+                  label={`Rename intention ${intention.title}`}
+                  value={renaming.title}
+                  onChange={(title) => setRenaming({ id: intention.id, title })}
+                  onSave={() => {
+                    if (renaming.title.trim() !== '') {
+                      updateIntention(intention.id, { title: renaming.title.trim() })
+                    }
+                    setRenaming(null)
+                  }}
+                  onCancel={() => setRenaming(null)}
+                />
+              ) : (
+                <div className="flex items-baseline gap-1.5">
+                  <IntentionDoneToggle
+                    intention={intention}
+                    onToggle={() => updateIntention(intention.id, { done: !done })}
+                  />
+                  <h3
+                    className={`min-w-0 flex-1 text-sm wrap-break-word ${
+                      done ? 'text-muted line-through' : 'text-body'
+                    }`}
+                  >
+                    {intention.title}
+                    {/* Empty, the hint sits beside the name rather than on a
+                        line of its own, so an empty intention is one line. */}
+                    {tasks.length === 0 && (
+                      <span className="ml-2 text-xs text-muted no-underline">drag tasks here</span>
+                    )}
+                  </h3>
+                  <IconButton
+                    onClick={() => setRenaming({ id: intention.id, title: intention.title })}
+                    label={`Rename intention ${intention.title}`}
+                    hint="Rename"
+                    className="-my-1"
+                  >
+                    <EditGlyph />
+                  </IconButton>
+                  {/* At once: its tasks stay today's, under none. */}
+                  <IconButton
+                    danger
+                    onClick={() => removeIntention(intention.id)}
+                    label={`Delete intention ${intention.title}`}
+                    hint="Delete"
+                    className="-my-1 -mr-1.5"
+                  >
+                    <DeleteIcon />
+                  </IconButton>
+                </div>
+              )}
+              {/* Under the title rather than the ring, without a guide line of
+                  its own: the border already says what the places inside are
+                  under, and a line there was one more beside theirs. */}
+              {(tasks.length > 0 || held?.by === 'pick') && (
+                <div className="mt-1 pl-5">
+                  <MoveHere target={intention.id} name={intention.title} />
+                  {tasks.length > 0 && (
+                    <GroupedTasks
+                      label={`Tasks for ${intention.title}`}
+                      groups={tasks}
+                      renderTask={renderTask}
+                      gutter="wide"
+                    />
+                  )}
+                </div>
+              )}
+            </section>
+          </DropZone>
+        )
+      })}
+
+      {nothingChosen && <p className="text-xs text-muted">{empty}</p>}
+
+      {/* Under no intention: today itself, so it carries no heading. Shown
+          while it holds something, or while something could be dropped on it:
+          a task of today's leaving its intention, or one from the backlog being
+          chosen. */}
+      {(groups.none.length > 0 ||
+        (held !== null && (intentions.length > 0 || !isToday(today, held.task.id)))) && (
+        <DropZone target={NOT_GROUPED} className="min-w-0">
+          <section aria-label={intentions.length > 0 ? 'Not grouped' : 'Chosen today'}>
+            <MoveHere target={NOT_GROUPED} name="no intention" />
+            {groups.none.length > 0 ? (
+              <GroupedTasks
+                label={intentions.length > 0 ? 'Tasks not grouped' : 'Tasks chosen today'}
+                groups={groups.none}
+                renderTask={renderTask}
+                gutter="wide"
+              />
+            ) : (
+              <p className="py-1 text-xs text-muted">Drop here to keep it under no intention.</p>
+            )}
+          </section>
+        </DropZone>
+      )}
+
+
+
+    </div>
+  )
+}
+
+/**
+ * One of today's tasks: the grip that carries it between intentions, its
+ * title, and the × that takes it out of today. Finished today, it is crossed
+ * out and stays where it is, with nothing to carry.
+ *
+ * The grip hangs in the gutter `GroupedTasks` leaves between its guide line
+ * and its rows, so the title starts where a place's name beside it starts. In
+ * line with the title it pushed every task a grip's width further in than the
+ * places around it, and a task read as nested one level deeper than it was.
+ */
+function TodayTaskRow({ task, onRemove }: { task: Item; onRemove: () => void }) {
+  const open = task.status === 'open'
+  const { picked, dragProps } = useCarriedRow(task, open)
+  return (
+    <div
+      {...(open ? dragProps : {})}
+      className={`relative flex items-start gap-1.5 rounded-md text-sm ${
+        picked ? 'bg-surface/60 outline-1 outline-deep/70 outline-dashed' : ''
+      }`}
+    >
+      {open && <CarryGrip task={task} className="absolute top-0.5 -left-4" />}
+      <span
+        className={`min-w-0 flex-1 wrap-break-word ${open ? 'text-body' : 'text-muted line-through'}`}
+      >
+        {task.title}
+        {!open && <span className="sr-only">, done today</span>}
+      </span>
+      {/* Out of today, not out of the backlog. */}
+      <button
+        type="button"
+        onClick={onRemove}
+        aria-label={`Take ${task.title} out of today`}
+        title="Not today"
+        className="shrink-0 px-1 text-muted transition hover:text-bright"
+      >
+        ×
+      </button>
+    </div>
+  )
+}
+
+/**
+ * A new intention written where it will stand: dashed, its ring faint, its
+ * name a bare field, with a ✓ that keeps it and a × that does not. Not a form
+ * of its own — it can sit inside one, and HTML has no nested forms.
+ */
+function NewIntention({
+  value,
+  onChange,
+  onEnter,
+  onKeep,
+  onCancel,
+}: {
+  value: string
+  onChange: (value: string) => void
+  onEnter: () => void
+  onKeep: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="flex items-center gap-1.5 rounded-md border border-dashed border-line px-2 py-1.5">
+      <DoneRingIcon done={false} className="text-muted/50" />
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            onEnter()
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            onCancel()
+          }
+        }}
+        placeholder="Name an intention, then drag tasks into it"
+        aria-label="New intention"
+        // Opened by a press asking for exactly this field.
+        autoFocus
+        maxLength={120}
+        className="min-w-0 flex-1 bg-transparent text-sm text-bright placeholder:text-muted/80 focus:outline-none"
+      />
+      <button
+        type="button"
+        onClick={onKeep}
+        aria-label="Keep the new intention"
+        className="shrink-0 px-0.5 text-deep transition hover:text-bright"
+      >
+        ✓
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        aria-label="Cancel new intention"
+        className="shrink-0 px-0.5 text-muted transition hover:text-bright"
+      >
+        ×
+      </button>
+    </div>
+  )
+}
+
+/**
+ * An intention's title rewritten in place, as the tasks page renames anything:
+ * Enter or `Save` keeps it, Escape does not.
+ */
+function RenameField({
+  label,
+  value,
+  onChange,
+  onSave,
+  onCancel,
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  onSave: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            onSave()
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            onCancel()
+          }
+        }}
+        aria-label={label}
+        // Opened by a click on this intention's ✎, asking for exactly this.
+        autoFocus
+        maxLength={120}
+        className={`${fieldClass} py-1 text-sm`}
+      />
+      <GhostButton
+        type="button"
+        disabled={value.trim() === ''}
+        onClick={onSave}
+        className="shrink-0 px-3 py-1 text-xs"
+      >
+        Save
+      </GhostButton>
+    </div>
+  )
+}
+
+/**
+ * The ring in front of an intention that marks it done, and reopens it.
+ *
+ * Offered wherever an intention is listed — the opening question, the purpose
+ * prompt and the tasks page — because whether the day has had what it wanted
+ * from an intention is the user's to say, at whichever of them they notice
+ * it. Nothing decides it for them: not its tasks running out, which can happen
+ * with the intention unmet, and not a block. It is one patch on the intention
+ * and touches none of its tasks, so reopening it puts back exactly what was
+ * there. A done intention stays where it was in the list, crossed out, rather
+ * than moving under the pointer that just ticked it.
+ */
+export function IntentionDoneToggle({
+  intention,
+  onToggle,
+}: {
+  intention: Intention
+  onToggle: () => void
+}) {
+  const done = intention.done === true
+  return (
+    <button
+      type="button"
+      onClick={onToggle}
+      aria-label={done ? `Reopen intention ${intention.title}` : `Mark intention ${intention.title} done`}
+      title={done ? 'Reopen' : 'Mark done'}
+      className={`inline-flex shrink-0 translate-y-0.5 items-center justify-center transition hover:text-bright ${
+        done ? 'text-deep' : 'text-muted'
+      }`}
+    >
+      <DoneRingIcon done={done} />
+    </button>
+  )
+}

@@ -19,7 +19,7 @@ import type { Phase } from '@/domain/machine'
 import type { Ms } from '@/domain/types'
 
 /** The three questions the day opens with, in the order they are asked. */
-export type SetupStageId = 'commitments' | 'hours' | 'intentions'
+export type SetupStageId = 'commitments' | 'hours' | 'today'
 
 export type StageId =
   | SetupStageId
@@ -42,15 +42,15 @@ export type StageMeta = {
  * answering "when am I working?" first means answering it again once you
  * remember the school run.
  *
- * Intentions come last for the same kind of reason: they are the one answer
- * that depends on the other two. What you mean to do with a day is only
+ * Today's tasks come last for the same kind of reason: they are the one
+ * answer that depends on the other two. What you mean to do with a day is only
  * realistic once you know how much of it is yours, and the question says how
  * much that is.
  */
 export const STAGES: readonly StageMeta[] = [
   { id: 'commitments', name: 'Commitments', setup: true },
   { id: 'hours', name: 'Hours', setup: true },
-  { id: 'intentions', name: 'Intentions', setup: true },
+  { id: 'today', name: 'Today', setup: true },
   { id: 'ready', name: 'Ready', setup: false },
   { id: 'purpose', name: 'One thing', setup: false },
   { id: 'focus', name: 'Focusing', setup: false },
@@ -60,7 +60,7 @@ export const STAGES: readonly StageMeta[] = [
 
 export const FIRST_SETUP_STAGE: SetupStageId = 'commitments'
 
-const SETUP_ORDER: readonly SetupStageId[] = ['commitments', 'hours', 'intentions']
+const SETUP_ORDER: readonly SetupStageId[] = ['commitments', 'hours', 'today']
 
 /** The question before this one, or null for the first. */
 export const previousSetupStage = (stage: SetupStageId): SetupStageId | null =>

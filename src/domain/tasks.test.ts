@@ -339,7 +339,7 @@ describe('the backlog as a tree of tasks', () => {
   })
 
   it('groups some tasks under the places they sit in, and nothing else', () => {
-    expect(groupTasks(['cookie', 'call', 'gate'], items, [work, personal]).map(shape)).toEqual([
+    expect(groupTasks(['cookie', 'call', 'gate'], taskTree(items, [work, personal])).map(shape)).toEqual([
       [
         'area: Work',
         ['Call Priya'],
@@ -347,7 +347,7 @@ describe('the backlog as a tree of tasks', () => {
       ],
       ['area: Personal', ['Fix the gate'], []],
     ])
-    expect(groupTasks(['hidden', 'ticked'], items, [work, personal])).toEqual([])
+    expect(groupTasks(['hidden', 'ticked'], taskTree(items, [work, personal]))).toEqual([])
   })
 
   it("puts back the tasks done on the day asked about, after each place's open ones", () => {
@@ -387,6 +387,24 @@ describe('the backlog as a tree of tasks', () => {
     expect(taskTreeWithDone(withDone, [work, personal], null)).toBe(
       taskTree(withDone, [work, personal]),
     )
+  })
+
+  it("groups today's finished tasks too when cut from the tree that holds them", () => {
+    const today = new Date(2026, 9, 6, 10).getTime()
+    const withDone = [
+      ...items,
+      item('remember', 'task', 'pages', { title: 'Remember me', status: 'done', doneAt: today }),
+    ]
+    const tree = taskTreeWithDone(withDone, [work, personal], dayKey(today))
+    expect(groupTasks(['remember', 'cookie'], tree).map(shape)).toEqual([
+      [
+        'area: Work',
+        [],
+        [['epic: Mono auth', [], [['outcome: Login pages', ['Session cookie', 'Remember me'], []]]]],
+      ],
+    ])
+    // The open tree has nothing to say about it.
+    expect(groupTasks(['remember'], taskTree(withDone, [work, personal]))).toEqual([])
   })
 })
 

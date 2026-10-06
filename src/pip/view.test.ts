@@ -118,7 +118,7 @@ describe('what the phases carry through', () => {
 describe('the opening questions', () => {
   const idle: Phase = { name: 'idle' }
 
-  it.each(['commitments', 'hours', 'intentions'] as const)(
+  it.each(['commitments', 'hours', 'today'] as const)(
     'shows %s whenever the stage does, first time or not',
     (stage) => {
       for (const revisiting of [false, true]) {
@@ -132,7 +132,7 @@ describe('the opening questions', () => {
   )
 
   it('only while nothing is running', () => {
-    const setup = { stage: 'intentions' as const, revisiting: true }
+    const setup = { stage: 'today' as const, revisiting: true }
     expect(miniViewFor({ name: 'focusing' }, facts({ setup }))).toEqual({
       kind: 'running',
       segment: 'block',

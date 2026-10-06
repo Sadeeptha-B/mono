@@ -1,27 +1,29 @@
 /**
  * The three questions a day opens with.
  *
- * What is already fixed, then what hours you are working, then what the day is
- * for. That order matters: commitments are the part of the day you do not
- * control, so they decide how much of it is left to declare. Asking for hours
- * first means asking again the moment the user remembers the school run. And
- * intentions come last because they are only honest once the other two have
- * said how much of the day there is.
+ * What is already fixed, then what hours you are working, then what you are
+ * working on. That order matters: commitments are the part of the day you do
+ * not control, so they decide how much of it is left to declare. Asking for
+ * hours first means asking again the moment the user remembers the school run.
+ * And today's tasks come last because they are only honest once the other two
+ * have said how much of the day there is.
  *
  * No question gates another. The carousel under the stage moves between them
  * in any order, and `Start the day` finishes from whichever one you are looking
- * at — so the commitment and intention drafts live here, in a component that
+ * at — so the commitment draft and today's drafts live here, in a component that
  * stays mounted across the switch, rather than in the panels themselves.
  * Nothing typed is lost by changing your mind about which question to answer
  * first.
  *
- * Starting the day does need one intention, though, which is the asymmetry
- * between this question and the first. A day with nothing fixed in it is
- * ordinary, and "nothing" had to become a complete answer there or a day
+ * Starting the day does need one task chosen for it, though, which is the
+ * asymmetry between this question and the first. A day with nothing fixed in
+ * it is ordinary, and "nothing" had to become a complete answer there or a day
  * without meetings could never begin. A day with nothing meant by it is not
  * ordinary, and there is always something to write — so the empty answer here
- * is the one thing worth stopping for. Only on the first ask: once the day is
- * shaped, coming back is changing your mind, and the way out stays open.
+ * is the one thing worth stopping for. A task, not an intention: an intention
+ * is an optional name for some of the tasks, and a day can be answered without
+ * one. Only on the first ask: once the day is shaped, coming back is changing
+ * your mind, and the way out stays open.
  *
  * The hours draft used to live here too, and now lives in `App`, one level up.
  * Not for the switch — this component survives that — but because the calendar
@@ -70,12 +72,8 @@ import {
   type CommitmentDraft,
 } from '../CommitmentFields'
 import { resolveHours, TodayHoursFields } from '../TodayHours'
-import {
-  emptyIntentionDraft,
-  IntentionsPanel,
-  type IntentionDraft,
-  type IntentionTimer,
-} from './IntentionsPanel'
+import { emptyTodayDrafts, TodayPanel, type TodayDrafts, type TodayTimer } from './TodayPanel'
+import { useTodayBacklog } from '../useTodayBacklog'
 import {
   nextSetupStage,
   previousSetupStage,
@@ -83,6 +81,7 @@ import {
   type SetupStageId,
 } from './stages'
 import { formatClock, formatDuration, nextHalfHour } from '@/domain/time'
+import type { Today } from '@/domain/today'
 import {
   commitmentSpan,
   minutesToMs,
@@ -90,7 +89,6 @@ import {
   type CommitmentPatch,
   type DefaultRegion,
   type Intention,
-  type IntentionPatch,
   type Ms,
   type WorkRegion,
 } from '@/domain/types'
@@ -110,15 +108,11 @@ export function DaySetupPanel({
   onUpdateCommitment,
   onRemoveCommitment,
   intentions,
-  taskIntentions,
-  onLinkTask,
+  today,
   planned,
-  intentionTimer,
+  todayTimer,
   intentionMinutes,
-  onStartIntentionTimer,
-  onAddIntention,
-  onUpdateIntention,
-  onRemoveIntention,
+  onStartTodayTimer,
   onDone,
 }: {
   now: Ms
@@ -139,17 +133,13 @@ export function DaySetupPanel({
   onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onRemoveCommitment: (id: string) => void
   intentions: readonly Intention[]
-  /** Which of today's intentions each task is under. */
-  taskIntentions: Readonly<Record<string, string>>
-  onLinkTask: (taskId: string, intentionId: string | null) => void
-  /** What the plan can still hold, quoted by the intentions question. */
+  /** Today's tasks, each with its intention or none. */
+  today: Today
+  /** What the plan can still hold, quoted by today's question. */
   planned: { blocks: number; minutes: number }
-  intentionTimer: IntentionTimer | null
+  todayTimer: TodayTimer | null
   intentionMinutes: number
-  onStartIntentionTimer: () => void
-  onAddIntention: (input: Omit<Intention, 'id'>) => string
-  onUpdateIntention: (id: string, patch: IntentionPatch) => void
-  onRemoveIntention: (id: string) => void
+  onStartTodayTimer: () => void
   onDone: () => void
 }) {
   // The commitment draft has nothing in the store to follow, so it is seeded
@@ -172,17 +162,11 @@ export function DaySetupPanel({
   const [expanded, setExpanded] = useState(false)
   // Which question was on screen last render, for the arrival rule below.
   const [seenStage, setSeenStage] = useState(stage)
-  // Here rather than in the intentions panel for the commitment draft's reason:
-  // that panel unmounts when you look at another question, and this does not.
-  const [intentionDraft, setIntentionDraft] = useState<IntentionDraft>(emptyIntentionDraft)
-  // An edit whose intention was removed — here, or by the midnight reset —
-  // points at nothing. Adjusted during render, as the commitment form is.
-  if (
-    intentionDraft.editing !== null &&
-    !intentions.some((i) => i.id === intentionDraft.editing)
-  ) {
-    setIntentionDraft(emptyIntentionDraft)
-  }
+  // Here rather than in today's panel for the commitment draft's reason: that
+  // panel unmounts when you look at another question, and this does not.
+  const [todayDrafts, setTodayDrafts] = useState<TodayDrafts>(emptyTodayDrafts)
+  // Whether the day has anything chosen, for the one gate the questions keep.
+  const chosen = useTodayBacklog(today).chosen.length
 
   const clearForm = () => {
     setEditing(null)
@@ -264,7 +248,9 @@ export function DaySetupPanel({
   // them is a day it can do nothing with. The button says no; the line under it
   // has to say why, and where to fix it.
   const noHours = resolveHours(now, hours).length === 0
-  const noIntentions = intentions.length === 0
+  // Counted only once the backlog has loaded and only for tasks still drawn:
+  // a task chosen and then deleted is not something the day is for.
+  const noTasks = chosen === 0
   const eyebrow = revisiting ? 'Changing today' : 'To begin'
 
   /** Fold without keeping anything: the caret, the ×, Escape. */
@@ -377,31 +363,27 @@ export function DaySetupPanel({
           <TodayHoursFields draft={hours} onDraft={onHours} now={now} />
         </>
       ) : (
-        <IntentionsPanel
+        <TodayPanel
           now={now}
           eyebrow={eyebrow}
-          timer={intentionTimer}
+          timer={todayTimer}
           minutes={intentionMinutes}
-          onStartTimer={onStartIntentionTimer}
+          onStartTimer={onStartTodayTimer}
           planned={planned}
           intentions={intentions}
-          taskIntentions={taskIntentions}
-          onLinkTask={onLinkTask}
-          draft={intentionDraft}
-          onDraft={setIntentionDraft}
-          onAdd={onAddIntention}
-          onUpdate={onUpdateIntention}
-          onRemove={onRemoveIntention}
+          today={today}
+          drafts={todayDrafts}
+          onDrafts={setTodayDrafts}
         />
       )}
 
       {/* Outside the forms above, so that Enter in a field adds a commitment
-          or an intention rather than ending the setup. */}
+          or a task rather than ending the setup. */}
       <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-4">
         <PrimaryButton
           type="button"
           onClick={onDone}
-          disabled={!revisiting && (noHours || noIntentions)}
+          disabled={!revisiting && (noHours || noTasks)}
         >
           {revisiting ? 'Focus' : 'Start the day'}
         </PrimaryButton>
@@ -417,7 +399,7 @@ export function DaySetupPanel({
           </GhostButton>
         )}
         <p className="w-full text-xs leading-relaxed text-muted">
-          {footnote({ stage, revisiting, noHours, noIntentions, commitments: commitments.length })}
+          {footnote({ stage, revisiting, noHours, noTasks, commitments: commitments.length })}
         </p>
       </div>
     </div>
@@ -492,7 +474,7 @@ function CommitmentRow({
 /**
  * The line under `Start the day`: why it will not go, or what it will do.
  *
- * A missing answer outranks everything, hours before intentions, because the
+ * A missing answer outranks everything, hours before tasks, because the
  * button is disabled and this line is the only place that says why. After
  * that it speaks to the question on screen.
  */
@@ -500,13 +482,13 @@ function footnote({
   stage,
   revisiting,
   noHours,
-  noIntentions,
+  noTasks,
   commitments,
 }: {
   stage: SetupStageId
   revisiting: boolean
   noHours: boolean
-  noIntentions: boolean
+  noTasks: boolean
   commitments: number
 }): string {
   if (noHours) {
@@ -515,12 +497,14 @@ function footnote({
       : "Mono plans inside your working hours and nowhere else, so it needs at least one stretch. Add one under Hours."
   }
   if (revisiting) return 'Anything you change here re-derives the plan. Nothing running is disturbed.'
-  if (noIntentions) {
-    return stage === 'intentions'
-      ? 'Name at least one thing today is for, and the day can start.'
-      : "Before the day starts, name at least one thing it is for under Intentions."
+  if (noTasks) {
+    return stage === 'today'
+      ? 'Choose at least one task for today, and the day can start.'
+      : 'Before the day starts, choose at least one task for it under Today.'
   }
-  if (stage === 'intentions') return 'A handful is plenty. You can change them between blocks.'
+  if (stage === 'today') {
+    return 'A handful is plenty. Group them into intentions if that helps; you can change all of it between blocks.'
+  }
   return commitments === 0
     ? 'Nothing fixed today? Start the day and Mono will plan the whole of it.'
     : 'Add as many as you like. Mono plans the runway between them.'

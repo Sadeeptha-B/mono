@@ -14,7 +14,7 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { replay, type MonoEvent } from './events'
+import { reduce, replay, type MonoEvent } from './events'
 import type { Commitment, Ms, PlannedBreak } from './types'
 
 const BASE_DAY = new Date(2026, 7, 20)
@@ -354,7 +354,7 @@ describe("the day's intentions", () => {
       { type: 'intention/updated', at: at(10), id: 'auth', patch: { done: true } },
     ])
     expect(done.intentions[0]).toEqual({ id: 'auth', title: 'Mono auth', done: true })
-    expect(done.taskIntentions).toEqual({ t: 'auth' })
+    expect(done.today).toEqual({ t: 'auth' })
 
     const reopened = replay([
       ...linked,
@@ -370,20 +370,22 @@ describe("the day's intentions", () => {
       { type: 'intention/taskLinked', at: at(9), taskId: 't', intentionId: 'auth' },
       { type: 'intention/taskLinked', at: at(9, 1), taskId: 't', intentionId: 'billing' },
     ])
-    expect(state.taskIntentions).toEqual({ t: 'billing' })
+    expect(state.today).toEqual({ t: 'billing' })
   })
 
-  it('unlinks with null, and refuses a link to an intention that is not there', () => {
+  it('ungroups with null, keeping the task today, and refuses a link to nothing', () => {
     const state = replay([
       ...named,
       { type: 'intention/taskLinked', at: at(9), taskId: 't', intentionId: 'auth' },
       { type: 'intention/taskLinked', at: at(9, 1), taskId: 't', intentionId: null },
       { type: 'intention/taskLinked', at: at(9, 2), taskId: 'u', intentionId: 'nowhere' },
+      // Taking a task out of an intention it was never in does not choose it.
+      { type: 'intention/taskLinked', at: at(9, 3), taskId: 'v', intentionId: null },
     ])
-    expect(state.taskIntentions).toEqual({})
+    expect(state.today).toEqual({ t: null })
   })
 
-  it('lets go of its tasks when an intention is removed', () => {
+  it('leaves its tasks today, under no intention, when one is removed', () => {
     const state = replay([
       ...named,
       { type: 'intention/taskLinked', at: at(9), taskId: 't', intentionId: 'auth' },
@@ -391,7 +393,7 @@ describe("the day's intentions", () => {
       { type: 'intention/removed', at: at(10), id: 'auth' },
     ])
     expect(state.intentions.map((i) => i.id)).toEqual(['billing'])
-    expect(state.taskIntentions).toEqual({ u: 'billing' })
+    expect(state.today).toEqual({ t: null, u: 'billing' })
   })
 
   it('are cleared at midnight with the rest of the day', () => {
@@ -401,7 +403,88 @@ describe("the day's intentions", () => {
       { type: 'day/reset', at: at(23, 59) },
     ])
     expect(state.intentions).toEqual([])
-    expect(state.taskIntentions).toEqual({})
+    expect(state.today).toEqual({})
+  })
+})
+
+describe("today's tasks", () => {
+  it('are chosen once each, in order, and a repeat keeps its intention', () => {
+    const state = replay([
+      { type: 'intention/added', at: at(8), intention: { id: 'auth', title: 'Mono auth' } },
+      { type: 'today/taskAdded', at: at(8, 1), taskId: 'a' },
+      { type: 'intention/taskLinked', at: at(8, 2), taskId: 'b', intentionId: 'auth' },
+      { type: 'today/taskAdded', at: at(8, 3), taskId: 'b' },
+      { type: 'today/taskAdded', at: at(8, 4), taskId: 'a' },
+    ])
+    expect(state.today).toEqual({ a: null, b: 'auth' })
+    expect(Object.keys(state.today)).toEqual(['a', 'b'])
+  })
+
+  it('are put back out of today with their intention, and an unknown one changes nothing', () => {
+    const chosen = replay([
+      { type: 'intention/added', at: at(8), intention: { id: 'auth', title: 'Mono auth' } },
+      { type: 'intention/taskLinked', at: at(8, 1), taskId: 'a', intentionId: 'auth' },
+      { type: 'today/taskAdded', at: at(8, 2), taskId: 'b' },
+    ])
+    const removed = reduce(chosen, { type: 'today/taskRemoved', at: at(9), taskId: 'a' })
+    expect(removed.today).toEqual({ b: null })
+    expect(reduce(removed, { type: 'today/taskRemoved', at: at(9), taskId: 'zz' })).toBe(removed)
+  })
+
+  it("take in a block's tasks when it starts, leaving the ones already chosen alone", () => {
+    const before = replay([
+      { type: 'intention/added', at: at(8), intention: { id: 'auth', title: 'Mono auth' } },
+      { type: 'intention/taskLinked', at: at(8, 1), taskId: 'a', intentionId: 'auth' },
+    ])
+    const started = reduce(before, {
+      type: 'block/started',
+      at: at(9),
+      id: 'b1',
+      blockKind: 'deep',
+      endsAt: at(9, 45),
+      purpose: 'Login',
+      taskIds: ['a', 'outside'],
+    })
+    expect(started.today).toEqual({ a: 'auth', outside: null })
+
+    // A block on today's own tasks hands the same map back.
+    const again = reduce(before, {
+      type: 'block/started',
+      at: at(9),
+      id: 'b2',
+      blockKind: 'deep',
+      endsAt: at(9, 45),
+      purpose: 'Login',
+      taskIds: ['a'],
+    })
+    expect(again.today).toBe(before.today)
+  })
+
+  it('are kept aside at midnight for the new day to offer, until the next one', () => {
+    const first = replay([
+      { type: 'today/taskAdded', at: at(9), taskId: 'a' },
+      { type: 'today/taskAdded', at: at(9, 1), taskId: 'b' },
+      { type: 'day/reset', at: at(23, 59) },
+    ])
+    expect(first.today).toEqual({})
+    expect(first.lastDay).toEqual(['a', 'b'])
+
+    const second = reduce(reduce(first, { type: 'today/taskAdded', at: at(24, 9), taskId: 'c' }), {
+      type: 'day/reset',
+      at: at(47, 59),
+    })
+    expect(second.lastDay).toEqual(['c'])
+  })
+
+  it('keep the last working day aside through days that chose nothing', () => {
+    // A tab left open over a weekend turns over at each midnight.
+    const monday = replay([
+      { type: 'today/taskAdded', at: at(9), taskId: 'friday' },
+      { type: 'day/reset', at: at(23, 59) },
+      { type: 'day/reset', at: at(47, 59) },
+      { type: 'day/reset', at: at(71, 59) },
+    ])
+    expect(monday.lastDay).toEqual(['friday'])
   })
 })
 
