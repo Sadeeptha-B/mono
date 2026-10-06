@@ -117,6 +117,7 @@ export function TasksPage({
   const intentions = useSession((s) => s.session.intentions)
   const taskIntentions = useSession((s) => s.session.taskIntentions)
   const linkTask = useSession((s) => s.linkTask)
+  const generation = useSession((s) => s.generation)
 
   const hydrated = useTasks((s) => s.hydrated)
   const allAreas = useTasks((s) => s.areas)
@@ -141,8 +142,16 @@ export function TasksPage({
   const landed = useRef<string | null>(null)
   // The task is read back from the backlog rather than kept, so a task in hand
   // is always where the backlog says it is. One that leaves play while held —
-  // ticked or deleted in another tab, its epic finished — is simply put down.
+  // ticked here or in another tab, deleted, its epic finished — is put down,
+  // and for good: hiding it only while it was out of play would hand the old
+  // move back the moment it was reopened, with nobody having picked it up.
+  // Adjusted during render rather than in an effect, as `App` adjusts its own
+  // state, so the stale move is never painted.
   const heldTask = carrying ? inPlayById.get(carrying.id) : undefined
+  if (carrying && !heldTask) {
+    setCarrying(null)
+    setOver(null)
+  }
   const carry = useMemo<CarryContext>(() => {
     const putDown = () => {
       setCarrying(null)
@@ -218,7 +227,18 @@ export function TasksPage({
             <>
               <AddFields.Provider value={addFields}>
                 <Section title="My intentions for today">
-                  <IntentionsToday intentions={intentions} taskIntentions={taskIntentions} />
+                  {/* Keyed by the session's generation, as the stage is: an
+                      intention being written belongs to one particular day,
+                      and the midnight reset or an import must not carry it into
+                      the next — least of all an edit, which would otherwise be
+                      saved over the intention the import brought in under the
+                      same id. Only this; the backlog's own add fields describe
+                      long-lived records and keep what is typed in them. */}
+                  <IntentionsToday
+                    key={generation}
+                    intentions={intentions}
+                    taskIntentions={taskIntentions}
+                  />
                 </Section>
 
                 <Carry.Provider value={carry}>
@@ -312,7 +332,8 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
  * At most one intention form is open at a time — a new one, or an edit drawn
  * in place of the intention it changes — so the draft is one piece of state
  * saying which. A draft aimed at an intention that has since gone (removed on
- * the opening question, or by the midnight reset) is no draft at all. It keeps
+ * the opening question, say) is no draft at all, and a replaced session drops
+ * every draft by remounting this (see where it is drawn). It keeps
  * the page's rule for add fields: opening it folds any other that is empty,
  * and opening another folds it while nothing has been written in it.
  */

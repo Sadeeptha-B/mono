@@ -89,10 +89,17 @@ The two-tab checks below assume it is there.
 8. Open Mono at a time before working hours. The intentions question's timer
    must run and chime (with sound on, after any click on the page) even though
    no block can start yet.
-9. On the tasks page, press a task's "In …" place in Chrome, Firefox and
-   Safari, and on a phone. The list of places must open on that one press
-   where the browser supports it, and on the next press otherwise; picking a
-   place must move the task.
+9. On the tasks page, in Chrome, Firefox and Safari and on a real touch
+   device: drag a task to another column with the pointer, then move one
+   without it — press its grip, then `Move here` on another column. Both must
+   move it; Escape, or pressing the grip again, must put it back where it was;
+   after `Move here`, focus must be on the task's grip in its new column. Pick
+   one up and mark it done or drop it: reopening it must not bring the move
+   back. Then open a task dropdown (`Tasks for this block`, `Tasks for this
+   intention`) near the bottom and the right edge of a short or narrow window:
+   it must open upwards when there is more room above, and never run off the
+   side of the screen — including after choosing a task with a long title,
+   and after turning a phone with the panel still open.
 
 ## The pop-out window
 

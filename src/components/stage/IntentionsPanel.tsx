@@ -35,9 +35,9 @@
  * intention` heading (`AddFold`), the tasks page's add fields again: a list of
  * the day's intentions with an empty form under it read as a form still
  * waiting to be filled in. Whether it is open is mostly derived — always while
- * there is nothing named, while one is being edited, or while a draft holds
- * text, so a draft carried across the other questions is never folded out of
- * sight. Enter keeps the intention and stays open for the next, because
+ * there is nothing named, while one is being edited, or while a draft holds a
+ * title or chosen tasks, so a draft carried across the other questions is never
+ * folded out of sight. Enter keeps the intention and stays open for the next, because
  * intentions come in runs; `Done` keeps it and folds.
  *
  * An intention is given its tasks as it is written, chosen from the whole
@@ -109,8 +109,15 @@ export function IntentionsPanel({
 
   // Opened by hand; the rest of when the form shows is derived, see above.
   const [adding, setAdding] = useState(false)
+  // A draft is anything written in it, tasks included: a task chosen before
+  // the title is typed is work, and folding it away behind the heading on the
+  // way back from another question would hide it.
   const formOpen =
-    adding || intentions.length === 0 || draft.editing !== null || draft.title !== ''
+    adding ||
+    intentions.length === 0 ||
+    draft.editing !== null ||
+    draft.title !== '' ||
+    draft.taskIds.length > 0
   // Folding is offered only where it would fold something: with nothing named
   // yet the form is the whole question.
   const foldable = intentions.length > 0 || draft.editing !== null

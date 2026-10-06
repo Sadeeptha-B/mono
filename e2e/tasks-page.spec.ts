@@ -9,6 +9,8 @@ import {
   openMono,
   stage,
   startBlock,
+  storedItems,
+  storedRecord,
 } from './support/mono'
 
 const main = (page: Page) => page.getByRole('main')
@@ -49,6 +51,7 @@ test('a new backlog starts with Work and Personal, and an inbox is just tasks', 
   await expect(inbox(page, 'Work')).toContainText('Call Priya')
 
   // It is in IndexedDB, not in the day's log: a reload brings it back.
+  await expect.poll(() => storedRecord(page, 'Call Priya')).not.toBeNull()
   await page.reload()
   await expect(inbox(page, 'Work')).toContainText('Call Priya')
 })
@@ -221,6 +224,38 @@ test("today's intentions can be written, edited and deleted from the tasks page"
   await expect(stage(page).getByRole('list', { name: 'Intended today' })).toHaveCount(0)
 })
 
+test('an intention being edited here does not outlive the session it was about', async ({
+  page,
+}) => {
+  // Regression: the editor kept its draft across an import. Saved afterwards,
+  // an edit to an intention the import brought back under the same id wrote
+  // its pre-import title over the imported one.
+  const day = (title: string) => ({
+    version: 4,
+    dayKey: '2026-08-20',
+    events: [
+      {
+        type: 'intention/added',
+        at: new Date(2026, 7, 20, 9, 0, 0).getTime(),
+        intention: { id: 'ship', title },
+      },
+    ],
+  })
+  await openMono(page)
+  await importSession(page, day('Ship it'))
+  await openTasks(page)
+
+  const section = main(page).getByRole('region', { name: 'My intentions for today' })
+  await section.getByRole('button', { name: 'Edit intention Ship it' }).click()
+  await section.getByLabel('This intention', { exact: true }).fill('Stale edit')
+
+  await importSession(page, day('Ship the login pages'))
+  await expect(section.getByLabel('This intention', { exact: true })).toHaveCount(0)
+  await expect(
+    section.getByRole('button', { name: 'Edit intention Ship the login pages' }),
+  ).toBeVisible()
+})
+
 test('areas can be added, renamed, archived and restored', async ({ page }) => {
   await openMono(page)
   await openTasks(page)
@@ -302,6 +337,14 @@ test('an epic holds outcomes, and both hold tasks', async ({ page }) => {
   await expect(outcome(page, 'Login pages')).toContainText('Rate limiting')
   await expect(inbox(page, 'Work')).toHaveCount(0)
 
+  // On disk under its new parent before the reload that proves it.
+  await expect
+    .poll(async () => {
+      const stored = await storedItems(page)
+      const task = stored.find((r) => r.title === 'Rate limiting')
+      return stored.find((r) => r.id === task?.parentId)?.title
+    })
+    .toBe('Login pages')
   await page.reload()
   await expect(outcome(page, 'Login pages')).toContainText('Rate limiting')
 })
@@ -330,6 +373,19 @@ test('a task picked up is put back with Escape, and only other columns offer to 
   await expect(main(page).getByRole('button', { name: 'Move here' })).toHaveCount(0)
   await expect(page.getByRole('status').filter({ hasText: 'Moving' })).toHaveCount(0)
   await expect(outcome(page, 'Login pages')).toContainText('Login form')
+
+  // A task that leaves play in hand is put down for good: reopening it does
+  // not bring the old move back without another pick-up.
+  const grip = main(page).getByRole('button', { name: 'Move Login form', exact: true })
+  await grip.click()
+  await expect(grip).toHaveAttribute('aria-pressed', 'true')
+  await main(page).getByRole('button', { name: 'Drop Login form' }).click()
+  await main(page).getByText('Done, dropped and archived (1)').click()
+  await main(page).getByRole('button', { name: 'Reopen Login form' }).click()
+  await expect(outcome(page, 'Login pages')).toContainText('Login form')
+  await expect(grip).toHaveAttribute('aria-pressed', 'false')
+  await expect(main(page).getByRole('button', { name: 'Move here' })).toHaveCount(0)
+  await expect(page.getByRole('status').filter({ hasText: 'Moving' })).toHaveCount(0)
 })
 
 test('a finished epic takes its tasks with it, and reopening brings them back', async ({
@@ -382,6 +438,7 @@ test('deleting an epic asks first, then takes everything in it', async ({ page }
   await expect(main(page).getByText('Login form')).toHaveCount(0)
   await expect(inbox(page, 'Work')).toContainText('Call Priya')
 
+  await expect.poll(async () => (await storedRecord(page, 'Mono auth'))?.deletedAt).toBeDefined()
   await page.reload()
   await expect(main(page).getByText('Mono auth')).toHaveCount(0)
 })
@@ -407,6 +464,7 @@ test('deleting an area asks first, then takes everything in it and nothing else'
   await expect(main(page).getByText('Login form')).toHaveCount(0)
   await expect(inbox(page, 'Personal')).toContainText('Fix the gate')
 
+  await expect.poll(async () => (await storedRecord(page, 'Work'))?.deletedAt).toBeDefined()
   await page.reload()
   await expect(main(page).getByRole('heading', { name: 'Work' })).toHaveCount(0)
   await expect(inbox(page, 'Personal')).toContainText('Fix the gate')
