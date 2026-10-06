@@ -2,7 +2,7 @@
 
 This is the operational reference for Mono's Chromium site blocker. It records
 the cross-file contracts an extension change must preserve. Local implementation
-reasoning remains in source docblocks, historical reasoning in
+reasoning remains in source docblocks, the reasons behind this design in
 [`decisions.md`](decisions.md), and installed-browser checks in
 [`manual-qa.md`](manual-qa.md).
 
@@ -188,8 +188,9 @@ focus metadata locally and sends neither off-device.
 ## Release boundary
 
 Package `dist-extension/` with `manifest.json` at the archive root; prefer the
-artifact produced by the deploy workflow so the reviewed source and upload are
-the same production-scoped build. Development-only localhost matches must not
+artifact produced by the workflow run on `main` so the reviewed source and
+upload are the same production-scoped build. Pull-request runs produce one too,
+for loading unpacked before a merge; it is not the one to upload. Development-only localhost matches must not
 be present in that artifact: content-script matches are permission-bearing, and
 tooling is not a product permission. Before release, load the final build
 unpacked and run the installed-browser section of

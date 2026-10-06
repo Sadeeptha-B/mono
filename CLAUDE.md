@@ -11,10 +11,11 @@ invariants.
 
 Use **[docs/extension.md](docs/extension.md)** for the extension's current
 cross-file protocol, authority, recovery, and permission model. Use
-**[docs/decisions.md](docs/decisions.md)** for historical reasoning and traps,
-not as a snapshot of current implementation. Earlier decisions may have been
-superseded by later entries. Search it by the relevant subsystem or term rather
-than loading the append-only log as general context.
+**[docs/decisions.md](docs/decisions.md)** for why things are the way they are:
+settled decisions by subsystem, traps, and what was deliberately not built. It
+is kept current, so read the sections that touch your change. Its frozen
+history is `docs/archive/decisions-log-2026.md`; search that only to learn how
+a decision got where it is, and never treat it as current.
 
 `docs/requirements.md` is the original brief, kept as history.
 `docs/manual-qa.md` owns checks that need real browser facilities. Work through
@@ -72,8 +73,10 @@ npm run build:ext:dev # extension with localhost origins for manual development
 
 - **Match the surrounding prose.** Comments in this codebase explain *why*, at
   length, in full sentences. A one-line `// set the thing` is out of place.
-- **`now` ticks every second.** Never put it in a `useEffect` dependency list —
-  reading it during render is fine, writing it into state on a tick is not.
+- **`now` ticks every second.** Never seed or reset state from an effect that
+  depends on it — reading it during render is fine, writing it into state on a
+  tick is not. Effects that only watch the clock, like reconciliation, guard
+  themselves so a transition fires once.
 - **Strict TypeScript**, with `exactOptionalPropertyTypes` and
   `noUncheckedIndexedAccess`. That explains the spread-conditionals and the `!`
   on array access.
@@ -102,16 +105,22 @@ npm run build:ext:dev # extension with localhost origins for manual development
 - **Read [docs/extension.md](docs/extension.md) before changing the extension.**
   It owns the current cross-file protocol, authority, failure, permission, and
   verification model. Source docblocks own local ordering constraints;
-  `docs/decisions.md` is history, not the operating manual.
+  `docs/decisions.md` holds the reasons behind it, not the operating manual.
 - **Test extension behavior at its real boundaries.** Extend the behavioral
   worker harness and its failure injection rather than replacing Chrome with
   loose spies. Installed DNR, permission, alarm, and document-targeting behavior
   still requires the real-browser checks in `docs/manual-qa.md`.
-- **Before finishing:** always run `npm run typecheck` and `npm test`. For a
-  localized UI change, run the narrow relevant Playwright coverage through
-  `npm run test:e2e:dev -- [filters]`. Run the complete production-backed
-  `npm run test:e2e` for cross-cutting session, storage, or clock behavior;
-  boot, build, PWA, or lazy-loading changes; test-harness changes; and releases.
-  CI still runs that complete production suite before deployment. Add a dated
-  entry to the log at the bottom of `docs/decisions.md` for anything a future
-  reader would be puzzled by.
+- **Before finishing:** always run `npm run typecheck` and `npm test`. For any
+  change a user could see, also run the Playwright specs it touches through
+  `npm run test:e2e:dev -- [filters]`. CI runs the complete production-backed
+  `npm run test:e2e` on every pull request and before every deployment, so
+  that is where cross-cutting session, storage, and clock behavior gets its
+  full browser pass. Run `npm run test:e2e` locally only for what the dev
+  server cannot show — build, PWA, service-worker, or lazy-loading changes,
+  changes to the Playwright configs or `e2e/support/` — and before a release.
+  If a future reader would be puzzled by a call you made, add or rewrite its
+  row in `docs/decisions.md` (the rules are at its top) and put the narrative
+  in the commit message.
+- **Where a new test goes.** A domain rule and its variations belong in a
+  unit test beside the domain code; a browser test proves the rule is wired
+  to the screen, once per user-visible behavior, not once per case.

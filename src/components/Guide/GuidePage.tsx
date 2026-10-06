@@ -401,10 +401,12 @@ function sectionsFor(settings: Settings): Section[] {
             in settings turns that off, and the header button still opens one by hand.
           </P>
           <P>
-            That start is also the <Em>only</Em> moment it can happen. A browser hands out
-            a window in answer to a click and at no other time, so Mono cannot pop the
-            timer up when you minimise the tab, however much it might like to — the way to
-            have it there is to let it arrive with the block.
+            That start is also the one moment Mono can count on. A browser hands out a
+            window in answer to a click, and its automatic route is kept for pages
+            playing sound or using a camera or microphone — not a timer that is usually
+            silent — so Mono will not pop the timer up when you minimise the tab, however
+            much it might like to. The way to have it there is to let it arrive with the
+            block.
           </P>
           <P>
             Close it from its own × or from the header, and it goes when the tab does. It
