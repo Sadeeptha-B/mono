@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { dayKey } from './time'
 import {
   activeAreas,
   activeTasks,
@@ -30,6 +31,7 @@ import {
   PURPOSE_MAX_LENGTH,
   reopen,
   taskTree,
+  taskTreeWithDone,
   unarchive,
   type Item,
   type TaskTreeNode,
@@ -346,6 +348,45 @@ describe('the backlog as a tree of tasks', () => {
       ['area: Personal', ['Fix the gate'], []],
     ])
     expect(groupTasks(['hidden', 'ticked'], items, [work, personal])).toEqual([])
+  })
+
+  it("puts back the tasks done on the day asked about, after each place's open ones", () => {
+    const today = new Date(2026, 9, 6, 10).getTime()
+    const yesterday = new Date(2026, 9, 5, 16).getTime()
+    const day = dayKey(today)
+    const withDone = [
+      ...items,
+      item('remember', 'task', 'pages', { title: 'Remember me', status: 'done', doneAt: today }),
+      item('stale', 'task', 'pages', { title: 'Stale', status: 'done', doneAt: yesterday }),
+      item('mended', 'task', 'personal', { title: 'Mended', status: 'done', doneAt: today }),
+      item('let go', 'task', 'personal', { title: 'Let go', status: 'dropped' }),
+      item('shelved', 'task', 'work', { status: 'done', doneAt: today, archivedAt: today }),
+      item('inside', 'task', 'old', { status: 'done', doneAt: today }),
+    ]
+    expect(taskTreeWithDone(withDone, [work, personal], day).map(shape)).toEqual([
+      [
+        'area: Work',
+        ['Call Priya'],
+        [
+          [
+            'epic: Mono auth',
+            ['CSRF token'],
+            [
+              ['outcome: Login pages', ['Login form', 'Session cookie', 'Remember me'], []],
+              ['outcome: Password reset', [], []],
+            ],
+          ],
+        ],
+      ],
+      ['area: Personal', ['Fix the gate', 'Mended'], []],
+    ])
+    // The open tree is untouched, and a day not known yet adds nothing.
+    expect(taskTree(withDone, [work, personal])[1]!.tasks.map((t) => t.title)).toEqual([
+      'Fix the gate',
+    ])
+    expect(taskTreeWithDone(withDone, [work, personal], null)).toBe(
+      taskTree(withDone, [work, personal]),
+    )
   })
 })
 

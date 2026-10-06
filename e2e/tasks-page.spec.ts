@@ -406,6 +406,57 @@ test('a finished epic takes its tasks with it, and reopening brings them back', 
   await expect(epic(page, 'Mono auth')).toContainText('CSRF token')
 })
 
+test('a finished outcome is put away with its tasks nested under it, each as it was', async ({
+  page,
+}) => {
+  await openMono(page)
+  await openTasks(page)
+  await buildAuthEpic(page)
+  await addOnTasksPage(page, 'task', 'Login pages', 'Remember me')
+  // Clicked rather than checked: the row leaves the column as it is ticked.
+  await main(page).getByRole('checkbox', { name: 'Login form done' }).click()
+
+  await main(page).getByRole('button', { name: 'Mark Login pages done' }).click()
+  await expect(outcome(page, 'Login pages')).toHaveCount(0)
+  await epic(page, 'Mono auth').getByText('Done, dropped and archived (1)').click()
+  const inside = epic(page, 'Mono auth').getByRole('list', { name: 'Inside Login pages' })
+  await expect(inside.getByRole('listitem')).toHaveText(['Done: Login form', 'Open: Remember me'])
+  await expect(inside.getByText('Login form', { exact: true })).toHaveCSS(
+    'text-decoration-line',
+    'line-through',
+  )
+
+  // The outcome's card is where they come back from, as they were.
+  await epic(page, 'Mono auth').getByRole('button', { name: 'Reopen Login pages' }).click()
+  await expect(
+    outcome(page, 'Login pages').getByRole('list', { name: 'Login pages tasks' }),
+  ).toContainText('Remember me')
+  await expect(
+    outcome(page, 'Login pages').getByRole('list', { name: 'Login pages tasks' }),
+  ).not.toContainText('Login form')
+})
+
+test('a task ticked today stays in the task picker, crossed out rather than offered', async ({
+  page,
+}) => {
+  await openMono(page)
+  await openTasks(page)
+  await buildAuthEpic(page)
+  // Clicked rather than checked: the row leaves the column as it is ticked.
+  await main(page).getByRole('checkbox', { name: 'Login form done' }).click()
+
+  const section = main(page).getByRole('region', { name: 'My intentions for today' })
+  await section.getByRole('button', { name: 'Add intention', exact: true }).click()
+  await section.getByRole('button', { name: 'Tasks for this intention' }).click()
+  const tree = section.getByRole('group', { name: 'Tasks for this intention' })
+  await expect(tree.getByRole('checkbox', { name: 'CSRF token' })).toBeVisible()
+  await expect(tree.getByText('Login form', { exact: true })).toHaveCSS(
+    'text-decoration-line',
+    'line-through',
+  )
+  await expect(tree.getByRole('checkbox', { name: /Login form/ })).toHaveCount(0)
+})
+
 test('archiving puts an epic away without finishing anything in it', async ({ page }) => {
   await openMono(page)
   await openTasks(page)

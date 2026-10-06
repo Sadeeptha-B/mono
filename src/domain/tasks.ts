@@ -35,6 +35,7 @@
  * passed in by the store.
  */
 
+import { dayKey, type DayKey } from './time'
 import type { Ms } from './types'
 
 /** Something that never finishes: Work, Personal. */
@@ -502,7 +503,9 @@ export const PATH_SEPARATOR = ' › '
 
 /**
  * One level of the backlog as a tree: an area, an open epic or an open outcome,
- * the places beneath it, and the open tasks that sit directly under it.
+ * the places beneath it, and the open tasks that sit directly under it — and,
+ * in the picker's copy of the tree only, the tasks finished there today
+ * (`taskTreeWithDone`).
  */
 export type TaskTreeNode = {
   id: string
@@ -520,6 +523,49 @@ export type TaskTreeNode = {
  */
 export const taskTree = (items: readonly Item[], areas: readonly Area[]): readonly TaskTreeNode[] =>
   indexBacklog(items, areas).tree()
+
+/**
+ * The task tree with the tasks finished on one day put back in, each after the
+ * open tasks of the place it sits in.
+ *
+ * What the task picker draws, so the day's progress is in front of whoever is
+ * choosing what to do next: what was done today is there, crossed out, under
+ * the same outcome as what is left. Only today's, because the picker is for
+ * choosing, and a list carrying every task ever ticked would bury the open
+ * ones within a month. Done tasks are not choices — a caller tells them apart
+ * by `status` — and nothing else that reads the tree sees them.
+ *
+ * Only under places in play, as the tree itself is: a task done today inside an
+ * epic finished since is put away with the epic. `null` is a day not known
+ * yet, which adds nothing. Not memoised here; it is cheap beside the tree, and
+ * the picker's caller keeps it per backlog snapshot and day.
+ */
+export function taskTreeWithDone(
+  items: readonly Item[],
+  areas: readonly Area[],
+  day: DayKey | null,
+): readonly TaskTreeNode[] {
+  const tree = taskTree(items, areas)
+  if (day === null) return tree
+  const { liveChildren } = indexItems(items)
+  const doneOn = (parentId: string) =>
+    (liveChildren.get(parentId) ?? []).filter(
+      (i) =>
+        i.kind === 'task' &&
+        i.status === 'done' &&
+        i.archivedAt === undefined &&
+        i.doneAt !== undefined &&
+        dayKey(i.doneAt) === day,
+    )
+  // A node with nothing done anywhere beneath it is returned as it was.
+  const withDone = (node: TaskTreeNode): TaskTreeNode => {
+    const children = node.children.map(withDone)
+    const done = doneOn(node.id)
+    const same = done.length === 0 && children.every((child, i) => child === node.children[i])
+    return same ? node : { ...node, children, tasks: [...node.tasks, ...done] }
+  }
+  return tree.map(withDone)
+}
 
 /**
  * Some of the backlog's tasks, under the places they sit in: the backlog tree

@@ -609,6 +609,10 @@ function sectionsFor(settings: Settings): Section[] {
                   '✎ beside an intention',
                   'Edits that intention where it is listed — its title and its tasks — without leaving the question.',
                 ],
+                [
+                  'The ring before an intention',
+                  'Marks it done, or reopens it. Its tasks stay listed and can still be ticked.',
+                ],
               ]}
             />
             <Step
@@ -687,10 +691,12 @@ function sectionsFor(settings: Settings): Section[] {
             beside it.
           </P>
           <P>
-            You decide when an epic or outcome is finished — nothing completes itself
-            because its tasks ran out. <Em>Done</Em> and <Em>Archive</Em> both put it
-            away with everything inside, out of the page and out of the purpose prompt;
-            the tasks inside are left exactly as they were, and <Em>Reopen</Em> or{' '}
+            Each card and row carries its actions as small icons — rename, done, drop,
+            archive, delete — and hovering one says which it is. You decide when an
+            epic or outcome is finished — nothing completes itself because its tasks
+            ran out. <Em>Done</Em> and <Em>Archive</Em> both put it away with
+            everything inside, out of the page and out of the purpose prompt; the tasks
+            inside are left exactly as they were, and <Em>Reopen</Em> or{' '}
             <Em>Restore</Em> brings them all back. <Em>Delete</Em> is the one that
             reaches inside: it deletes everything in the epic too, and asks first,
             saying how much that is. An area can be archived or deleted the same way,
@@ -701,12 +707,18 @@ function sectionsFor(settings: Settings): Section[] {
             it, but a task written in March is still there in May until you tick it,
             drop it or delete it. <Em>Drop</Em> is deciding not to do something, and it
             stays in the folded list as a decision; <Em>Delete</Em> is taking back a
-            mistake. Both done and dropped tasks can be reopened.
+            mistake. Both done and dropped tasks can be reopened. In that folded list a
+            finished epic or outcome shows what it holds nested under it, each task as
+            it was left. The task dropdown keeps what you ticked today too, crossed out
+            under its place, so the next choice is made beside what is already done.
           </P>
           <P>
             Under <Em>My intentions for today</Em> the page shows your intentions, each
             with its tasks under the areas, epics and outcomes they live in, and you can
-            add, edit and delete them there as on the opening question. Put a task under
+            add, edit and delete them there as on the opening question. The ring in front
+            of an intention marks it done, there, on the opening question or on the
+            purpose prompt: that is yours to say, not something its tasks decide, and it
+            stays listed, crossed out, until the day ends. Put a task under
             one from its row's <Em>Intention</Em> too, and take it out with the{' '}
             <Em>×</Em> beside it. A task belongs to one intention a day at most, and to
             none quite happily: a small thing from outside today's intentions is a fine

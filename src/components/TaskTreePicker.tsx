@@ -68,6 +68,19 @@
  * keeps. A control's own key is `data-focus-key`; a field names its opener in
  * `data-focus-back`, and a place's list in `data-home`.
  *
+ * Names wrap rather than being cut short: a task is chosen by what it says,
+ * and two tasks that begin the same way were indistinguishable once
+ * truncated. So the panel has a fixed size instead of sizing to its longest
+ * line — as wide as `placeAcross` allows, and at most `max-h-80` tall,
+ * scrolling inside itself beyond that with the search held at its head. A
+ * panel that grew to fit its rows changed width as a search narrowed them.
+ *
+ * The tasks finished today are drawn too, after the open ones of their place
+ * and crossed out, when the caller passes a tree that holds them
+ * (`taskTreeWithDone`). They are not choices: no checkbox, no ✎ or ×, and a
+ * search finds them only to show they are done. What is left of an outcome
+ * reads differently beside what has already gone.
+ *
  * The tree is drawn only while the panel is open, so a backlog of hundreds of
  * tasks costs nothing on a stage that re-renders every second.
  */
@@ -84,6 +97,7 @@ import {
   type ReactNode,
 } from 'react'
 
+import { CheckIcon } from './icons'
 import { PANEL_MAX_WIDTH, PANEL_MIN_WIDTH, placeAcross, roomFor, type Across } from './panelPlacement'
 import { EditGlyph } from './ui'
 import type { Item, TaskTreeNode } from '@/domain/tasks'
@@ -116,6 +130,7 @@ export function TaskTreePicker({
   label: string
   /** The word in front of the button. */
   prefix: string
+  /** The places and their tasks; a task whose status is `done` is drawn as done. */
   tree: readonly TaskTreeNode[]
   selected: readonly string[]
   onChange: (taskIds: string[]) => void
@@ -328,10 +343,11 @@ export function TaskTreePicker({
     <li key={node.id}>
       <div className="flex items-stretch gap-2 px-2.5">
         {guides(depth)}
-        <span className="min-w-0 flex-1 truncate py-1.5 text-sm">
+        <span className="min-w-0 flex-1 py-1.5 text-sm wrap-break-word">
           <span className="text-muted">{LEVEL[node.kind]}: </span>
           <span className={depth === 0 ? 'font-medium text-bright' : 'text-body'}>{node.name}</span>
         </span>
+        {/* Level with the first line of a name that wraps. */}
         <button
           type="button"
           onClick={() => {
@@ -340,7 +356,7 @@ export function TaskTreePicker({
           }}
           aria-label={`Add a task to ${node.name}`}
           data-focus-key={`place:${node.id}`}
-          className="shrink-0 self-center text-xs text-muted transition hover:text-bright"
+          className="mt-2 shrink-0 self-start text-xs text-muted transition hover:text-bright"
         >
           + Task
         </button>
@@ -368,7 +384,9 @@ export function TaskTreePicker({
         )}
         {node.children.map((child) => branch(child, depth + 1))}
         {node.tasks.map((task) =>
-          renaming?.taskId === task.id ? (
+          task.status === 'done' ? (
+            <DoneOption key={task.id} task={task} guides={guides(depth + 1)} />
+          ) : renaming?.taskId === task.id ? (
             <li key={task.id} className="flex items-stretch gap-2 px-2.5 py-1">
               {guides(depth + 1)}
               <InlineField
@@ -463,17 +481,20 @@ export function TaskTreePicker({
               id={panelId}
               role="group"
               aria-label={label}
+              // A fixed width, the widest there is room for — see the header.
               style={{
                 ...(across.side === 'left' ? { left: 0 } : { right: across.offset }),
+                width: across.maxWidth,
                 minWidth: across.minWidth,
                 maxWidth: across.maxWidth,
               }}
-              className={`mono-scroll absolute z-30 max-h-80 w-max overflow-y-auto rounded-lg border border-muted/70 bg-ink py-1.5 shadow-lg ${
+              className={`mono-scroll absolute z-30 max-h-80 overflow-y-auto overscroll-contain rounded-lg border border-muted/70 bg-ink pb-1.5 shadow-lg ${
                 upwards ? 'bottom-full mb-1' : 'top-full mt-1'
               }`}
             >
+              {/* Held at the head of the panel while the tree scrolls under it. */}
               {tree.length > 0 && (
-                <div className="relative px-2.5 pt-0.5 pb-1.5">
+                <div className="sticky top-0 z-10 bg-ink px-2.5 pt-2 pb-1.5">
                   <SearchGlyph className="pointer-events-none absolute top-1/2 left-5 -translate-y-1/2 text-muted" />
                   <input
                     ref={search}
@@ -493,7 +514,7 @@ export function TaskTreePicker({
                 </div>
               )}
               {tree.length === 0 ? (
-                <p className="px-2.5 py-1.5 text-sm text-muted">No areas to choose from.</p>
+                <p className="px-2.5 pt-3 pb-1.5 text-sm text-muted">No areas to choose from.</p>
               ) : shown.length === 0 ? (
                 <p className="px-2.5 py-1.5 text-sm text-muted">Nothing open matches.</p>
               ) : (
@@ -605,22 +626,25 @@ function TaskOption({
           type="checkbox"
           checked={checked}
           onChange={onToggle}
-          className="translate-y-0.5 accent-[var(--color-deep)]"
+          className="shrink-0 translate-y-0.5 accent-[var(--color-deep)]"
         />
-        <span className="min-w-0 truncate">{task.title}</span>
-        {/* A task belongs to one intention a day; choosing it here moves it. */}
-        {elsewhere !== null && (
-          <span className="min-w-0 shrink-3 truncate text-xs text-muted">under {elsewhere}</span>
-        )}
+        <span className="min-w-0 wrap-break-word">
+          {task.title}
+          {/* A task belongs to one intention a day; choosing it here moves it. */}
+          {elsewhere !== null && (
+            <span className="ml-1.5 text-xs text-muted">under {elsewhere}</span>
+          )}
+        </span>
       </label>
       {/* Named "task" as well as by title: on the tasks page the backlog's own
-          rows carry a Rename and a Delete for the same task. */}
+          rows carry a Rename and a Delete for the same task. Level with the
+          first line of a title that wraps. */}
       <button
         type="button"
         onClick={onRename}
         aria-label={`Edit task ${task.title}`}
         data-focus-key={`edit:${task.id}`}
-        className="shrink-0 self-center px-0.5 text-muted transition hover:text-bright"
+        className="mt-1.5 shrink-0 self-start px-0.5 text-muted transition hover:text-bright"
       >
         <EditGlyph />
       </button>
@@ -628,10 +652,28 @@ function TaskOption({
         type="button"
         onClick={onDelete}
         aria-label={`Delete task ${task.title}`}
-        className="shrink-0 self-center px-0.5 text-muted transition hover:text-commit"
+        className="mt-1.5 shrink-0 self-start px-0.5 text-muted transition hover:text-commit"
       >
         ×
       </button>
+    </li>
+  )
+}
+
+/**
+ * A task finished today: crossed out where it lives, after what is still open
+ * there, with a tick where an open task's checkbox would be so the titles line
+ * up. Not a choice, so nothing here can be pressed — see the header.
+ */
+function DoneOption({ task, guides }: { task: Item; guides: ReactNode }) {
+  return (
+    <li className="flex items-stretch gap-2 px-2.5">
+      {guides}
+      <span className="flex min-w-0 flex-1 items-baseline gap-2 py-1 text-sm text-muted">
+        <CheckIcon className="w-[13px] translate-y-0.5 text-deep/80" />
+        <span className="min-w-0 wrap-break-word line-through">{task.title}</span>
+        <span className="sr-only">, done today</span>
+      </span>
     </li>
   )
 }

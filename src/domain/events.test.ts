@@ -344,6 +344,26 @@ describe("the day's intentions", () => {
     expect(state.intentions[0]).toEqual({ id: 'auth', title: 'Auth' })
   })
 
+  it('marks one done and reopens it, keeping its title and its tasks', () => {
+    const linked: MonoEvent[] = [
+      ...named,
+      { type: 'intention/taskLinked', at: at(9), taskId: 't', intentionId: 'auth' },
+    ]
+    const done = replay([
+      ...linked,
+      { type: 'intention/updated', at: at(10), id: 'auth', patch: { done: true } },
+    ])
+    expect(done.intentions[0]).toEqual({ id: 'auth', title: 'Mono auth', done: true })
+    expect(done.taskIntentions).toEqual({ t: 'auth' })
+
+    const reopened = replay([
+      ...linked,
+      { type: 'intention/updated', at: at(10), id: 'auth', patch: { done: true } },
+      { type: 'intention/updated', at: at(11), id: 'auth', patch: { done: false } },
+    ])
+    expect(reopened.intentions[0]).toEqual({ id: 'auth', title: 'Mono auth', done: false })
+  })
+
   it('puts a task under one intention at a time', () => {
     const state = replay([
       ...named,
