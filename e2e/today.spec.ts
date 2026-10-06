@@ -7,11 +7,13 @@ import { expect, test, type Page } from '@playwright/test'
 import {
   addIntention,
   addOnTasksPage,
+  addTaskIn,
   addTodayTask,
   goToStage,
   openMono,
   stage,
   startDay,
+  taskAction,
   todayBrowser,
   todayList,
 } from './support/mono'
@@ -28,7 +30,7 @@ test('the day cannot start until a task is chosen for it, the first time it is a
 
   // From the first question as much as the third: the button is the same one.
   await expect(start(page)).toBeDisabled()
-  await expect(stage(page)).toContainText('choose at least one task for it under Today')
+  await expect(stage(page)).toContainText('Choose at least one task under Today to start the day.')
 
   await goToStage(page, 'Today')
   await expect(
@@ -74,8 +76,9 @@ test("today's tasks are chosen from the backlog in place, and put back the same 
   await expect(tree.getByRole('checkbox', { name: 'Login form' })).not.toBeChecked()
   await expect(start(page)).toBeDisabled()
 
-  // A task can be written straight into any place, and is chosen as it is.
-  await tree.getByRole('button', { name: 'Add a task to Login pages' }).click()
+  // A task can be written straight into any place, from its ⋯, and is chosen
+  // as it is.
+  await addTaskIn(tree, 'Login pages')
   const field = tree.getByLabel('New task in Login pages', { exact: true })
   await expect(field).toBeFocused()
   await field.fill('Remember me')
@@ -88,11 +91,11 @@ test("today's tasks are chosen from the backlog in place, and put back the same 
   await field.fill('Throwaway')
   await tree.getByRole('button', { name: 'Add the new task to Login pages' }).click()
   await expect(field).toHaveCount(0)
-  await tree.getByRole('button', { name: 'Edit task Throwaway' }).click()
+  await taskAction(tree, 'Throwaway', 'Edit task Throwaway')
   await tree.getByLabel('Rename Throwaway', { exact: true }).fill('Still throwaway')
   await tree.getByRole('button', { name: 'Save the name of Throwaway' }).click()
   await expect(todayList(page)).toContainText('Still throwaway')
-  await tree.getByRole('button', { name: 'Delete task Still throwaway' }).click()
+  await taskAction(tree, 'Still throwaway', 'Delete task Still throwaway')
   await expect(tree.getByRole('checkbox', { name: 'Still throwaway' })).toHaveCount(0)
   await expect(todayList(page)).not.toContainText('Still throwaway')
 
@@ -109,8 +112,11 @@ test('All Tasks keeps the backlog: tasks are finished and reopened there', async
   const tree = todayBrowser(page)
 
   // Done from its row: crossed out there and in today, and no longer a choice.
-  const done = tree.getByRole('button', { name: 'Mark task Reply to Priya done', exact: true })
-  await done.click()
+  // Its actions are behind a ⋯, as a place's are, shown on hover.
+  const more = tree.getByRole('button', { name: 'More for task Reply to Priya', exact: true })
+  await page.mouse.move(0, 0)
+  await expect(more).toHaveCSS('opacity', '0')
+  await taskAction(tree, 'Reply to Priya', 'Mark task Reply to Priya done')
   await expect(tree.getByRole('checkbox', { name: 'Reply to Priya' })).toHaveCount(0)
   await expect(tree.getByText('Reply to Priya', { exact: true })).toHaveCSS(
     'text-decoration-line',
@@ -121,28 +127,117 @@ test('All Tasks keeps the backlog: tasks are finished and reopened there', async
     'text-decoration-line',
     'line-through',
   )
-  // The keyboard stays on the task, now on the button that undoes it.
-  const reopen = tree.getByRole('button', { name: 'Reopen task Reply to Priya', exact: true })
-  await expect(reopen).toBeFocused()
+  // The keyboard stays on the task, now on the ⋯ of its done row, which
+  // holds the reopen.
+  await expect(more).toBeFocused()
+  await more.press('Enter')
 
   // Reopened, it is open and still today's.
-  await reopen.click()
+  await tree.getByRole('button', { name: 'Reopen task Reply to Priya', exact: true }).press('Enter')
   await expect(tree.getByRole('checkbox', { name: 'Reply to Priya' })).toBeChecked()
   await expect(
     todayList(page).getByRole('button', { name: 'Move Reply to Priya', exact: true }),
   ).toBeVisible()
 
-  // All Tasks starts open and folds from its heading, and stays folded while
-  // another question is looked at.
-  const fold = stage(page).getByRole('button', { name: 'All Tasks', exact: true })
-  await expect(fold).toHaveAttribute('aria-expanded', 'true')
-  await fold.click()
+  // All Tasks stands in the calendar's column while this question is open,
+  // and the column's switch turns it back to the day. A choice made by hand
+  // lasts until the question closes; the other questions have the day.
+  const column = page.getByRole('group', { name: 'Show in this column' })
+  await expect(column.getByRole('button', { name: 'All Tasks' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(stage(page).getByRole('group', { name: 'Tasks for today' })).toHaveCount(0)
+  await column.getByRole('button', { name: 'Today' }).click()
   await expect(tree).toHaveCount(0)
+  await expect(page.getByRole('complementary').getByRole('button', { name: 'Hours' })).toBeVisible()
   await goToStage(page, 'Hours')
+  await expect(column).toHaveCount(0)
   await goToStage(page, 'Today')
-  await expect(tree).toHaveCount(0)
-  await fold.click()
   await expect(tree).toBeVisible()
+})
+
+test('areas, epics and outcomes are kept from All Tasks, from the popup of their ⋯', async ({
+  page,
+}) => {
+  await openMono(page)
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await addOnTasksPage(page, 'epic', 'Work', 'SC Prefix')
+  await addOnTasksPage(page, 'outcome', 'SC Prefix', 'New Item')
+  await addOnTasksPage(page, 'task', 'New Item', 'sfsdfs')
+  await page.getByRole('link', { name: 'Back to today' }).click()
+  await goToStage(page, 'Today')
+  const tree = todayBrowser(page)
+  const more = (name: string) => tree.getByRole('button', { name: `More for ${name}`, exact: true })
+  const popup = (name: string) => tree.getByRole('group', { name: `Actions for ${name}` })
+
+  // At rest a row's ⋯ is hidden; hovering the row shows it, and a press opens
+  // its popup, floating under it rather than pushing the rows below down.
+  await expect(more('SC Prefix')).toHaveCSS('opacity', '0')
+  await tree.getByText('SC Prefix', { exact: true }).hover()
+  await expect(more('SC Prefix')).toHaveCSS('opacity', '1')
+  const below = tree.getByText('New Item', { exact: true })
+  const before = (await below.boundingBox())!.y
+  await more('SC Prefix').click()
+  await expect(popup('SC Prefix')).toHaveCSS('position', 'absolute')
+  expect((await below.boundingBox())!.y).toBe(before)
+
+  // A press outside closes it.
+  await page.getByRole('heading', { name: 'What are you working on today?' }).click()
+  await expect(popup('SC Prefix')).toHaveCount(0)
+
+  // Renamed in place; the keyboard comes back to the ⋯.
+  await more('SC Prefix').click()
+  await popup('SC Prefix').getByRole('button', { name: 'Rename SC Prefix', exact: true }).click()
+  const name = tree.getByLabel('Rename epic SC Prefix', { exact: true })
+  await expect(name).toBeFocused()
+  await name.fill('Auth')
+  await name.press('Enter')
+  await expect(tree).toContainText('Epic: Auth')
+  await expect(more('Auth')).toBeFocused()
+
+  // An epic takes a new outcome; Escape closes an open popup onto its ⋯.
+  await more('Auth').click()
+  await popup('Auth').getByRole('button', { name: 'Add an outcome to Auth', exact: true }).click()
+  const outcome = tree.getByLabel('New outcome in Auth', { exact: true })
+  await outcome.fill('Password reset')
+  await outcome.press('Enter')
+  await outcome.press('Escape')
+  await expect(tree).toContainText('Outcome: Password reset')
+  await more('Password reset').click()
+  await page.keyboard.press('Escape')
+  await expect(popup('Password reset')).toHaveCount(0)
+  await expect(more('Password reset')).toBeFocused()
+
+  // Archived and finished, each is put away with what it holds.
+  await more('Password reset').click()
+  await popup('Password reset').getByRole('button', { name: 'Archive Password reset' }).click()
+  await expect(tree).not.toContainText('Password reset')
+  await more('New Item').click()
+  await popup('New Item').getByRole('button', { name: 'Mark New Item done' }).click()
+  await expect(tree).not.toContainText('New Item')
+  await expect(tree.getByRole('checkbox', { name: 'sfsdfs' })).toHaveCount(0)
+
+  // A delete with something inside asks first.
+  await more('Auth').click()
+  await popup('Auth').getByRole('button', { name: 'Delete Auth', exact: true }).click()
+  await expect(popup('Auth')).toContainText('inside?')
+  await popup('Auth').getByRole('button', { name: 'Keep', exact: true }).click()
+  await expect(tree).toContainText('Epic: Auth')
+  await popup('Auth').getByRole('button', { name: 'Delete Auth', exact: true }).click()
+  await popup('Auth')
+    .getByRole('button', { name: 'Delete Auth and everything in it', exact: true })
+    .click()
+  await expect(tree).not.toContainText('Auth')
+
+  // An area takes a new epic and can be archived, but is deleted only on the
+  // tasks page.
+  await more('Work').click()
+  await expect(popup('Work').getByRole('button', { name: 'Delete Work', exact: true })).toHaveCount(0)
+  await popup('Work').getByRole('button', { name: 'Add an epic to Work', exact: true }).click()
+  await tree.getByLabel('New epic in Work', { exact: true }).fill('Billing')
+  await tree.getByLabel('New epic in Work', { exact: true }).press('Enter')
+  await expect(tree).toContainText('Epic: Billing')
 })
 
 test('tasks are carried into intentions, which group them and can go again', async ({
@@ -205,10 +300,19 @@ test('tasks are carried into intentions, which group them and can go again', asy
   )
   await start(page).click()
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
-  await expect(stage(page).getByRole('button', { name: 'Reopen intention Billing' })).toBeVisible()
+  // It is kept from the column beside the prompt. Its tasks can still be
+  // ticked for a block, and are listed under it on the prompt.
   await expect(
-    stage(page).getByRole('group', { name: 'Billing' }).getByRole('checkbox', { name: 'Patch the webhook retry' }),
+    page.getByRole('complementary').getByRole('button', { name: 'Reopen intention Billing' }),
   ).toBeVisible()
+  await page
+    .getByRole('complementary')
+    .getByRole('group', { name: 'Tasks for this block', exact: true })
+    .getByRole('checkbox', { name: 'Patch the webhook retry' })
+    .check()
+  await expect(stage(page).getByRole('group', { name: 'Billing' })).toContainText(
+    'Patch the webhook retry',
+  )
   await stage(page).getByRole('button', { name: 'Not yet' }).click()
 
   // Deleting it leaves its tasks today, under none.

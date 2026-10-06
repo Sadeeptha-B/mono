@@ -36,7 +36,6 @@ import { useTodayBacklog } from '@/components/useTodayBacklog'
 import { GhostButton, PrimaryButton } from '@/components/ui'
 import { timerFace } from '@/components/timerFace'
 import { formatClock, formatDuration, type TimerMode } from '@/domain/time'
-import type { Today } from '@/domain/today'
 import type {
   ActiveSegment,
   BlockKind,
@@ -301,7 +300,6 @@ export function MiniSetup({
   commitments,
   regions,
   intentions,
-  today,
   timer,
   timerMinutes,
   onStartTimer,
@@ -314,7 +312,6 @@ export function MiniSetup({
   /** Today's hours as the calendar draws them, an unsaved draft included. */
   regions: readonly WorkRegion[]
   intentions: readonly Intention[]
-  today: Today
   /** Today's question's timer. */
   timer: { endsAt: Ms } | null
   /** The setting, for the label on the play button. */
@@ -323,7 +320,7 @@ export function MiniSetup({
   onOpenTab: () => void
 }) {
   const eyebrow = revisiting ? 'Changing today' : 'To begin'
-  const chosen = useTodayBacklog(today).chosen.length
+  const chosen = useTodayBacklog().chosen.length
 
   return (
     <div>

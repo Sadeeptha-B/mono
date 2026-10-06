@@ -72,7 +72,7 @@ import {
   type CommitmentDraft,
 } from '../CommitmentFields'
 import { resolveHours, TodayHoursFields } from '../TodayHours'
-import { emptyTodayDrafts, TodayPanel, type TodayDrafts, type TodayTimer } from './TodayPanel'
+import { TodayPanel, type TodayTimer } from './TodayPanel'
 import { useTodayBacklog } from '../useTodayBacklog'
 import {
   nextSetupStage,
@@ -81,14 +81,12 @@ import {
   type SetupStageId,
 } from './stages'
 import { formatClock, formatDuration, nextHalfHour } from '@/domain/time'
-import type { Today } from '@/domain/today'
 import {
   commitmentSpan,
   minutesToMs,
   type Commitment,
   type CommitmentPatch,
   type DefaultRegion,
-  type Intention,
   type Ms,
   type WorkRegion,
 } from '@/domain/types'
@@ -107,8 +105,6 @@ export function DaySetupPanel({
   onAddCommitment,
   onUpdateCommitment,
   onRemoveCommitment,
-  intentions,
-  today,
   planned,
   todayTimer,
   intentionMinutes,
@@ -132,9 +128,6 @@ export function DaySetupPanel({
   onAddCommitment: (input: Omit<Commitment, 'id'>) => void
   onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onRemoveCommitment: (id: string) => void
-  intentions: readonly Intention[]
-  /** Today's tasks, each with its intention or none. */
-  today: Today
   /** What the plan can still hold, quoted by today's question. */
   planned: { blocks: number; minutes: number }
   todayTimer: TodayTimer | null
@@ -164,9 +157,10 @@ export function DaySetupPanel({
   const [seenStage, setSeenStage] = useState(stage)
   // Here rather than in today's panel for the commitment draft's reason: that
   // panel unmounts when you look at another question, and this does not.
-  const [todayDrafts, setTodayDrafts] = useState<TodayDrafts>(emptyTodayDrafts)
+  // The new intention's title while its field is open.
+  const [newIntention, setNewIntention] = useState<string | null>(null)
   // Whether the day has anything chosen, for the one gate the questions keep.
-  const chosen = useTodayBacklog(today).chosen.length
+  const chosen = useTodayBacklog().chosen.length
 
   const clearForm = () => {
     setEditing(null)
@@ -370,10 +364,8 @@ export function DaySetupPanel({
           minutes={intentionMinutes}
           onStartTimer={onStartTodayTimer}
           planned={planned}
-          intentions={intentions}
-          today={today}
-          drafts={todayDrafts}
-          onDrafts={setTodayDrafts}
+          newIntention={newIntention}
+          onNewIntention={setNewIntention}
         />
       )}
 
@@ -493,21 +485,20 @@ function footnote({
 }): string {
   if (noHours) {
     return revisiting
-      ? "With no stretches left under Hours there is nowhere for Mono to plan. Go back and the rest of the day stays empty."
-      : "Mono plans inside your working hours and nowhere else, so it needs at least one stretch. Add one under Hours."
+      ? 'No working hours are left, so the rest of the day stays empty. Add a stretch under Hours to plan it.'
+      : 'Add at least one stretch under Hours. Mono plans only within your working hours.'
   }
-  if (revisiting) return 'Anything you change here re-derives the plan. Nothing running is disturbed.'
-  if (noTasks) {
-    return stage === 'today'
-      ? 'Choose at least one task for today, and the day can start.'
-      : 'Before the day starts, choose at least one task for it under Today.'
-  }
+  // Today's tasks are not plan input, so only the other two questions say
+  // that coming back re-derives it.
   if (stage === 'today') {
-    return 'A handful is plenty. Group them into intentions if that helps; you can change all of it between blocks.'
+    if (noTasks && !revisiting) return 'Choose at least one task to start the day.'
+    return ''
   }
+  if (revisiting) return 'Changes here update the plan straight away.'
+  if (noTasks) return 'Choose at least one task under Today to start the day.'
   return commitments === 0
-    ? 'Nothing fixed today? Start the day and Mono will plan the whole of it.'
-    : 'Add as many as you like. Mono plans the runway between them.'
+    ? 'No commitments today? Start the day and Mono will plan all of it.'
+    : 'Add as many as you need. Mono plans the time around them.'
 }
 
 /**
@@ -525,13 +516,13 @@ function hoursDetail(
   nextRegionStart: Ms | null,
 ): string {
   if (!hasRegions) {
-    return "You haven't set any working hours yet. Mono plans inside these and nowhere else."
+    return 'Set your working hours. Mono plans only within them.'
   }
-  if (withinHours) return 'Mono plans inside these and nowhere else.'
+  if (withinHours) return 'Mono plans only within these hours.'
   if (nextRegionStart !== null) {
-    return `It's ${formatClock(now)} — your day starts at ${formatClock(
+    return `It's ${formatClock(now)}, and your day starts at ${formatClock(
       nextRegionStart,
-    )}. Adjust if that's not right today.`
+    )}. Change it if today is different.`
   }
-  return `It's ${formatClock(now)}, past everything below. Adjust if you are working later than usual.`
+  return `It's ${formatClock(now)}, past everything below. Add time if you're working late today.`
 }

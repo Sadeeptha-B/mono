@@ -8,13 +8,10 @@
  * intention written first, before anything was scoped, came out as the name of
  * an epic the backlog already had.
  *
- * Nothing here is stored. A block records only the tasks it was for, and which
- * intentions it served is worked out from those tasks and today's links — so a
- * task moved from one intention to another after the block is reported where
- * it now belongs, the same way the plan is re-derived rather than kept.
+ * Nothing here is stored. A block records only the tasks it was for; which
+ * intention a task is under is today's map, read when it is drawn, so a task
+ * carried from one intention to another is shown where it now belongs.
  */
-
-import type { Intention } from './types'
 
 /** Today's tasks, each with the intention it is under or `null` — see `SessionState.today`. */
 export type Today = Readonly<Record<string, string | null>>
@@ -36,24 +33,6 @@ export const ungroupedToday = (today: Today): string[] =>
   Object.entries(today)
     .filter(([, id]) => id === null)
     .map(([taskId]) => taskId)
-
-/**
- * The intentions a block served, in the order the day named them.
- *
- * A task with no intention today contributes nothing, which is allowed: a
- * small thing from outside today's intentions is still a reasonable use of the
- * end of a block, and refusing it would make the intentions a fence.
- */
-export function blockIntentions(
-  taskIds: readonly string[],
-  today: Today,
-  intentions: readonly Intention[],
-): Intention[] {
-  const served = new Set(
-    taskIds.map((id) => today[id]).filter((id): id is string => typeof id === 'string'),
-  )
-  return intentions.filter((i) => served.has(i.id))
-}
 
 /**
  * What the last day left to offer again: the tasks it chose that are still

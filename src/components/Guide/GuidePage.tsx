@@ -427,12 +427,14 @@ function sectionsFor(settings: Settings): Section[] {
           <P>
             Today is answered with tasks, and the day needs at least one before it
             starts, the first time it is asked. Nothing fixed is an ordinary day; nothing
-            meant is not, and there is always something to write. Tick tasks under{' '}
-            <Em>All Tasks</Em>, your whole backlog, which can be searched, and where{' '}
-            <Em>+ Task</Em> writes one into any area, epic or outcome and chooses it as it
-            goes. Tasks can be marked done, reopened, renamed and deleted there too, so
-            the backlog is kept without leaving the question, and its heading folds it
-            away once you have what you need. If you only know the rough
+            meant is not, and there is always something to write. While this question
+            is open the calendar's column shows <Em>All Tasks</Em>, your whole backlog,
+            which can be searched, and where <Em>+ Task</Em>, under a place's{' '}
+            <Em>⋯</Em>, writes one into any area, epic or outcome and chooses it as it
+            goes. Every row has a <Em>⋯</Em>, shown when you point at it: a task's marks
+            it done, renames or deletes it, or reopens one finished today; a place's
+            renames, finishes, archives or adds to it, so the backlog is kept without
+            leaving the question. The switch at the top of the column turns it back to the day. If you only know the rough
             shape of the work, write a task that says so: <Em>look into the double
             charge</Em> is a perfectly good task to start a day with.
           </P>
@@ -482,7 +484,7 @@ function sectionsFor(settings: Settings): Section[] {
           </P>
           <P>
             <Em>Commitments</Em> are the things already fixed: a meeting, a call, the
-            school run. After the opening question, use <Em>+ Commitment</Em> on the
+            school run. After the opening question, use <Em>Commitment</Em> on the
             calendar. Mono fills the runway up to one and resumes afterwards. Once the
             day has something in it the question shows that rather than an empty form —{' '}
             <Em>Add commitment</Em> opens one when you want it, and a day with
@@ -547,7 +549,7 @@ function sectionsFor(settings: Settings): Section[] {
             what it was worked out from.
           </P>
           <P>
-            <Em>Hours</Em>, <Em>+ Break</Em> and <Em>+ Commitment</Em> in the calendar's
+            <Em>Hours</Em>, <Em>Break</Em> and <Em>Commitment</Em> in the calendar's
             heading open in place, just below it. Every one of them asks a question
             about the day — when, and what does it displace — and the day is drawn
             directly below the answer.
@@ -614,7 +616,7 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="One thing"
-              asks="What is this block for, and which tasks come under it? The purpose goes at the top and the tasks below it. Today's tasks come first, under their intentions, ready to tick, with today's finished ones crossed out. Below them, folded under All Tasks, is the rest of your backlog, which can be searched, where a new task can be written into any area, epic or outcome, and where tasks can be marked done or reopened; anything ticked there is listed under Also for this block, and becomes one of today's tasks when the block starts. Tick at least one. An outcome's heading ticks every task of it in that list. The purpose starts as the tasks' titles, or the outcome's name when you took all of it, and is yours to rewrite — one sentence about this stretch, not a list. One well-chosen task is often a good purpose as it stands."
+              asks="What is this block for, and which tasks come under it? The purpose goes at the top and the tasks ticked for this block below it, under their intentions, each with an × to take it off again. Ticking is done beside it, in the calendar's column: All Tasks, the whole backlog, which can be searched, where a new task can be written into any area, epic or outcome, and where tasks can be marked done or reopened. Anything ticked there joins today's tasks as you tick it. Under All Tasks is today's own list, where intentions are kept as on the opening question. Tick at least one. The purpose starts as the tasks' titles, or an outcome's name when you took all of it, and is yours to rewrite — one sentence about this stretch, not a list. One well-chosen task is often a good purpose as it stands."
               choices={[
                 [
                   'Start',
@@ -733,10 +735,10 @@ function sectionsFor(settings: Settings): Section[] {
             opening question does, and you can write, group and take them out there the
             same way. The sun on a task's row in the backlog chooses it for today, and
             takes it out again. The ring in front of an intention marks it done, there, on
-            the opening question or on the purpose prompt: that is yours to say, not
+            the opening question or beside the purpose prompt: that is yours to say, not
             something its tasks decide, and it stays listed, crossed out, until the day
             ends. A small thing from outside today is a fine way to use the end of a
-            block, too, and it joins today when the block starts.
+            block, too: tick it in All Tasks and it joins today.
           </P>
           <P>
             Ticking a task done is the backlog's business, and finishing a block is the
@@ -773,7 +775,7 @@ function sectionsFor(settings: Settings): Section[] {
             take one.
           </P>
           <P>
-            You can also pin a break in advance with <Em>+ Break</Em> on the calendar,
+            You can also pin a break in advance with <Em>Break</Em> on the calendar,
             for rest you already know you will need. The plan works around it exactly
             like a commitment, and like a commitment you can move it or change its
             length afterwards.

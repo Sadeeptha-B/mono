@@ -25,7 +25,7 @@
  *
  * Epics and outcomes are finished by hand, archived, or deleted; areas, which
  * never finish, are archived or deleted. Finishing and archiving never touch
- * what is inside; the subtree leaves the page and the task picker together
+ * what is inside; the subtree leaves the page and All Tasks together
  * because its chain is no longer active, and returns unchanged when the epic
  * or area is reopened or restored — see `isInActiveTree`. Deleting takes the
  * subtree too, the same way and for good (`isGone`), so it asks first, naming
@@ -41,16 +41,20 @@
  *
  * Every edit here is a backlog edit — the task store writes the one record it
  * changed — except choosing a task for today, grouping it under an intention,
- * or marking one done, which are facts about today and go to the log like the
- * intentions themselves. A task that is dropped or done stays today's, and
- * today's list shows it crossed out or stops drawing it.
+ * or marking an intention done, which are facts about today and go to the log
+ * like the intentions themselves. A task that is dropped or done stays
+ * today's, and today's list shows it crossed out or stops drawing it.
  *
  * Actions are icons (`IconButton`): today, rename, done, drop, archive,
- * reopen, restore, delete. A column is narrow, and as words they took more of a row
- * than the title they acted on. Each says in its accessible name what it acts
- * on and shows its verb on hover. The words left are answers to a question —
- * a delete asking about what is inside — and the fields' own `Done` and `Save`,
- * which finish what is being typed rather than act on a record.
+ * reopen, restore, delete. A column is narrow, and as words they took more of
+ * a row than the title they acted on. Each says in its accessible name what it
+ * acts on and shows its verb on hover. They show only on hover or with focus
+ * in their row or card, and always on a touch screen (`revealOnHover`), as in
+ * All Tasks: at rest the board reads as its titles. What says something rather
+ * than offering it stays — the grip, the checkbox, and the sun of a task
+ * chosen for today. The words left are answers to a question — a delete asking
+ * about what is inside — and the fields' own `Done` and `Save`, which finish
+ * what is being typed rather than act on a record.
  */
 
 import {
@@ -88,6 +92,8 @@ import {
   headerControlClass,
   IconButton,
   PageLinks,
+  RenameField,
+  revealOnHover,
 } from '../ui'
 import { PopOutButton } from '@/pip/PopOutButton'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
@@ -106,7 +112,7 @@ import {
 } from '@/domain/tasks'
 import { isToday, type Today } from '@/domain/today'
 import type { TimerMode } from '@/domain/time'
-import type { ActiveSegment, Intention, Ms } from '@/domain/types'
+import type { ActiveSegment, Ms } from '@/domain/types'
 
 export function TasksPage({
   now,
@@ -122,7 +128,6 @@ export function TasksPage({
   mini: MiniWindowControls
 }) {
   const phase = useSession((s) => s.phase)
-  const intentions = useSession((s) => s.session.intentions)
   const today = useSession((s) => s.session.today)
   const generation = useSession((s) => s.generation)
 
@@ -187,83 +192,71 @@ export function TasksPage({
           {!hydrated ? (
             <p className="mt-8 text-sm text-muted">Loading your tasks…</p>
           ) : (
-            <>
-              <AddFields.Provider value={addFields}>
-                <Section title="Today">
-                  {/* Keyed by the session's generation, as the stage is: what
-                      is being typed about today belongs to one particular day,
-                      and the midnight reset or an import must not carry it into
-                      the next, nor a task half carried between intentions.
-                      Only this; the backlog's own add fields describe
-                      long-lived records and keep what is typed in them. */}
-                  <TodaySection key={generation} today={today} intentions={intentions} />
-                </Section>
+            <AddFields.Provider value={addFields}>
+              {/* Its heading is drawn by the list, so `+ Intention` sits level
+                  with it. Keyed by the session's generation, as the stage is:
+                  what is being typed about today belongs to one particular
+                  day, and the midnight reset or an import must not carry it
+                  into the next, nor a task half carried between intentions.
+                  Only this; the backlog's own add fields describe long-lived
+                  records and keep what is typed in them. */}
+              <section aria-label="Today" className="mt-8 border-t border-line pt-6">
+                <div className="max-w-3xl">
+                  <TodaySection key={generation} />
+                </div>
+              </section>
 
-                <Carry.Provider value={carry}>
-                    {/* One rule above the first band and one under each, so every
-                        area reads as its own band and the last is closed off from
-                        the control that adds another. */}
-                    <div className="mt-8 border-t border-line">
-                      {areas.map((area) => (
-                        <AreaBand key={area.id} area={area} items={items} today={today} />
-                      ))}
-                    </div>
+              <Carry.Provider value={carry}>
+                {/* One rule above the first band and one under each, so every
+                    area reads as its own band and the last is closed off from
+                    the control that adds another. */}
+                <div className="mt-8 border-t border-line">
+                  {areas.map((area) => (
+                    <AreaBand key={area.id} area={area} items={items} today={today} />
+                  ))}
+                </div>
 
-                    <div className="mt-6">
-                      <AddForm
-                        opener="Add area"
-                        variant="prominent"
-                        label="New area"
-                        placeholder="Health, Home, Side project"
-                        maxLength={60}
-                        className="max-w-md"
-                        onAdd={addArea}
-                      />
+                <div className="mt-6">
+                  <AddForm
+                    opener="Add area"
+                    variant="prominent"
+                    label="New area"
+                    placeholder="Health, Home, Side project"
+                    maxLength={60}
+                    className="max-w-md"
+                    onAdd={addArea}
+                  />
 
-                      {archived.length > 0 && (
-                        <details className="mt-4">
-                          <summary className="cursor-pointer text-xs text-muted hover:text-body">
-                            Archived ({archived.length})
-                          </summary>
-                          <ul className="mt-2 flex max-w-md flex-col gap-1.5">
-                            {archived.map((area) => (
-                              <li key={area.id} className="flex items-center justify-between gap-3 text-sm">
-                                <span className="min-w-0 wrap-break-word text-muted">{area.name}</span>
-                                <IconButton
-                                  onClick={() => unarchiveArea(area.id)}
-                                  label={`Restore ${area.name}`}
-                                  hint="Restore"
-                                >
-                                  <RestoreIcon />
-                                </IconButton>
-                              </li>
-                            ))}
-                          </ul>
-                        </details>
-                      )}
-                    </div>
-                    <CarryStatus />
-                </Carry.Provider>
-              </AddFields.Provider>
-            </>
+                  {archived.length > 0 && (
+                    <details className="mt-4">
+                      <summary className="cursor-pointer text-xs text-muted hover:text-body">
+                        Archived ({archived.length})
+                      </summary>
+                      <ul className="mt-2 flex max-w-md flex-col gap-1.5">
+                        {archived.map((area) => (
+                          <li key={area.id} className="group/row flex items-center justify-between gap-3 text-sm">
+                            <span className="min-w-0 wrap-break-word text-muted">{area.name}</span>
+                            <IconButton
+                              onClick={() => unarchiveArea(area.id)}
+                              label={`Restore ${area.name}`}
+                              hint="Restore"
+                              className={revealOnHover}
+                            >
+                              <RestoreIcon />
+                            </IconButton>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </div>
+                <CarryStatus />
+              </Carry.Provider>
+            </AddFields.Provider>
           )}
         </main>
       </div>
-
     </div>
-  )
-}
-
-function Section({ title, children }: { title: string; children: ReactNode }) {
-  const headingId = useId()
-  return (
-    <section aria-labelledby={headingId} className="mt-8 border-t border-line pt-6">
-      <h2 id={headingId} className="mb-3 text-xs font-medium tracking-widest text-muted uppercase">
-        {title}
-      </h2>
-      {/* Lines of text, so held to a reading width while the bands go wide. */}
-      <div className="max-w-3xl">{children}</div>
-    </section>
   )
 }
 
@@ -276,7 +269,7 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
  * any other that is empty, and opening another folds it while nothing has been
  * written in it.
  */
-function TodaySection({ today, intentions }: { today: Today; intentions: readonly Intention[] }) {
+function TodaySection() {
   const [intention, setIntention] = useState<string | null>(null)
   const formId = useId()
   const { current, claim } = useContext(AddFields)
@@ -286,10 +279,11 @@ function TodaySection({ today, intentions }: { today: Today; intentions: readonl
   }, [current, formId])
 
   return (
-    <TodayCarry today={today}>
+    <TodayCarry>
       <TodayList
-        today={today}
-        intentions={intentions}
+        heading={
+          <h2 className="text-xs font-medium tracking-widest text-muted uppercase">Today</h2>
+        }
         newIntention={intention}
         onNewIntention={(next) => {
           if (intention === null && next !== null) claim(formId)
@@ -332,6 +326,7 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
   return (
     <div className="border-b border-line py-2">
       <Row
+        className="group/row"
         side={
           // A rename puts a form where the heading was, since a form cannot
           // sit inside a heading.
@@ -339,7 +334,7 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
             <h2 className="text-lg text-bright wrap-break-word">{area.name}</h2>
           ) : (
             <div className="flex">
-              <InlineEdit
+              <RenameField
                 label={`Rename ${area.name}`}
                 value={renaming}
                 onChange={setRenaming}
@@ -355,16 +350,27 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
       >
         {renaming === null && (
           <div className="flex flex-wrap items-center gap-x-1 gap-y-1 md:justify-end md:pt-0.5">
-            <IconButton onClick={() => setRenaming(area.name)} label={`Rename ${area.name}`} hint="Rename">
+            <IconButton
+              onClick={() => setRenaming(area.name)}
+              label={`Rename ${area.name}`}
+              hint="Rename"
+              className={revealOnHover}
+            >
               <EditGlyph />
             </IconButton>
-            <IconButton onClick={() => archiveArea(area.id)} label={`Archive ${area.name}`} hint="Archive">
+            <IconButton
+              onClick={() => archiveArea(area.id)}
+              label={`Archive ${area.name}`}
+              hint="Archive"
+              className={revealOnHover}
+            >
               <ArchiveIcon />
             </IconButton>
             <DeleteButton
               title={area.name}
               inside={liveInside(area.id, tree.items)}
               onDelete={() => deleteArea(area.id)}
+              className={revealOnHover}
             />
           </div>
         )}
@@ -414,7 +420,17 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
  * Below `md` the halves stack, and a short rule down the left of the second
  * half keeps it reading as belonging to the first.
  */
-function Row({ side, label, children }: { side: ReactNode; label?: string; children?: ReactNode }) {
+function Row({
+  side,
+  label,
+  className = '',
+  children,
+}: {
+  side: ReactNode
+  label?: string
+  className?: string
+  children?: ReactNode
+}) {
   const cells = (
     <>
       <div className="min-w-0 py-2 md:border-r md:border-line md:py-3 md:pr-5">{side}</div>
@@ -425,7 +441,7 @@ function Row({ side, label, children }: { side: ReactNode; label?: string; child
       )}
     </>
   )
-  const layout = 'grid md:grid-cols-[14rem_minmax(0,1fr)]'
+  const layout = `grid md:grid-cols-[14rem_minmax(0,1fr)] ${className}`
   return label === undefined ? (
     <div className={layout}>{cells}</div>
   ) : (
@@ -542,24 +558,40 @@ function ContainerCard({ item, allItems }: { item: Item; allItems: readonly Item
   const Heading = item.kind === 'epic' ? 'h3' : 'h4'
 
   return (
-    <div className="rounded-xl border border-muted bg-surface/40 px-3 py-2.5">
+    <div className="group/row rounded-xl border border-muted bg-surface/40 px-3 py-2.5">
       <div className="flex flex-wrap items-center justify-between gap-x-2">
         <span className="text-[10px] font-medium tracking-widest text-muted uppercase">{noun}</span>
         {renaming === null && (
           <span className="-mr-1.5 -mb-0.5 flex flex-wrap items-center justify-end">
-            <IconButton onClick={() => setRenaming(item.title)} label={`Rename ${item.title}`} hint="Rename">
+            <IconButton
+              onClick={() => setRenaming(item.title)}
+              label={`Rename ${item.title}`}
+              hint="Rename"
+              className={revealOnHover}
+            >
               <EditGlyph />
             </IconButton>
-            <IconButton onClick={() => completeItem(item.id)} label={`Mark ${item.title} done`} hint="Done">
+            <IconButton
+              onClick={() => completeItem(item.id)}
+              label={`Mark ${item.title} done`}
+              hint="Done"
+              className={revealOnHover}
+            >
               <CheckIcon />
             </IconButton>
-            <IconButton onClick={() => archiveItem(item.id)} label={`Archive ${item.title}`} hint="Archive">
+            <IconButton
+              onClick={() => archiveItem(item.id)}
+              label={`Archive ${item.title}`}
+              hint="Archive"
+              className={revealOnHover}
+            >
               <ArchiveIcon />
             </IconButton>
             <DeleteButton
               title={item.title}
               inside={liveInside(item.id, allItems)}
               onDelete={() => deleteItem(item.id)}
+              className={revealOnHover}
             />
           </span>
         )}
@@ -568,7 +600,7 @@ function ContainerCard({ item, allItems }: { item: Item; allItems: readonly Item
         <Heading className="mt-0.5 text-sm text-bright wrap-break-word">{item.title}</Heading>
       ) : (
         <div className="mt-1 flex">
-          <InlineEdit
+          <RenameField
             label={`Rename ${item.title}`}
             value={renaming}
             onChange={setRenaming}
@@ -792,7 +824,7 @@ function TaskRow({ task, chosen }: { task: Item; chosen: boolean }) {
   return (
     <li
       {...dragProps}
-      className={`rounded-lg border px-3 py-2 ${
+      className={`group/row rounded-lg border px-3 py-2 ${
         picked ? 'border-dashed border-deep/70 bg-surface/60' : 'border-muted/70'
       }`}
     >
@@ -815,13 +847,13 @@ function TaskRow({ task, chosen }: { task: Item; chosen: boolean }) {
               onClick={() => setRenaming(task.title)}
               label={`Rename ${task.title}`}
               hint="Rename"
-              className="-my-0.5 -mr-1.5"
+              className={`-my-0.5 -mr-1.5 ${revealOnHover}`}
             >
               <EditGlyph />
             </IconButton>
           </>
         ) : (
-          <InlineEdit
+          <RenameField
             label={`Rename ${task.title}`}
             value={renaming}
             onChange={setRenaming}
@@ -844,8 +876,10 @@ function TaskRow({ task, chosen }: { task: Item; chosen: boolean }) {
             aria-label={`${task.title} for today`}
             aria-pressed={chosen}
             title={chosen ? 'Today — take it out' : 'Add to today'}
+            // Chosen, it says so and stays; otherwise it is an action like
+            // the others, shown on hover.
             className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1 transition hover:bg-surface-raised hover:text-bright ${
-              chosen ? 'text-deep' : 'text-muted'
+              chosen ? 'text-deep' : `text-muted ${revealOnHover}`
             }`}
           >
             <TodayIcon chosen={chosen} />
@@ -853,10 +887,21 @@ function TaskRow({ task, chosen }: { task: Item; chosen: boolean }) {
           </button>
         </span>
         <span className="-my-1 -mr-1.5 ml-auto flex">
-          <IconButton onClick={() => dropItem(task.id)} label={`Drop ${task.title}`} hint="Drop">
+          <IconButton
+            onClick={() => dropItem(task.id)}
+            label={`Drop ${task.title}`}
+            hint="Drop"
+            className={revealOnHover}
+          >
             <DropIcon />
           </IconButton>
-          <IconButton danger onClick={() => deleteItem(task.id)} label={`Delete ${task.title}`} hint="Delete">
+          <IconButton
+            danger
+            onClick={() => deleteItem(task.id)}
+            label={`Delete ${task.title}`}
+            hint="Delete"
+            className={revealOnHover}
+          >
             <DeleteIcon />
           </IconButton>
         </span>
@@ -877,11 +922,14 @@ function DeleteButton({
   title,
   inside,
   onDelete,
+  className = '',
 }: {
   title: string
   /** How many live items would go with it. */
   inside: number
   onDelete: () => void
+  /** For the icon at rest only: a question being asked stays on screen. */
+  className?: string
 }) {
   const [asking, setAsking] = useState(false)
 
@@ -892,6 +940,7 @@ function DeleteButton({
         onClick={() => (inside === 0 ? onDelete() : setAsking(true))}
         label={`Delete ${title}`}
         hint="Delete"
+        className={className}
       >
         <DeleteIcon />
       </IconButton>
@@ -1014,7 +1063,7 @@ function PutAwayCard({ item, allItems }: { item: Item; allItems: readonly Item[]
   const state = putAwayState(item)
 
   return (
-    <li className="rounded-lg border border-line px-2.5 py-2">
+    <li className="group/row rounded-lg border border-line px-2.5 py-2">
       {/* Wraps, so a delete that asks first drops to a line of its own
           rather than squeezing the title. */}
       <div className="flex flex-wrap items-start gap-x-2">
@@ -1027,11 +1076,21 @@ function PutAwayCard({ item, allItems }: { item: Item; allItems: readonly Item[]
         </div>
         <span className="-my-0.5 -mr-1.5 ml-auto flex flex-wrap items-center justify-end">
           {state === 'archived' ? (
-            <IconButton onClick={() => unarchiveItem(item.id)} label={`Restore ${item.title}`} hint="Restore">
+            <IconButton
+              onClick={() => unarchiveItem(item.id)}
+              label={`Restore ${item.title}`}
+              hint="Restore"
+              className={revealOnHover}
+            >
               <RestoreIcon />
             </IconButton>
           ) : (
-            <IconButton onClick={() => reopenItem(item.id)} label={`Reopen ${item.title}`} hint="Reopen">
+            <IconButton
+              onClick={() => reopenItem(item.id)}
+              label={`Reopen ${item.title}`}
+              hint="Reopen"
+              className={revealOnHover}
+            >
               <ReopenIcon />
             </IconButton>
           )}
@@ -1039,6 +1098,7 @@ function PutAwayCard({ item, allItems }: { item: Item; allItems: readonly Item[]
             title={item.title}
             inside={liveInside(item.id, allItems)}
             onDelete={() => deleteItem(item.id)}
+            className={revealOnHover}
           />
         </span>
       </div>
@@ -1091,45 +1151,6 @@ const isOpenContainer = (item: Item): boolean =>
  */
 const finishedTasks = (children: readonly Item[]): Item[] =>
   children.filter((i) => i.kind === 'task' && (i.status !== 'open' || i.archivedAt !== undefined))
-
-function InlineEdit({
-  label,
-  value,
-  onChange,
-  onSave,
-  onCancel,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  onSave: () => void
-  onCancel: () => void
-}) {
-  return (
-    <form
-      className="flex min-w-0 flex-1 gap-2"
-      onSubmit={(e) => {
-        e.preventDefault()
-        onSave()
-      }}
-    >
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => e.key === 'Escape' && onCancel()}
-        aria-label={label}
-        // A rename is asked for by a click on this row, so the field it opens
-        // is the one place the user is about to type.
-        autoFocus
-        maxLength={120}
-        className={`${fieldClass} py-1 text-sm`}
-      />
-      <GhostButton type="submit" disabled={value.trim() === ''} className="shrink-0 px-3 py-1 text-xs">
-        Save
-      </GhostButton>
-    </form>
-  )
-}
 
 function TextButton({
   onClick,

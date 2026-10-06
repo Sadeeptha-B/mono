@@ -1,20 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  blockIntentions,
   carriedOver,
   isToday,
   tasksOfIntention,
   todayTaskIds,
   ungroupedToday,
 } from './today'
-import type { Intention } from './types'
-
-const intentions: Intention[] = [
-  { id: 'auth', title: 'Mono auth' },
-  { id: 'billing', title: 'Billing ticket' },
-  { id: 'reading', title: 'Read the paper' },
-]
 
 const today = { login: 'auth', invoice: 'billing', stray: null, csrf: 'auth' }
 
@@ -31,18 +23,6 @@ describe('today', () => {
   it('finds the tasks under one intention, and the ones under none', () => {
     expect(tasksOfIntention('auth', today)).toEqual(['login', 'csrf'])
     expect(ungroupedToday(today)).toEqual(['stray'])
-  })
-})
-
-describe('blockIntentions', () => {
-  it("derives a block's intentions from its tasks, in the day's order", () => {
-    expect(
-      blockIntentions(['invoice', 'login', 'csrf'], today, intentions).map((i) => i.id),
-    ).toEqual(['auth', 'billing'])
-  })
-
-  it('leaves out a task under no intention, or not today at all', () => {
-    expect(blockIntentions(['stray', 'elsewhere'], today, intentions)).toEqual([])
   })
 })
 

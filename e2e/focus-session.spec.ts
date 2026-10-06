@@ -231,7 +231,7 @@ test('an open calendar editor closes when Mono asks what happened', async ({ pag
   await shapeDay(page)
   await startBlock(page, 'Write the planner tests')
 
-  await calendar(page).getByRole('button', { name: '+ Commitment' }).click()
+  await calendar(page).getByRole('button', { name: 'Commitment', exact: true }).click()
   await expect(calendar(page).getByLabel('What', { exact: true })).toBeVisible()
 
   // The machine slept across the end of the block.
@@ -300,7 +300,7 @@ test('the commitment form accepts typing while the clock is running', async ({ p
   // And the same for the calendar's own composer.
   await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
   await startDay(page)
-  await calendar(page).getByRole('button', { name: '+ Commitment' }).click()
+  await calendar(page).getByRole('button', { name: 'Commitment', exact: true }).click()
 
   const composerTitle = calendar(page).getByLabel('What', { exact: true })
   await composerTitle.pressSequentially('Design review', { delay: 120 })

@@ -12,6 +12,7 @@ import {
   startDay,
   storedItems,
   storedRecord,
+  todayBrowser,
   todayList,
 } from './support/mono'
 
@@ -164,10 +165,12 @@ test('a task is chosen for today with the sun on its row, and taken out again', 
   await expect(today).toContainText('Login form')
   await expect(sun).toHaveAttribute('aria-pressed', 'true')
 
-  // And the purpose prompt offers it among today's tasks.
+  // And the purpose prompt shows it in today's list, beside All Tasks.
   await page.getByRole('link', { name: 'Back to today' }).click()
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
-  await expect(stage(page).getByRole('checkbox', { name: 'Login form' })).toBeVisible()
+  await expect(
+    page.getByRole('complementary').getByRole('region', { name: "Today's tasks", exact: true }),
+  ).toContainText('Login form')
   await stage(page).getByRole('button', { name: 'Not yet' }).click()
 
   // Taken out from today's own list, it stays in the backlog.
@@ -447,7 +450,7 @@ test("a task ticked today stays in today's backlog, crossed out rather than offe
 
   await page.getByRole('link', { name: 'Back to today' }).click()
   await goToStage(page, 'Today')
-  const tree = stage(page).getByRole('group', { name: 'Tasks for today', exact: true })
+  const tree = todayBrowser(page)
   await expect(tree.getByRole('checkbox', { name: 'CSRF token' })).toBeVisible()
   await expect(tree.getByText('Login form', { exact: true })).toHaveCSS(
     'text-decoration-line',

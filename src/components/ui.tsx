@@ -1,5 +1,6 @@
 /**
- * The small shared pieces: buttons, icon buttons and form field styling.
+ * The small shared pieces: buttons, icon buttons, in-place fields and form
+ * field styling.
  *
  * These live outside `prompts/` because most of Mono's decisions are now made
  * inline on the stage rather than in a dialog, and the two should look
@@ -15,7 +16,6 @@ import {
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
-  type Ref,
 } from 'react'
 
 import { coerceBoundedMinutes } from './minutes'
@@ -87,8 +87,21 @@ export function PageLinks({ current }: { current: Route }) {
 export const EditGlyph = () => <span className="inline-block -scale-x-100">✎</span>
 
 /**
+ * A row's actions, shown on hover or while focus is in the row, and always on
+ * a touch screen, which has no hover. Put `group/row` on the row.
+ *
+ * Faded rather than removed, so each control keeps its place and is still
+ * there to be tabbed to: focusing one is what shows it. At rest a list reads
+ * as its titles; the actions are a pointer or a Tab away. Used by All Tasks and
+ * the tasks page alike, so the two are kept the same way.
+ */
+export const revealOnHover =
+  'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:opacity-100'
+
+/**
  * An action drawn as an icon (`icons.tsx`, or `EditGlyph`) rather than a word:
- * the tasks page's rename, done, drop, archive, reopen, restore and delete.
+ * the tasks page's rename, done, drop, archive, reopen, restore and delete,
+ * and the same actions on a place in All Tasks.
  *
  * A row or card there carries up to four of these, and as words they were most
  * of what a narrow column held, pushing the titles they act on out of the way.
@@ -321,7 +334,7 @@ export function AddFold({
 }
 
 /** A chevron pointing at what it would show: right while folded, down while open. */
-export function Caret({ open }: { open: boolean }) {
+function Caret({ open }: { open: boolean }) {
   return (
     <svg
       aria-hidden="true"
@@ -433,50 +446,135 @@ export function MinutesInput({
 }
 
 /**
- * A native select with a short word in front of it, such as "in Work".
+ * A name written in place, followed by a ✓ that keeps it and a × that lets it
+ * go: a new intention, a new task or place in All Tasks, a rename there.
  *
- * Native because it is the right control for a short flat list in a dense row
- * — the platform's own picker on a phone, type to jump on a desktop — and
- * because a custom one would be a component to keep accessible for no gain.
- * Today's field for a new task uses it to choose the area. A choice among
- * tasks in the backlog is not flat, and has `TaskBrowser`, which draws it as
- * the tree it is.
+ * The field and its two buttons only; the caller draws the frame around them,
+ * which is what differs from one surface to the next. Enter is `onEnter` and
+ * never submits a form the field sits in. Escape is the × and goes no further,
+ * so an open menu around the field keeps its own Escape.
  */
-export function InlineSelect({
-  label,
-  prefix,
+export function KeepField({
   value,
   onChange,
-  options,
-  wide = false,
-  ref,
+  onEnter,
+  onKeep,
+  onCancel,
+  label,
+  keepLabel,
+  cancelLabel,
+  placeholder,
+  inputClassName,
+  autoFocus = false,
+  focusKey,
 }: {
-  label: string
-  prefix: string
   value: string
   onChange: (value: string) => void
-  options: readonly { value: string; name: string }[]
-  /** Room for a full path rather than a single name. */
-  wide?: boolean
-  /** For a caller that mounts the select on demand and opens it at once. */
-  ref?: Ref<HTMLSelectElement>
+  onEnter: () => void
+  onKeep: () => void
+  onCancel: () => void
+  label: string
+  keepLabel: string
+  cancelLabel: string
+  placeholder: string
+  inputClassName: string
+  /** Only where the press that drew the field asked for exactly it. */
+  autoFocus?: boolean
+  /** A key a caller can find the field by to focus it after it is drawn. */
+  focusKey?: string
 }) {
   return (
-    <label className="flex min-w-0 items-center gap-1.5 text-muted">
-      <span>{prefix}</span>
-      <select
-        ref={ref}
+    <>
+      <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            onEnter()
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            e.stopPropagation()
+            onCancel()
+          }
+        }}
+        placeholder={placeholder}
         aria-label={label}
-        className={`${wide ? 'max-w-[18rem]' : 'max-w-[11rem]'} min-w-0 truncate rounded-md border border-muted/70 bg-ink px-1.5 py-0.5 text-body focus:border-deep focus:outline-none`}
+        autoFocus={autoFocus}
+        {...(focusKey !== undefined ? { 'data-focus-key': focusKey } : {})}
+        maxLength={120}
+        className={inputClassName}
+      />
+      <button
+        type="button"
+        onClick={onKeep}
+        aria-label={keepLabel}
+        className="shrink-0 px-0.5 text-deep transition hover:text-bright"
       >
-        {options.map((option) => (
-          <option key={option.value} value={option.value}>
-            {option.name}
-          </option>
-        ))}
-      </select>
-    </label>
+        ✓
+      </button>
+      <button
+        type="button"
+        onClick={onCancel}
+        aria-label={cancelLabel}
+        className="shrink-0 px-0.5 text-muted transition hover:text-bright"
+      >
+        ×
+      </button>
+    </>
+  )
+}
+
+/**
+ * A title rewritten in place, on the tasks page and in today's list: Enter or
+ * `Save` keeps it, and neither keeps an empty one; Escape does not. Opened by
+ * a press on that row's ✎, so it takes focus as it mounts. Never a form, so
+ * it can sit inside one.
+ */
+export function RenameField({
+  label,
+  value,
+  onChange,
+  onSave,
+  onCancel,
+  textClass = 'text-sm',
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+  onSave: () => void
+  onCancel: () => void
+  textClass?: 'text-sm' | 'text-[15px]'
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 items-center gap-2">
+      <input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault()
+            if (value.trim() !== '') onSave()
+          }
+          if (e.key === 'Escape') {
+            e.preventDefault()
+            onCancel()
+          }
+        }}
+        aria-label={label}
+        autoFocus
+        maxLength={120}
+        className={`${fieldClass} py-1 ${textClass}`}
+      />
+      <GhostButton
+        type="button"
+        disabled={value.trim() === ''}
+        onClick={onSave}
+        className="shrink-0 px-3 py-1 text-xs"
+      >
+        Save
+      </GhostButton>
+    </div>
   )
 }
