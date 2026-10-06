@@ -85,7 +85,7 @@ export const setupStageName = (stage: SetupStageId): string =>
  *
  * Mid-block is the case this excludes, and deliberately. The strip must never
  * offer a way out of "One thing" — naming the block is the product — and the
- * calendar's own `Hours` and `+ Commitment` are right there for a day whose
+ * calendar's own `Hours` and `Commitment` are right there for a day whose
  * shape changed while you were working.
  */
 export const setupReachable = (phase: Phase): boolean => phase.name === 'idle'

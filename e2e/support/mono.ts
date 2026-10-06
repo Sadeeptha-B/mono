@@ -100,7 +100,7 @@ export const todayList = (page: Page) =>
 
 /** The backlog drawn in place on today's question, where a tick chooses a task for today. */
 export const todayBrowser = (page: Page) =>
-  stage(page).getByRole('group', { name: 'Tasks for today', exact: true })
+  page.getByRole('complementary').getByRole('group', { name: 'Tasks for today', exact: true })
 
 /**
  * Write a task into an area's inbox from All Tasks on the opening question,
@@ -109,12 +109,30 @@ export const todayBrowser = (page: Page) =>
 export async function addTodayTask(page: Page, title: string, area = 'Work') {
   const browser = todayBrowser(page)
   const field = browser.getByLabel(`New task in ${area}`, { exact: true })
-  if (!(await field.isVisible())) {
-    await browser.getByRole('button', { name: `Add a task to ${area}`, exact: true }).click()
-  }
+  if (!(await field.isVisible())) await addTaskIn(browser, area)
   await field.fill(title)
   await field.press('Enter')
   await browser.getByRole('button', { name: `Cancel the new task in ${area}`, exact: true }).click()
+}
+
+/**
+ * Open a new task's field under a place in All Tasks: `+ Task` is in the popup
+ * the place's `⋯` opens.
+ */
+export async function addTaskIn(browser: Locator, place: string) {
+  await browser.getByRole('button', { name: `More for ${place}`, exact: true }).click()
+  await browser.getByRole('button', { name: `Add a task to ${place}`, exact: true }).click()
+}
+
+/**
+ * Press one of a task's actions in All Tasks. They are in the popup its `⋯`
+ * opens, and the `⋯` shows on hover, so the row is pointed at first, as a hand
+ * would.
+ */
+export async function taskAction(browser: Locator, title: string, action: string) {
+  await browser.getByText(title, { exact: true }).first().hover()
+  await browser.getByRole('button', { name: `More for task ${title}`, exact: true }).click()
+  await browser.getByRole('button', { name: action, exact: true }).click()
 }
 
 /** Name an intention to group today's tasks under, on the opening question. */
@@ -165,29 +183,37 @@ export async function shapeDay(page: Page) {
 
 /**
  * Write a task down on the purpose prompt and tick it for this block: written
- * into an area's inbox from All Tasks, folded under today's tasks, outside
- * today until the block starts.
+ * into an area's inbox from All Tasks, in the column beside the prompt, which
+ * chooses it for today as it is ticked.
  *
  * The default title is deliberately unlike any purpose a spec types, so a
  * text query for the purpose never also finds the task listed under the timer.
  */
 export async function addBlockTask(page: Page, title = 'The task at hand', area = 'Work') {
   const browser = await openBlockBacklog(page)
-  await browser.getByRole('button', { name: `Add a task to ${area}`, exact: true }).click()
+  await addTaskIn(browser, area)
   const field = browser.getByLabel(`New task in ${area}`, { exact: true })
   await field.fill(title)
   await field.press('Enter')
   await browser.getByRole('button', { name: `Cancel the new task in ${area}`, exact: true }).click()
 }
 
-/** The purpose prompt's backlog, where a tick is for this block alone. */
+/** The purpose prompt's backlog, where a tick is for this block. */
 export const blockBacklog = (page: Page) =>
-  stage(page).getByRole('group', { name: 'Tasks for this block', exact: true })
+  page.getByRole('complementary').getByRole('group', { name: 'Tasks for this block', exact: true })
 
-/** Unfold the purpose prompt's backlog if it is folded, and hand it back. */
+/**
+ * The purpose prompt's backlog, turned back to with the column's switch if
+ * the day was chosen there instead, and handed back.
+ */
 export async function openBlockBacklog(page: Page) {
   const browser = blockBacklog(page)
-  if (!(await browser.isVisible())) await stage(page).getByText('All Tasks', { exact: true }).click()
+  if (!(await browser.isVisible())) {
+    await page
+      .getByRole('group', { name: 'Show in this column' })
+      .getByRole('button', { name: 'All Tasks', exact: true })
+      .click()
+  }
   await expect(browser).toBeVisible()
   return browser
 }

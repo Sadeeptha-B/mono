@@ -19,7 +19,7 @@
  * a reload starts it at remaining time again.
  */
 
-import { useEffect, useLayoutEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 
 import { Clock } from '@/components/Clock'
@@ -36,6 +36,15 @@ import {
   type SetupStageId,
 } from '@/components/stage/stages'
 import { DayCalendar } from '@/components/Timeline/DayCalendar'
+import {
+  AllTasksPane,
+  ColumnSwitch,
+  type ChoosingFor,
+  type ColumnView,
+} from '@/components/AllTasksPane'
+import { emptyBlockPick, pickedInPlay, tickTasks, type BlockPick } from '@/components/blockPick'
+import { TodayCarry } from '@/components/TodayList'
+import { useTodayBacklog } from '@/components/useTodayBacklog'
 import { StorageWarning } from '@/components/StorageWarning'
 import {
   hoursToSave,
@@ -63,6 +72,7 @@ import { dayProgressFor } from '@/domain/dayProgress'
 import { dayKey, formatDuration, isWithinRegions, nextRegionStart } from '@/domain/time'
 import type { TimerMode } from '@/domain/time'
 import { useSession, useStorageHealth, toPlanInput, selectRegions } from '@/store/session'
+import { isToday } from '@/domain/today'
 import { playChime, unlockAudio } from '@/ambient/audio'
 import type { TodayTimer } from '@/components/stage/TodayPanel'
 import { minutesToMs, type BlockKind, type Ms } from '@/domain/types'
@@ -212,8 +222,24 @@ export function App() {
    * and on any re-visit, only from its own button.
    */
   const [todayTimer, setTodayTimer] = useState<TodayTimer | null>(null)
+  /**
+   * Which view the right column shows, chosen by hand, and for which question.
+   * Only ever set while a question that chooses tasks is open, and forgotten
+   * when it closes; otherwise the column follows the question's default — see
+   * `AllTasksPane`.
+   */
+  const [columnChoice, setColumnChoice] = useState<{ for: ChoosingFor; view: ColumnView } | null>(
+    null,
+  )
+  /**
+   * What the purpose prompt has ticked for its block, here rather than in the
+   * prompt because All Tasks in the other column ticks for it too. Emptied
+   * each time the prompt opens — see `blockPick.ts`.
+   */
+  const [blockPick, setBlockPick] = useState<BlockPick>(emptyBlockPick)
 
   const { phase, session } = store
+  const todayBacklog = useTodayBacklog()
   const today = dayKey(now)
   const ambience = useAmbience({
     selection: session.settings.ambience,
@@ -313,6 +339,8 @@ export function App() {
     setRevisitingSetup(false)
     setTodayTimer(null)
     setComposer(null)
+    setColumnChoice(null)
+    setBlockPick(emptyBlockPick)
     // The calendar's own drafts are cleared by remounting — the composers
     // unmount with the editor, the stage panel is keyed on the generation. This
     // one outlives both, so it is cleared by hand: hours typed at 23:59 are
@@ -335,10 +363,41 @@ export function App() {
   if (seenPhase !== phase.name) {
     setSeenPhase(phase.name)
     if (phase.name === 'reconciling') setComposer(null)
+    // A new purpose prompt starts with nothing ticked.
+    if (phase.name === 'definingPurpose') setBlockPick(emptyBlockPick)
   }
 
-
   const stage = stageFor(phase, setupOpen, setupStage)
+
+  // The question choosing tasks, if one is open: while it is, the column shows
+  // All Tasks instead of the day, and its switch turns it back. A choice made
+  // by hand lasts until the question closes, adjusted during render so a stale
+  // choice is never painted.
+  const choosingFor: ChoosingFor | null =
+    stage === 'today' ? 'today' : phase.name === 'definingPurpose' ? 'block' : null
+  if (columnChoice !== null && columnChoice.for !== choosingFor) setColumnChoice(null)
+  const columnView: ColumnView =
+    choosingFor === null
+      ? 'day'
+      : columnChoice?.for === choosingFor
+        ? columnChoice.view
+        : 'tasks'
+  const showColumn = (view: ColumnView) => {
+    if (choosingFor !== null) setColumnChoice({ for: choosingFor, view })
+  }
+  const blockSelected = useMemo(
+    () => pickedInPlay(blockPick, todayBacklog.offered, session.today),
+    [blockPick, todayBacklog.offered, session.today],
+  )
+  // A task ticked for the block is chosen for today as it is ticked: the block
+  // is the day doing it. Unticking leaves it today's. Read from the store
+  // rather than closed over, so the handler stays stable across the tick.
+  const tickForBlock = useCallback((taskId: string, on: boolean) => {
+    const { session, addToToday } = useSession.getState()
+    if (on && !isToday(session.today, taskId)) addToToday(taskId)
+    setBlockPick((pick) => tickTasks(pick, [taskId], on))
+  }, [])
+  const columnSwitch = <ColumnSwitch view={columnView} onView={showColumn} />
 
   const startTodayTimer = (at: Ms) =>
     setTodayTimer({
@@ -553,7 +612,6 @@ export function App() {
         // shows out here as it does beside it.
         regions={planInput.regions}
         intentions={session.intentions}
-        today={session.today}
         todayTimer={todayTimer}
         // Both clocks chime at zero, and a click out here is the gesture that
         // lets that chime be heard, as the stage's own play buttons do.
@@ -667,141 +725,155 @@ export function App() {
           </div>
         </header>
 
-        <div className="grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[1fr_22rem]">
-          <main className="mono-scroll min-w-0 flex flex-col rounded-2xl border border-line bg-surface p-5 sm:p-8 lg:min-h-0 lg:overflow-y-auto">
-            {/* The clock and the companion share a line, and on a phone they
-                are within a few pixels of not fitting on one. Both give ground
-                rather than one of them wrapping under the other. */}
-            <div className="flex items-start justify-between gap-3 sm:gap-6">
-              <Clock now={now} />
-              {!dayDone && (
-                <Companion
+        {/* One hand for carrying tasks around both columns, so a task can be
+            dragged from All Tasks onto one of today's intentions on the stage. */}
+        <TodayCarry>
+          <div className="grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[1fr_22rem]">
+            <main className="mono-scroll min-w-0 flex flex-col rounded-2xl border border-line bg-surface p-5 sm:p-8 lg:min-h-0 lg:overflow-y-auto">
+              {/* The clock and the companion share a line, and on a phone they
+                  are within a few pixels of not fitting on one. Both give ground
+                  rather than one of them wrapping under the other. */}
+              <div className="flex items-start justify-between gap-3 sm:gap-6">
+                <Clock now={now} />
+                {!dayDone && (
+                  <Companion
+                    now={now}
+                    phase={phase}
+                    active={session.active}
+                    history={session.history}
+                    roomId={session.settings.roomId}
+                    dayProgress={dayProgress}
+                    canShrink
+                  />
+                )}
+              </div>
+
+              {/* The stage: every prompt Mono makes happens here, in place. */}
+              {/* The stage is centred in whatever room is left, with the stage
+                  strip under it. Kept tight on purpose: the setup panel is the
+                  tallest thing Mono ever shows, and its Start control has to
+                  stay above the fold on a laptop in landscape. */}
+              <div className="flex flex-1 flex-col justify-center gap-4 py-4">
+                {/* Keyed by the session's generation so a rollover or an import
+                    re-seeds every draft a panel is holding: the commitment being
+                    written, the purpose being typed, the break length chosen. All
+                    of it describes one particular session, and none of it has
+                    anywhere else to be reset from. (Today's hours is the
+                    exception, and the only one: it is held above this key so the
+                    calendar can draw it, so it is reset by hand instead.) Safe to
+                    remount because neither discontinuity can happen while a
+                    segment is running — the rollover returns early, and an import
+                    lands idle — so there is no timer here to interrupt. */}
+                <Stage
+                  key={store.generation}
                   now={now}
                   phase={phase}
                   active={session.active}
-                  history={session.history}
-                  roomId={session.settings.roomId}
+                  timerMode={timerMode}
+                  onToggleTimerMode={toggleTimerMode}
+                  settings={session.settings}
                   dayProgress={dayProgress}
-                  canShrink
+                  dayDone={dayDone}
+                  ambience={ambience}
+                  setupOpen={setupOpen}
+                  revisitingSetup={setupOpen && dayShaped}
+                  setupStage={setupStage}
+                  onSetupStage={goToSetupStage}
+                  commitments={session.commitments}
+                  // The day as the calendar is drawing it, draft included, so
+                  // the question and the timeline beside it cannot disagree
+                  // about whether any hours have been declared at all.
+                  regions={planInput.regions}
+                  hours={hoursDraft}
+                  onHours={onHoursDraft}
+                  withinHours={withinHours}
+                  hasRegions={timeline.regions.length > 0}
+                  nextRegionStart={upNext}
+                  nextBlockKind={nextBlockKind}
+                  // `now`, not `Date.now()`: the cost quoted in the prompt should
+                  // be the cost against the timeline drawn beside it, and the
+                  // baseline is that very timeline rather than a second derive.
+                  costOf={(minutes) => breakCost(planInput, now, minutes, timeline)}
+                  onAddCommitment={store.addCommitment}
+                  onUpdateCommitment={store.updateCommitment}
+                  onRemoveCommitment={store.removeCommitment}
+                  planned={planned}
+                  todayTimer={todayTimer}
+                  onStartTodayTimer={() => {
+                    popOutForDeciding()
+                    startTodayTimer(Date.now())
+                  }}
+                  onDayShaped={finishSetup}
+                  onEditHours={() => openComposer({ kind: 'hours' })}
+                  onStartBlock={startBlock}
+                  onSetPurpose={setPurpose}
+                  blockSelected={blockSelected}
+                  onBlockTick={tickForBlock}
+                  onStartDeciding={startDeciding}
+                  onAbandon={() => store.dispatch({ type: 'abandonBlock', at: Date.now() })}
+                  onTakeBreak={() => store.dispatch({ type: 'takeBreak', at: Date.now() })}
+                  onSkipBreak={(kind) =>
+                    store.dispatch({ type: 'skipBreak', at: Date.now(), nextBlockKind: kind })
+                  }
+                  onConfirmBreak={(durationMin) =>
+                    store.dispatch({ type: 'confirmBreak', at: Date.now(), durationMin })
+                  }
+                  onCancelBreak={() =>
+                    store.dispatch({ type: 'cancelBreakChoice', at: Date.now() })
+                  }
+                  onEndBreak={() => store.dispatch({ type: 'endBreak', at: Date.now() })}
+                  onResolveAway={(result) =>
+                    store.dispatch({ type: 'resolveAway', at: Date.now(), result })
+                  }
                 />
-              )}
-            </div>
 
-            {/* The stage: every prompt Mono makes happens here, in place. */}
-            {/* The stage is centred in whatever room is left, with the stage
-                strip under it. Kept tight on purpose: the setup panel is the
-                tallest thing Mono ever shows, and its Start control has to
-                stay above the fold on a laptop in landscape. */}
-            <div className="flex flex-1 flex-col justify-center gap-4 py-4">
-              {/* Keyed by the session's generation so a rollover or an import
-                  re-seeds every draft a panel is holding: the commitment being
-                  written, the purpose being typed, the break length chosen. All
-                  of it describes one particular session, and none of it has
-                  anywhere else to be reset from. (Today's hours is the
-                  exception, and the only one: it is held above this key so the
-                  calendar can draw it, so it is reset by hand instead.) Safe to
-                  remount because neither discontinuity can happen while a
-                  segment is running — the rollover returns early, and an import
-                  lands idle — so there is no timer here to interrupt. */}
-              <Stage
-                key={store.generation}
+                {/* Where in the day you are. A control whenever nothing is
+                    running — the opening questions can be answered in any
+                    order, and reached again between blocks, because the shape of
+                    a day keeps changing — and an indicator the rest of the time.
+                    It never offers a way past "One thing": naming the block is
+                    not skippable. */}
+                <StageCarousel
+                  current={stage}
+                  {...(setupReachable(phase) ? { onNavigate: goToSetupStage } : {})}
+                />
+              </div>
+
+              <div className="border-t border-line pt-4 text-xs text-muted">
+                {planned.blocks} block{planned.blocks === 1 ? '' : 's'} ahead ·{' '}
+                {formatDuration(planned.minutes * 60_000)} of focus
+                {!withinHours && timeline.regions.length > 0 && ' · outside working hours'}
+              </div>
+            </main>
+
+            {choosingFor !== null && columnView === 'tasks' ? (
+              <AllTasksPane
+                choosingFor={choosingFor}
+                blockSelected={blockSelected}
+                onBlockTick={tickForBlock}
+                switcher={columnSwitch}
+              />
+            ) : (
+              <DayCalendar
+                {...(choosingFor !== null ? { switcher: columnSwitch } : {})}
+                timeline={timeline}
                 now={now}
-                phase={phase}
-                active={session.active}
-                timerMode={timerMode}
-                onToggleTimerMode={toggleTimerMode}
-                settings={session.settings}
-                dayProgress={dayProgress}
-                dayDone={dayDone}
-                ambience={ambience}
-                setupOpen={setupOpen}
-                revisitingSetup={setupOpen && dayShaped}
-                setupStage={setupStage}
-                onSetupStage={goToSetupStage}
+                regions={regions}
+                composer={composer}
+                onComposer={openComposer}
                 commitments={session.commitments}
-                // The day as the calendar is drawing it, draft included, so
-                // the question and the timeline beside it cannot disagree
-                // about whether any hours have been declared at all.
-                regions={planInput.regions}
-                hours={hoursDraft}
-                onHours={onHoursDraft}
-                withinHours={withinHours}
-                hasRegions={timeline.regions.length > 0}
-                nextRegionStart={upNext}
-                nextBlockKind={nextBlockKind}
-                // `now`, not `Date.now()`: the cost quoted in the prompt should
-                // be the cost against the timeline drawn beside it, and the
-                // baseline is that very timeline rather than a second derive.
-                costOf={(minutes) => breakCost(planInput, now, minutes, timeline)}
+                breaks={session.overrides}
+                onAddBreak={store.planBreak}
                 onAddCommitment={store.addCommitment}
+                onUpdateBreak={store.updateBreak}
                 onUpdateCommitment={store.updateCommitment}
+                onSetRegions={store.setRegions}
+                onRemoveBreak={store.removeBreak}
                 onRemoveCommitment={store.removeCommitment}
-                intentions={session.intentions}
-                today={session.today}
-                planned={planned}
-                todayTimer={todayTimer}
-                onStartTodayTimer={() => {
-                  popOutForDeciding()
-                  startTodayTimer(Date.now())
-                }}
-                onDayShaped={finishSetup}
-                onEditHours={() => openComposer({ kind: 'hours' })}
-                onStartBlock={startBlock}
-                onSetPurpose={setPurpose}
-                onStartDeciding={startDeciding}
-                onAbandon={() => store.dispatch({ type: 'abandonBlock', at: Date.now() })}
-                onTakeBreak={() => store.dispatch({ type: 'takeBreak', at: Date.now() })}
-                onSkipBreak={(kind) =>
-                  store.dispatch({ type: 'skipBreak', at: Date.now(), nextBlockKind: kind })
-                }
-                onConfirmBreak={(durationMin) =>
-                  store.dispatch({ type: 'confirmBreak', at: Date.now(), durationMin })
-                }
-                onCancelBreak={() =>
-                  store.dispatch({ type: 'cancelBreakChoice', at: Date.now() })
-                }
-                onEndBreak={() => store.dispatch({ type: 'endBreak', at: Date.now() })}
-                onResolveAway={(result) =>
-                  store.dispatch({ type: 'resolveAway', at: Date.now(), result })
-                }
               />
-
-              {/* Where in the day you are. A control whenever nothing is
-                  running — the opening questions can be answered in any
-                  order, and reached again between blocks, because the shape of
-                  a day keeps changing — and an indicator the rest of the time.
-                  It never offers a way past "One thing": naming the block is
-                  not skippable. */}
-              <StageCarousel
-                current={stage}
-                {...(setupReachable(phase) ? { onNavigate: goToSetupStage } : {})}
-              />
-            </div>
-
-            <div className="border-t border-line pt-4 text-xs text-muted">
-              {planned.blocks} block{planned.blocks === 1 ? '' : 's'} ahead ·{' '}
-              {formatDuration(planned.minutes * 60_000)} of focus
-              {!withinHours && timeline.regions.length > 0 && ' · outside working hours'}
-            </div>
-          </main>
-
-          <DayCalendar
-            timeline={timeline}
-            now={now}
-            regions={regions}
-            composer={composer}
-            onComposer={openComposer}
-            commitments={session.commitments}
-            breaks={session.overrides}
-            onAddBreak={store.planBreak}
-            onAddCommitment={store.addCommitment}
-            onUpdateBreak={store.updateBreak}
-            onUpdateCommitment={store.updateCommitment}
-            onSetRegions={store.setRegions}
-            onRemoveBreak={store.removeBreak}
-            onRemoveCommitment={store.removeCommitment}
-          />
-        </div>
+            )}
+          </div>
+        </TodayCarry>
       </div>
 
       {settings}

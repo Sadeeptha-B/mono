@@ -97,13 +97,13 @@ The two-tab checks below assume it is there.
    one up and mark it done or drop it: reopening it must not bring the move
    back. Do the same with today's list on the opening question, carrying a
    task into an intention and back to `Not grouped`, and drag a task from
-   All Tasks onto an intention far enough above it that the stage has to
-   scroll on the way. Then, on a real phone in
-   portrait and landscape, scroll the backlog drawn on today's question and the
-   one unfolded on the purpose prompt: the box must scroll inside itself with
-   its search held at the top, a thumb reaching its end must carry on scrolling
-   the page rather than stopping dead, and nothing in it — a long title
-   included — may push the page sideways.
+   All Tasks, in the calendar's column, across onto an intention on the stage.
+   Then, on a real phone in portrait and landscape, where the column is
+   stacked under the stage: on the purpose prompt, today's intentions and
+   All Tasks must be there under it, its search must stay at the top of the screen
+   while the tree scrolls under it, every row's `⋯` must be showing without a
+   hover, and nothing in it — a long title or an open `⋯` included — may push
+   the page sideways.
 
 ## The pop-out window
 

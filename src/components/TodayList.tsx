@@ -2,8 +2,10 @@
  * Today's tasks, gathered under the intentions some of them are given, and the
  * field that names a new intention.
  *
- * Shared by the opening question and the tasks page, which both say what
- * today is, so the two cannot read it differently.
+ * Shared by the opening question, the tasks page, and All Tasks' column while
+ * the purpose prompt is open (`AllTasksPane`), which all say what today is,
+ * so they read it from the session themselves rather than each being handed
+ * it.
  *
  * The intentions come first, right under the field that names them, then the
  * tasks under none. Each intention is a place a task can be carried to —
@@ -12,31 +14,27 @@
  * which is where every task starts. It carries no heading of its own: it is
  * simply today, and the intentions above are what is apart from it. An empty
  * intention is one line, its hint beside its name, so naming one before any
- * task is dragged adds a row rather than a block. An intention
- * is named by title alone and filled by carrying tasks in. It used to be
- * written with a title and then a choice from the whole backlog, title first,
- * and a title written before anything was scoped came out as the name of an
- * epic the backlog already had; carrying today's own tasks into a name asks it
- * to describe something already chosen.
+ * task is dragged adds a row rather than a block. An intention is named by
+ * title alone and filled by carrying tasks in: written title first, with
+ * nothing scoped yet, it came out as the name of an epic the backlog already
+ * had, while carrying today's own tasks into a name asks it to describe
+ * something already chosen.
  *
  * The carrying is `TodayCarry`'s, which the caller puts around this list and
- * anything else that can hand it a task. On the opening question that is the
- * backlog beside it too: a task dragged from there into an intention is chosen
- * for today and grouped in one move, and dropped on today's own list it is
- * only chosen.
+ * anything else that can hand it a task. Beside All Tasks that is the backlog
+ * too: a task dragged from there into an intention is chosen for today and
+ * grouped in one move, and dropped on today's own list it is only chosen.
  *
  * A new intention is asked for with `+ Intention` level with the list's
- * heading, as `+ Task` sits level with a place in the backlog, and written
- * right under the button that asked for it: an empty intention, dashed, at the
- * head of the list, its name a bare field with a ✓ and a ×. Kept, it takes its
- * place after the others. A day needs no intention, and every
- * other way of offering one — a field with a button always open, then a folded
- * `Add intention` heading under the list — was a form standing on a question
- * already busy with the tasks and the backlog. Enter keeps it and leaves an
+ * heading, as `+ Task` sits in a place's menu in the backlog, and written right
+ * under the button that asked for it: an empty intention, dashed, at the head
+ * of the list, its name a bare field with a ✓ and a ×. Kept, it takes its
+ * place after the others. A day needs no intention, so nothing about one
+ * stands on the question until it is asked for. Enter keeps it and leaves an
  * empty one for the next, ✓ keeps it and closes, and × or Escape close without
  * keeping anything, handing focus back to `+ Intention`. An intention is drawn
  * as a level of the same tree as the places, with only a fine border to mark
- * it, for the same reason: as a card of its own it was one more kind of box.
+ * it, rather than as one more kind of box.
  *
  * Every task sits under the places it lives in (`GroupedTasks`), each place
  * said once, so an intention gathering tasks from two areas shows both. Tasks
@@ -61,9 +59,9 @@ import { Carry, CarryGrip, CarryStatus, DropZone, MoveHere, useCarriedRow, useCa
 import { GroupedTasks } from './GroupedTasks'
 import { DeleteIcon, DoneRingIcon } from './icons'
 import { useTodayBacklog } from './useTodayBacklog'
-import { EditGlyph, fieldClass, GhostButton, IconButton } from './ui'
+import { EditGlyph, IconButton, KeepField, RenameField } from './ui'
 import type { Item } from '@/domain/tasks'
-import { isToday, tasksOfIntention, ungroupedToday, type Today } from '@/domain/today'
+import { isToday, tasksOfIntention, ungroupedToday } from '@/domain/today'
 import type { Intention } from '@/domain/types'
 import { useSession } from '@/store/session'
 
@@ -80,8 +78,9 @@ const NOT_GROUPED = ':not-grouped'
  * from the backlog is simply chosen. A task already where it is dropped is not
  * taken. One finished or gone while held is put down (see `carry.tsx`).
  */
-export function TodayCarry({ today, children }: { today: Today; children: ReactNode }) {
-  const backlog = useTodayBacklog(today)
+export function TodayCarry({ children }: { children: ReactNode }) {
+  const backlog = useTodayBacklog()
+  const today = useSession((s) => s.session.today)
   const linkTask = useSession((s) => s.linkTask)
   const addToToday = useSession((s) => s.addToToday)
 
@@ -117,24 +116,26 @@ export function TodayCarry({ today, children }: { today: Today; children: ReactN
 }
 
 export function TodayList({
-  today,
-  intentions,
   newIntention,
   onNewIntention,
   empty,
   heading,
 }: {
-  today: Today
-  intentions: readonly Intention[]
   /** The new intention's title while its field is open, or null while folded. */
   newIntention: string | null
   onNewIntention: (title: string | null) => void
   /** What an empty day says, which depends on where the ways in are. */
   empty: string
-  /** The list's own heading, with `+ Intention` level with it; just the button when absent. */
-  heading?: string
+  /**
+   * The list's heading, with `+ Intention` level with it: text for the
+   * stage's own small heading, or the caller's heading element where the page
+   * already styles its sections.
+   */
+  heading: ReactNode
 }) {
-  const backlog = useTodayBacklog(today)
+  const backlog = useTodayBacklog()
+  const today = useSession((s) => s.session.today)
+  const intentions = useSession((s) => s.session.intentions)
   const removeFromToday = useSession((s) => s.removeFromToday)
   const addIntention = useSession((s) => s.addIntention)
   const updateIntention = useSession((s) => s.updateIntention)
@@ -180,7 +181,7 @@ export function TodayList({
       type="button"
       onClick={() => onNewIntention(newIntention ?? '')}
       aria-label="Add intention"
-      className="shrink-0 text-xs text-muted transition hover:text-bright"
+      className="shrink-0 text-[13px] text-muted transition hover:text-bright"
     >
       + Intention
     </button>
@@ -188,14 +189,14 @@ export function TodayList({
 
   return (
     <div className="flex flex-col gap-3">
-      {heading === undefined ? (
-        <div className="-mb-1 flex justify-end">{addButton}</div>
-      ) : (
-        <div className="flex items-baseline justify-between gap-3">
-          <h3 className="text-xs font-medium tracking-wide text-muted uppercase">{heading}</h3>
-          {addButton}
-        </div>
-      )}
+      <div className="flex items-baseline justify-between gap-3">
+        {typeof heading === 'string' ? (
+          <h3 className="text-[13px] font-medium tracking-wide text-muted uppercase">{heading}</h3>
+        ) : (
+          heading
+        )}
+        {addButton}
+      </div>
 
       {newIntention !== null && (
         <NewIntention
@@ -225,12 +226,11 @@ export function TodayList({
                   value={renaming.title}
                   onChange={(title) => setRenaming({ id: intention.id, title })}
                   onSave={() => {
-                    if (renaming.title.trim() !== '') {
-                      updateIntention(intention.id, { title: renaming.title.trim() })
-                    }
+                    updateIntention(intention.id, { title: renaming.title.trim() })
                     setRenaming(null)
                   }}
                   onCancel={() => setRenaming(null)}
+                  textClass="text-[15px]"
                 />
               ) : (
                 <div className="flex items-baseline gap-1.5">
@@ -239,8 +239,8 @@ export function TodayList({
                     onToggle={() => updateIntention(intention.id, { done: !done })}
                   />
                   <h3
-                    className={`min-w-0 flex-1 text-sm wrap-break-word ${
-                      done ? 'text-muted line-through' : 'text-body'
+                    className={`min-w-0 flex-1 text-[15px] wrap-break-word ${
+                      done ? 'text-muted line-through' : 'text-bright'
                     }`}
                   >
                     {intention.title}
@@ -282,6 +282,7 @@ export function TodayList({
                       groups={tasks}
                       renderTask={renderTask}
                       gutter="wide"
+                      placeText="text-sm"
                     />
                   )}
                 </div>
@@ -291,7 +292,7 @@ export function TodayList({
         )
       })}
 
-      {nothingChosen && <p className="text-xs text-muted">{empty}</p>}
+      {nothingChosen && <p className="text-sm text-muted">{empty}</p>}
 
       {/* Under no intention: today itself, so it carries no heading. Shown
           while it holds something, or while something could be dropped on it:
@@ -308,6 +309,7 @@ export function TodayList({
                 groups={groups.none}
                 renderTask={renderTask}
                 gutter="wide"
+                placeText="text-sm"
               />
             ) : (
               <p className="py-1 text-xs text-muted">Drop here to keep it under no intention.</p>
@@ -315,9 +317,6 @@ export function TodayList({
           </section>
         </DropZone>
       )}
-
-
-
     </div>
   )
 }
@@ -338,11 +337,11 @@ function TodayTaskRow({ task, onRemove }: { task: Item; onRemove: () => void }) 
   return (
     <div
       {...(open ? dragProps : {})}
-      className={`relative flex items-start gap-1.5 rounded-md text-sm ${
+      className={`relative flex items-start gap-1.5 rounded-md text-[15px] ${
         picked ? 'bg-surface/60 outline-1 outline-deep/70 outline-dashed' : ''
       }`}
     >
-      {open && <CarryGrip task={task} className="absolute top-0.5 -left-4" />}
+      {open && <CarryGrip task={task} className="absolute top-1 -left-4" />}
       <span
         className={`min-w-0 flex-1 wrap-break-word ${open ? 'text-body' : 'text-muted line-through'}`}
       >
@@ -365,8 +364,7 @@ function TodayTaskRow({ task, onRemove }: { task: Item; onRemove: () => void }) 
 
 /**
  * A new intention written where it will stand: dashed, its ring faint, its
- * name a bare field, with a ✓ that keeps it and a × that does not. Not a form
- * of its own — it can sit inside one, and HTML has no nested forms.
+ * name a bare field with a ✓ and a × (`KeepField`).
  */
 function NewIntention({
   value,
@@ -384,92 +382,20 @@ function NewIntention({
   return (
     <div className="flex items-center gap-1.5 rounded-md border border-dashed border-line px-2 py-1.5">
       <DoneRingIcon done={false} className="text-muted/50" />
-      <input
+      <KeepField
         value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            onEnter()
-          }
-          if (e.key === 'Escape') {
-            e.preventDefault()
-            onCancel()
-          }
-        }}
+        onChange={onChange}
+        onEnter={onEnter}
+        onKeep={onKeep}
+        onCancel={onCancel}
         placeholder="Name an intention, then drag tasks into it"
-        aria-label="New intention"
+        label="New intention"
+        keepLabel="Keep the new intention"
+        cancelLabel="Cancel new intention"
         // Opened by a press asking for exactly this field.
         autoFocus
-        maxLength={120}
-        className="min-w-0 flex-1 bg-transparent text-sm text-bright placeholder:text-muted/80 focus:outline-none"
+        inputClassName="min-w-0 flex-1 bg-transparent text-[15px] text-bright placeholder:text-muted/80 focus:outline-none"
       />
-      <button
-        type="button"
-        onClick={onKeep}
-        aria-label="Keep the new intention"
-        className="shrink-0 px-0.5 text-deep transition hover:text-bright"
-      >
-        ✓
-      </button>
-      <button
-        type="button"
-        onClick={onCancel}
-        aria-label="Cancel new intention"
-        className="shrink-0 px-0.5 text-muted transition hover:text-bright"
-      >
-        ×
-      </button>
-    </div>
-  )
-}
-
-/**
- * An intention's title rewritten in place, as the tasks page renames anything:
- * Enter or `Save` keeps it, Escape does not.
- */
-function RenameField({
-  label,
-  value,
-  onChange,
-  onSave,
-  onCancel,
-}: {
-  label: string
-  value: string
-  onChange: (value: string) => void
-  onSave: () => void
-  onCancel: () => void
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <input
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            e.preventDefault()
-            onSave()
-          }
-          if (e.key === 'Escape') {
-            e.preventDefault()
-            onCancel()
-          }
-        }}
-        aria-label={label}
-        // Opened by a click on this intention's ✎, asking for exactly this.
-        autoFocus
-        maxLength={120}
-        className={`${fieldClass} py-1 text-sm`}
-      />
-      <GhostButton
-        type="button"
-        disabled={value.trim() === ''}
-        onClick={onSave}
-        className="shrink-0 px-3 py-1 text-xs"
-      >
-        Save
-      </GhostButton>
     </div>
   )
 }
@@ -477,16 +403,16 @@ function RenameField({
 /**
  * The ring in front of an intention that marks it done, and reopens it.
  *
- * Offered wherever an intention is listed — the opening question, the purpose
- * prompt and the tasks page — because whether the day has had what it wanted
- * from an intention is the user's to say, at whichever of them they notice
- * it. Nothing decides it for them: not its tasks running out, which can happen
- * with the intention unmet, and not a block. It is one patch on the intention
- * and touches none of its tasks, so reopening it puts back exactly what was
- * there. A done intention stays where it was in the list, crossed out, rather
- * than moving under the pointer that just ticked it.
+ * Offered wherever intentions are kept — the opening question, the column
+ * beside the purpose prompt and the tasks page — because whether the day has
+ * had what it wanted from an intention is the user's to say, at whichever of
+ * them they notice it. Nothing decides it for them: not its tasks running out,
+ * which can happen with the intention unmet, and not a block. It is one patch
+ * on the intention and touches none of its tasks, so reopening it puts back
+ * exactly what was there. A done intention stays where it was in the list,
+ * crossed out, rather than moving under the pointer that just ticked it.
  */
-export function IntentionDoneToggle({
+function IntentionDoneToggle({
   intention,
   onToggle,
 }: {

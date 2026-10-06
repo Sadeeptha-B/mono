@@ -108,10 +108,10 @@ test('time and duration fields stay contained and stack on a narrow phone', asyn
   await expect(stageTime.input).toHaveAttribute('data-picker-calls', '1')
 
   await shapeDay(page)
-  await calendar(page).getByRole('button', { name: '+ Commitment' }).click()
+  await calendar(page).getByRole('button', { name: 'Commitment', exact: true }).click()
   await expectPairToStack(calendar(page), 'At', 'For (minutes)')
 
-  await calendar(page).getByRole('button', { name: '+ Break' }).click()
+  await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
   await expectPairToStack(calendar(page), 'From', 'For (minutes)')
 
   // The phone owns one vertical scroll surface: the document. A horizontal
@@ -149,10 +149,10 @@ test('time and duration fields share a row when the surface has room', async ({ 
   await expectPairToShareRow(stage(page), 'At', 'For (minutes)')
 
   await shapeDay(page)
-  await calendar(page).getByRole('button', { name: '+ Commitment' }).click()
+  await calendar(page).getByRole('button', { name: 'Commitment', exact: true }).click()
   await expectPairToShareRow(calendar(page), 'At', 'For (minutes)')
 
-  await calendar(page).getByRole('button', { name: '+ Break' }).click()
+  await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
   await expectPairToShareRow(calendar(page), 'From', 'For (minutes)')
 })
 
@@ -199,7 +199,7 @@ test('a commitment clears only the breaks it swallows', async ({ page }) => {
   await shapeDay(page)
 
   const pinBreak = async (time: string) => {
-    await calendar(page).getByRole('button', { name: '+ Break' }).click()
+    await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
     await calendar(page).getByLabel('From', { exact: true }).fill(time)
     await calendar(page).getByRole('button', { name: 'Add break', exact: true }).click()
   }
@@ -209,7 +209,7 @@ test('a commitment clears only the breaks it swallows', async ({ page }) => {
   await expect(blocksOf(page, 'Break')).toHaveCount(2)
 
   // A five o'clock meeting covers the second pin and nothing near the first.
-  await calendar(page).getByRole('button', { name: '+ Commitment' }).click()
+  await calendar(page).getByRole('button', { name: 'Commitment', exact: true }).click()
   await calendar(page).getByLabel('What', { exact: true }).fill('Design review')
   await calendar(page).getByLabel('At', { exact: true }).fill('17:00')
   await calendar(page).getByLabel('For (minutes)', { exact: true }).fill('45')
@@ -231,7 +231,7 @@ test('a break cannot be pinned across a commitment', async ({ page }) => {
   const from = calendar(page).getByLabel('From', { exact: true })
   const add = calendar(page).getByRole('button', { name: 'Add break', exact: true })
 
-  await calendar(page).getByRole('button', { name: '+ Break' }).click()
+  await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
   await from.fill('17:05')
   await expect(calendar(page).getByText(/That runs into/)).toBeVisible()
   await expect(add).toBeDisabled()
@@ -254,7 +254,7 @@ test('an editor closes when the thing it is editing is cleared', async ({ page }
   await openMono(page)
   await shapeDay(page)
 
-  await calendar(page).getByRole('button', { name: '+ Break' }).click()
+  await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
   await calendar(page).getByLabel('From', { exact: true }).fill('17:10')
   await calendar(page).getByRole('button', { name: 'Add break', exact: true }).click()
 
@@ -282,7 +282,7 @@ test('removing the thing an editor is open on closes the editor', async ({ page 
   await openMono(page)
   await shapeDay(page)
 
-  await calendar(page).getByRole('button', { name: '+ Break' }).click()
+  await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
   await calendar(page).getByLabel('From', { exact: true }).fill('15:00')
   await calendar(page).getByRole('button', { name: 'Add break', exact: true }).click()
 
@@ -319,7 +319,7 @@ test('a break and a commitment are edited where they are drawn', async ({ page }
   )
 
   // And the same for a pinned break.
-  await calendar(page).getByRole('button', { name: '+ Break' }).click()
+  await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
   await calendar(page).getByLabel('From', { exact: true }).fill('15:00')
   await calendar(page).getByLabel('For (minutes)', { exact: true }).fill('20')
   await calendar(page).getByRole('button', { name: 'Add break' }).click()

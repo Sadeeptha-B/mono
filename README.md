@@ -69,7 +69,11 @@ The UI is two panels. The **stage** on the left is the one thing that changes
 with the session phase — every question Mono asks happens there, in the space
 the timer occupies, not in a modal over the top of it. The **calendar** on the
 right lays the same derived timeline out against real hours, so a 45-minute
-block looks like 45 minutes and the gaps read as gaps.
+block looks like 45 minutes and the gaps read as gaps. While a question that
+chooses tasks is open — what you are working on today, or what a block is
+for — the calendar's column can turn over to **All Tasks**, the whole backlog as
+a tree, from a switch in its header: both questions open on it, and the column
+is the day again when the question closes.
 
 There is a third surface, and it is deliberately somewhere else. **Pop out**
 opens the timer as an always-on-top window — Chromium's document
@@ -95,8 +99,8 @@ pages capturing a camera or microphone or playing audible media, which a timer
 that is usually silent cannot count on. So Mono does not pop it up when you
 minimise the tab, and does not pretend to.
 
-Both panels edit themselves in place. The calendar's `Hours`, `+ Break` and
-`+ Commitment` expand under its own heading rather than opening a window over
+Both panels edit themselves in place. The calendar's `Hours`, `Break` and
+`Commitment` expand under its own heading rather than opening a window over
 the page — every one of them asks a question about the day, and the day is
 drawn directly below the answer. **Settings is the only dialog left**, because
 it is the only genuine aside. It is sized to the viewport rather than to its
@@ -182,14 +186,14 @@ shaped around:
   calendar follows the hours question as it is typed.
 - **A day is answered with tasks; intentions are optional names for some of
   them.** Starting the day needs one task chosen for it, ticked or written in
-  All Tasks, the whole backlog drawn on the stage and kept from there. Tasks can
+  All Tasks, the whole backlog in the calendar's column and kept from there. Tasks can
   then be dragged into intentions, which may be narrower than an outcome or
   wider than an epic. The
   next day offers what was left unfinished, and adds nothing by itself. The
   question carries its own timer, which stops at zero and records nothing.
-- **Every focus block is for at least one task**, picked from today's tasks,
-  found in the backlog or written on the spot — a task from outside today joins
-  it when the block starts — plus a purpose of its own that starts as the
+- **Every focus block is for at least one task**, ticked in All Tasks beside
+  the prompt or written on the spot — a task from outside today joins it as
+  it is ticked — plus a purpose of its own that starts as the
   tasks' titles. Ticking a task done belongs to the backlog and finishing a
   block to the block; neither writes the other.
 - **Outside working hours Mono says so** and names the next stretch, rather than

@@ -32,13 +32,11 @@ import type {
   Commitment,
   CommitmentPatch,
   DefaultRegion,
-  Intention,
   Ms,
   Settings,
   WorkRegion,
 } from '@/domain/types'
 import type { DayProgress } from '@/domain/dayProgress'
-import type { Today } from '@/domain/today'
 import type { AmbienceControls } from '@/ambient/useAmbience'
 import type { TimerMode } from '@/domain/time'
 
@@ -75,9 +73,6 @@ type Props = {
   onAddCommitment: (input: Omit<Commitment, 'id'>) => void
   onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onRemoveCommitment: (id: string) => void
-  intentions: readonly Intention[]
-  /** Today's tasks, each with its intention or none. */
-  today: Today
   /** What the plan can still hold. */
   planned: { blocks: number; minutes: number }
   todayTimer: TodayTimer | null
@@ -86,6 +81,9 @@ type Props = {
   onEditHours: () => void
   onStartBlock: (kind: BlockKind) => void
   onSetPurpose: (purpose: string, taskIds: string[]) => void
+  /** The purpose prompt's ticks still in play, held by `App` — see `blockPick.ts`. */
+  blockSelected: readonly string[]
+  onBlockTick: (taskId: string, on: boolean) => void
   onStartDeciding: () => void
   onAbandon: () => void
   onTakeBreak: () => void
@@ -126,8 +124,6 @@ export function Stage(props: Props) {
             onAddCommitment={props.onAddCommitment}
             onUpdateCommitment={props.onUpdateCommitment}
             onRemoveCommitment={props.onRemoveCommitment}
-            intentions={props.intentions}
-            today={props.today}
             planned={props.planned}
             todayTimer={props.todayTimer}
             intentionMinutes={settings.intentionMinutes}
@@ -172,8 +168,8 @@ export function Stage(props: Props) {
             phase.blockKind === 'short' ? settings.shortMinutes : settings.deepMinutes
           }
           reflectMinutes={settings.reflectMinutes}
-          intentions={props.intentions}
-          today={props.today}
+          selected={props.blockSelected}
+          onTick={props.onBlockTick}
           onSubmit={props.onSetPurpose}
           onCancel={props.onAbandon}
         />

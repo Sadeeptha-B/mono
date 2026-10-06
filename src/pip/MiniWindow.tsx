@@ -39,7 +39,6 @@ import { GhostButton } from '@/components/ui'
 import { AmbienceButton } from '@/ambient/AmbienceButton'
 import { formatClock, formatDuration } from '@/domain/time'
 import { DAY_HASH } from '@/hooks/useRoute'
-import type { Today } from '@/domain/today'
 import type { TimerMode } from '@/domain/time'
 import type { Phase } from '@/domain/machine'
 import type { DayProgress } from '@/domain/dayProgress'
@@ -73,8 +72,6 @@ type Props = {
   commitments: readonly Commitment[]
   regions: readonly WorkRegion[]
   intentions: readonly Intention[]
-  /** Today's tasks, each with its intention or none. */
-  today: Today
   /** Today's question's timer, which `App` holds rather than the phase. */
   todayTimer: { endsAt: Ms } | null
   onStartTodayTimer: () => void
@@ -212,7 +209,6 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
           commitments={props.commitments}
           regions={props.regions}
           intentions={props.intentions}
-          today={props.today}
           timer={props.todayTimer}
           timerMinutes={settings.intentionMinutes}
           onStartTimer={props.onStartTodayTimer}

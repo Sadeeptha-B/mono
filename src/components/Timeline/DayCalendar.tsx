@@ -92,6 +92,12 @@ type Props = {
   onUpdateBreak: (id: string, patch: PlannedBreakPatch) => void
   onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onSetRegions: (regions: WorkRegion[]) => void
+  /**
+   * The switch to All Tasks, while a question that chooses tasks is open
+   * (`AllTasksPane`). It stands where the heading does; the heading stays for
+   * a screen reader.
+   */
+  switcher?: ReactNode
 }
 
 export function DayCalendar({
@@ -109,6 +115,7 @@ export function DayCalendar({
   onUpdateBreak,
   onUpdateCommitment,
   onSetRegions,
+  switcher,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
   const { rangeStart, rangeEnd, hours, placed } = useMemo(
@@ -187,20 +194,31 @@ export function DayCalendar({
     // on phones where the document deliberately owns vertical scrolling.
     <aside className="min-w-0 flex flex-col rounded-2xl border border-line bg-surface lg:h-full lg:min-h-0">
       <header className="flex flex-wrap items-center justify-between gap-y-1 border-b border-line px-4 py-3">
-        <h2 className="text-xs font-medium tracking-widest text-muted uppercase">Today</h2>
+        <h2
+          className={
+            switcher ? 'sr-only' : 'text-xs font-medium tracking-widest text-muted uppercase'
+          }
+        >
+          Today
+        </h2>
+        {switcher}
         {/* Toggles, not launchers: the panel they open is right below them and
             stays part of this column, so the pressed state is the whole of the
             feedback. `flex-wrap` because three of these already fill a 22rem
             column at text-xs. */}
-        <div className="flex flex-wrap gap-1">
+        {/* To the right on the heading's line; under the column's switch, a
+            line of their own, centred: they act on the day, not on the view. */}
+        <div
+          className={`flex flex-wrap gap-1 ${switcher ? 'w-full justify-center' : 'ml-auto justify-end'}`}
+        >
           <HeaderToggle kind="hours" composer={composer} onComposer={onComposer}>
             Hours
           </HeaderToggle>
           <HeaderToggle kind="break" composer={composer} onComposer={onComposer}>
-            + Break
+            Break
           </HeaderToggle>
           <HeaderToggle kind="commitment" composer={composer} onComposer={onComposer}>
-            + Commitment
+            Commitment
           </HeaderToggle>
         </div>
       </header>

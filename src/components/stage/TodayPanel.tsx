@@ -14,32 +14,20 @@
  * itself in an area's inbox, and is exactly what an intention was, without the
  * copy of an epic.
  *
- * Three parts, top to bottom, in the order a morning reaches for them:
+ * The stage holds the answer and nothing else:
  *
  * - **Today's tasks** (`TodayList`): the intentions, then what is chosen
- *   under none, with `+ Intention` level with the heading. More space before
- *   All Tasks than between anything else here, and no rules under the two
- *   headings: the space is what says where today ends and the backlog
- *   begins, and the rules were two more lines on a question full of them.
- *   All Tasks folds from its heading and starts open: it is where the day's
- *   tasks come from, but once they are chosen it is a long list under the
- *   part being worked on. Whether it is open is kept with the drafts, so
- *   looking at another question does not unfold it again.
+ *   under none, with `+ Intention` level with the heading.
  * - **From last time**: what the last working day chose and did not finish,
  *   offered with a `+` each and never added by itself (`carriedOver`).
  *   Yesterday's list is the commonest thing to have changed your mind about
  *   overnight.
- * - **All Tasks** (`TaskBrowser`), the whole backlog drawn in place and
- *   scrolling inside itself, and kept from here: a tick chooses a task for
- *   today and unticking puts it back, `+ Task` under any place writes one there
- *   and chooses it, and a task can be marked done, reopened, renamed or
- *   deleted. A row dragged onto one of today's intentions is chosen and
- *   grouped in one move; the list and the backlog share one hand
- *   (`TodayCarry`) for it.
  *
- * There used to be a field of its own for a new task above all this, writing
- * into an area's inbox. With the backlog on screen it was a second way of doing
- * what `+ Task` does, and one that could only file into an inbox.
+ * Where the tasks come from is All Tasks, the whole backlog, which the column
+ * beside the stage shows instead of the day while this question is open
+ * (`AllTasksPane`): a tick chooses a task for today, `+ Task` in a place's `⋯`
+ * writes one, and a row dragged onto an intention here is chosen and grouped in
+ * one move. The stage keeps only the answer.
  *
  * Every choice is written to the day's log as it is made, as linking a task to
  * an intention always was; only the intention's title being typed is a draft,
@@ -67,34 +55,21 @@
  * the few minutes in view; the tasks themselves are still chosen here.
  */
 
-import { useCallback, useMemo } from 'react'
+import { useMemo } from 'react'
 
 import { unlockAudio } from '@/ambient/audio'
 import { GroupedTasks } from '../GroupedTasks'
 import { QuestionClock } from '../QuestionClock'
-import { TaskBrowser } from '../TaskBrowser'
-import { TodayCarry, TodayList } from '../TodayList'
+import { TodayList } from '../TodayList'
 import { useTodayBacklog } from '../useTodayBacklog'
-import { Caret, StagePrompt } from '../ui'
+import { StagePrompt } from '../ui'
 import { formatDuration } from '@/domain/time'
 import type { TaskTreeNode } from '@/domain/tasks'
-import type { Today } from '@/domain/today'
-import type { Intention, Ms } from '@/domain/types'
+import type { Ms } from '@/domain/types'
 import { useSession } from '@/store/session'
-import { useTasks } from '@/store/tasks'
 
 /** The two instants today's timer runs between. */
 export type TodayTimer = { startedAt: Ms; endsAt: Ms }
-
-/** What the opening question holds while it is being typed, across the switch. */
-export type TodayDrafts = {
-  /** The new intention's title while its field is open, or null while folded. */
-  intention: string | null
-  /** Whether All Tasks is unfolded. Open until folded by hand. */
-  allTasksOpen: boolean
-}
-
-export const emptyTodayDrafts: TodayDrafts = { intention: null, allTasksOpen: true }
 
 export function TodayPanel({
   now,
@@ -103,10 +78,8 @@ export function TodayPanel({
   minutes,
   onStartTimer,
   planned,
-  intentions,
-  today,
-  drafts,
-  onDrafts,
+  newIntention,
+  onNewIntention,
 }: {
   now: Ms
   eyebrow: string
@@ -117,40 +90,15 @@ export function TodayPanel({
   onStartTimer: () => void
   /** What the day can still hold, as context for what to choose. */
   planned: { blocks: number; minutes: number }
-  intentions: readonly Intention[]
-  today: Today
-  drafts: TodayDrafts
-  onDrafts: (drafts: TodayDrafts) => void
+  /** The new intention's title while its field is open, held across the switch. */
+  newIntention: string | null
+  onNewIntention: (title: string | null) => void
 }) {
-  const backlog = useTodayBacklog(today)
+  const backlog = useTodayBacklog()
   const addToToday = useSession((s) => s.addToToday)
-  const removeFromToday = useSession((s) => s.removeFromToday)
-  const addItem = useTasks((s) => s.addItem)
-  const renameItem = useTasks((s) => s.renameItem)
-  const deleteItem = useTasks((s) => s.deleteItem)
-  const completeItem = useTasks((s) => s.completeItem)
-  const reopenItem = useTasks((s) => s.reopenItem)
-
-  // Stable across the clock's tick, so the browser it is handed to passes the
-  // tick by — see `TaskBrowser`.
-  const choose = useCallback(
-    (taskId: string, on: boolean) => (on ? addToToday(taskId) : removeFromToday(taskId)),
-    [addToToday, removeFromToday],
-  )
-  const write = useCallback(
-    (parentId: string, title: string) => addItem({ kind: 'task', title, parentId }),
-    [addItem],
-  )
   // Per change to the day or the backlog, not per tick: grouping walks the tree.
   const group = backlog.group
   const carried = useMemo(() => group(backlog.carried), [group, backlog.carried])
-  const under = useCallback(
-    (taskId: string) => {
-      const id = today[taskId]
-      return typeof id === 'string' ? (intentions.find((i) => i.id === id)?.title ?? null) : null
-    },
-    [today, intentions],
-  )
 
   return (
     <>
@@ -176,61 +124,29 @@ export function TodayPanel({
       {!backlog.hydrated ? (
         <p className="text-sm text-muted">Loading your tasks…</p>
       ) : (
-        <TodayCarry today={today}>
-          {/* Clear of the question's own lines: the list is the answer, and
-              pressed up under the capacity line it read as more of it. */}
-          <div className="mt-6 flex flex-col gap-8">
-            <section aria-label="Today">
-              <TodayList
-                // Not "Today": the calendar beside the stage is headed that,
-                // and an app-loaded check looks for one heading of that name.
-                heading="Today's tasks"
-                today={today}
-                intentions={intentions}
-                newIntention={drafts.intention}
-                onNewIntention={(intention) => onDrafts({ ...drafts, intention })}
-                empty="Pick tasks below, or add your own."
-              />
-            </section>
+        // Clear of the question's own lines: the list is the answer, and
+        // pressed up under the capacity line it read as more of it.
+        <div className="mt-6 flex flex-col gap-8">
+          <section aria-label="Today">
+            <TodayList
+              // Not "Today": the calendar beside the stage is headed that, and
+              // an app-loaded check looks for one heading of that name.
+              heading="Today's tasks"
+              newIntention={newIntention}
+              onNewIntention={onNewIntention}
+              empty="Pick tasks from All Tasks, or add your own there."
+            />
+          </section>
 
-            {backlog.carried.length > 0 && (
-              <CarriedOver
-                groups={carried}
-                count={backlog.carried.length}
-                onAdd={(ids) => ids.forEach((id) => addToToday(id))}
-                ids={backlog.carried}
-              />
-            )}
-
-            <section aria-label="All Tasks">
-              <button
-                type="button"
-                onClick={() => onDrafts({ ...drafts, allTasksOpen: !drafts.allTasksOpen })}
-                aria-expanded={drafts.allTasksOpen}
-                className="mb-2 flex items-center gap-1.5 text-xs font-medium tracking-wide text-muted uppercase transition hover:text-bright"
-              >
-                <Caret open={drafts.allTasksOpen} />
-                All Tasks
-              </button>
-              {/* Drawn only while open, so a folded backlog costs nothing. */}
-              {drafts.allTasksOpen && (
-                <TaskBrowser
-                  label="Tasks for today"
-                  tree={backlog.pickerTree}
-                  selected={backlog.chosen}
-                  onToggle={choose}
-                  onAdd={write}
-                  onRename={renameItem}
-                  onDelete={deleteItem}
-                  onComplete={completeItem}
-                  onReopen={reopenItem}
-                  elsewhere={under}
-                  draggable
-                />
-              )}
-            </section>
-          </div>
-        </TodayCarry>
+          {backlog.carried.length > 0 && (
+            <CarriedOver
+              groups={carried}
+              count={backlog.carried.length}
+              onAdd={(ids) => ids.forEach((id) => addToToday(id))}
+              ids={backlog.carried}
+            />
+          )}
+        </div>
       )}
     </>
   )

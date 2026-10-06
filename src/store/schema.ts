@@ -65,17 +65,13 @@ export type ExportedShape = PersistedShape & { version: number; tasks?: Exported
  * silently drop every task in it, and look as though it had worked. A version
  * it refuses is the honest answer.
  *
- * An intention's `done` arrived later without a bump, deliberately. A build
- * that predates it reads the intention and drops only the mark, and an edit
- * that only marked it is dropped whole — the day is still the day, with one
- * fewer tick on it. That is not the silent loss a bump exists to refuse.
- *
  * v5 added the `today/` events: a day is now answered by the tasks chosen for
  * it, and an intention only groups some of them. A v4 build would drop those
  * events and read a v5 day as having chosen nothing, which is the silent loss
- * again, so it is a bump. No existing event changed shape. A v4 log reads as
- * it was written, its linked tasks becoming today's because linking now
- * implies choosing.
+ * again, so it is a bump. No existing event changed shape; an intention gained
+ * an optional `done`, which reads as not done where it is absent. A v4 log
+ * reads as it was written, its linked tasks becoming today's because linking
+ * now implies choosing.
  */
 export const SCHEMA_VERSION = 5
 
