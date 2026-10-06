@@ -5,9 +5,9 @@
  *
  * Who performs that build differs by environment, which is the one piece of
  * cleverness here. Locally `npm run test:e2e` is documented as self-contained,
- * so it builds first. In CI the workflow has already built the bundle that is
- * about to be deployed, and building it a second time here would both waste a
- * minute and test something other than what ships.
+ * so it builds first. In CI the workflow has already built the bundle — the one
+ * about to be deployed, on `main` — and building it a second time here would
+ * both waste a minute and test something other than what ships.
  */
 import { defineConfig, devices } from '@playwright/test'
 

@@ -1,26 +1,64 @@
-name: Deploy to GitHub Pages
+name: Verify and deploy
 
 on:
+  # A pull request is verified before it can land rather than after, which
+  # is what lets the local routine stay narrow: the complete production
+  # browser suite runs here on every PR, so nobody has to repeat it by hand
+  # to find out whether a change is safe to merge. No path filter here: a
+  # required check whose workflow never starts stays pending forever, so a
+  # docs-only pull request is skipped by the `changes` job below instead.
+  pull_request:
   push:
     branches: [main]
-    # Prose changes cannot break the bundle, and this pipeline is the only
-    # thing standing between a commit and the live site — so a docs-only
-    # push skips it rather than spending five minutes proving nothing.
+    # Prose changes cannot break the bundle
     paths-ignore:
       - "**.md"
       - "docs/**"
   workflow_dispatch:
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
+# One run per ref. A newer push to the same pull request or to `main`
+# supersedes the run before it
 concurrency:
-  group: pages
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  # Whether a pull request touches anything but prose. GitHub reports a job
+  # skipped by its `if` as successful, so `verify` stays a required check that
+  # a docs-only pull request can still satisfy. The diff is against the merge
+  # commit's first parent, which is exactly what merging would change, and
+  # `--no-renames` lists both sides of a move so code renamed into `docs/`
+  # still counts as code leaving. Every other event always verifies; `push`
+  # keeps its own path filter because nothing requires a check there.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - if: github.event_name == 'pull_request'
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      # Skipping is the one answer that needs proof: a diff that fails, comes
+      # back empty, or names anything outside prose all verify.
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          code=true
+          if [ "$EVENT" = pull_request ] &&
+            files=$(git diff --name-only --no-renames HEAD^1 HEAD) &&
+            [ -n "$files" ] &&
+            ! printf '%s\n' "$files" | grep -qvE '\.md$|^docs/'
+          then
+            code=false
+          fi
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+
   # Everything before the deploy is one job on purpose. Split across two, the
   # second runner pays for its own boot, its own `npm ci`, and — because
   # Playwright's webServer builds before it previews — a second production
@@ -28,6 +66,10 @@ jobs:
   # once here, the suite also runs against the exact bundle that ships rather
   # than against a second build that happens to be made from the same commit.
   verify:
+    needs: changes
+    # Not `== 'true'`: if `changes` itself fails its output is empty, and a
+    # skipped `verify` would then pass the required check without running.
+    if: ${{ !cancelled() && needs.changes.outputs.code != 'false' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -38,6 +80,13 @@ jobs:
           cache: npm
 
       - run: npm ci
+
+      # The unit suite needs nothing but Node, so it goes before anything
+      # browser-shaped. A broken domain rule fails here in seconds instead of
+      # after a Chromium download. `npm run build` follows for the same
+      # reason: it is the typecheck, and it is cheaper than a browser.
+      - run: npm test
+      - run: npm run build
 
       # Chromium is ~130 MB and is byte-identical between runs of the same
       # Playwright release, so it is restored from cache and only
@@ -59,8 +108,6 @@ jobs:
       - if: steps.playwright-browsers.outputs.cache-hit == 'true'
         run: npx playwright install-deps chromium
 
-      - run: npm run build
-      - run: npm test
       - run: npm run test:e2e
 
       # The extension is not deployed anywhere — the Pages artifact below
@@ -76,7 +123,9 @@ jobs:
       # upload-artifact, which wraps whatever it is given in a structure
       # of its own — the store requires `manifest.json` at the root of the
       # zip, and a nested folder is rejected at upload with a message that
-      # does not say so.
+      # does not say so. A pull request gets one too, so a change can be
+      # loaded unpacked before it merges; the one to upload to the store is
+      # still the one built on `main`.
       - name: Package the extension
         run: cd dist-extension && zip -qr ../mono-extension.zip .
 
@@ -93,13 +142,21 @@ jobs:
           path: playwright-report
           retention-days: 7
 
-      - uses: actions/upload-pages-artifact@v5
+      # Only `main` ships. A pull request proves the bundle and stops here.
+      - if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+        uses: actions/upload-pages-artifact@v5
         with:
           path: dist
 
   deploy:
     needs: verify
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    # Pages write access belongs to the one job that publishes. Verification,
+    # which now also runs on pull requests, only ever needs to read.
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

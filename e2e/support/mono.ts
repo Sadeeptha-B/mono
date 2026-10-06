@@ -9,6 +9,21 @@
  * `fastForward` fires the intervening timers, like an ordinary running block;
  * `setSystemTime` jumps without firing them, like a laptop waking from sleep.
  * Tests use the one that matches the behavior they mean to exercise.
+ *
+ * Traps that have each already produced a convincing bug that was not one:
+ *
+ * - **A paused clock pauses everything built on time.** Motion's frame loop
+ *   runs off the faked timers, so an animated transform never settles until a
+ *   spec calls `clock.resume()` and waits. React's Suspense reveal is a
+ *   `setTimeout` too, which is why the app loads deferred views without it.
+ * - **Seed storage with `addInitScript`, before the first `goto`.** Set after
+ *   navigating, it loses to the app's own write, and the day rollover then sees
+ *   a stale key and wipes the log down to one `day/reset`.
+ * - **Locators are substring and case-insensitive by default.** `getByLabel('At')`
+ *   matches "Wh*at*", a `5m` button matches "1*5m*", `2 PM` matches "1*2 PM*",
+ *   and `Hours` matches "Change today's *hours*". Use `{ exact: true }`
+ *   liberally, and scope to `stage` or `calendar`: the same words often appear
+ *   in both panels.
  */
 
 import { expect, type Locator, type Page } from '@playwright/test'

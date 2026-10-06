@@ -15,9 +15,9 @@ npm run test:e2e   # Playwright, builds and previews first
 npm run build      # production bundle + service worker
 ```
 
-Use `test:e2e:dev` while iterating on localized UI work. `test:e2e` remains the
+Use `test:e2e:dev` while iterating on UI work. `test:e2e` remains the
 production-faithful browser check: it builds the app, serves the bundle, and is
-the suite CI runs before deployment.
+the suite CI runs on every pull request and before deployment.
 
 Documentation is split by audience and ownership:
 
@@ -25,8 +25,9 @@ Documentation is split by audience and ownership:
   agents.
 - **[docs/extension.md](docs/extension.md)** — the current cross-file contract
   for the Chromium extension.
-- **[docs/decisions.md](docs/decisions.md)** — historical reasoning and traps;
-  search the relevant area before changing something that looks odd.
+- **[docs/decisions.md](docs/decisions.md)** — why things are the way they
+  are: settled decisions, traps, and what was deliberately not built. Read the
+  relevant section before changing something that looks odd.
 - **[docs/manual-qa.md](docs/manual-qa.md)** — checks that need a real browser,
   audio output, or always-on-top window.
 
@@ -85,8 +86,10 @@ together, and the guide's header follows the same choice.
 It arrives on its own when a block starts, which is a setting and is on by
 default: a block is time you spend somewhere else, and an ambient timer is what
 makes that time read as a block rather than an unmarked stretch of afternoon.
-That start is also the only moment it *can* arrive — a browser grants a window
-in answer to a click and at no other time — so Mono cannot pop it up when you
+That start is also the moment it can reliably arrive. A browser grants the
+window in answer to a click; the automatic route Chrome offers is reserved for
+pages capturing a camera or microphone or playing audible media, which a timer
+that is usually silent cannot count on. So Mono does not pop it up when you
 minimise the tab, and does not pretend to.
 
 Both panels edit themselves in place. The calendar's `Hours`, `+ Break` and
@@ -274,7 +277,7 @@ Several Mono tabs can disagree because each holds its own in-memory session.
 The extension orders competing blocks by when they began and scopes ambiguous
 messages to the page instance that armed the current one, so a stale tab cannot
 silently cancel a newer block. The current arbitration and failure model is in
-[docs/extension.md](docs/extension.md); its historical reasoning remains in
+[docs/extension.md](docs/extension.md), and the reasons behind it are in
 [docs/decisions.md](docs/decisions.md). Expiry cleanup has the same best-effort
 timing described above.
 

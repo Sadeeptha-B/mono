@@ -2,7 +2,7 @@
 
 > Historical input retained for context, not Mono's current specification. See
 > [the README](../README.md) for the product overview and
-> [the decision log](decisions.md) for later changes.
+> [the decisions](decisions.md) for what changed since and why.
 
 We're going to bootstrap a new web application called Mono. 
 
