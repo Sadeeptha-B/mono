@@ -9,6 +9,7 @@ import {
   canParent,
   childrenOf,
   complete,
+  groupTasks,
   defaultPurpose,
   drop,
   inboxOf,
@@ -26,11 +27,12 @@ import {
   pathOf,
   purposeParts,
   tasksOfOutcome,
-  placesForTasks,
   PURPOSE_MAX_LENGTH,
   reopen,
+  taskTree,
   unarchive,
   type Item,
+  type TaskTreeNode,
 } from './tasks'
 
 const AT = 1_000
@@ -286,14 +288,64 @@ describe('paths and places', () => {
     expect(pathOf('form', items, [work])).toEqual(['Work', 'Mono auth', 'Login pages'])
     expect(pathOf('auth', items, [work])).toEqual(['Work'])
   })
+})
 
-  it('lists every open place a task can go, in tree order', () => {
-    expect(placesForTasks(items, [work, personal]).map((p) => p.label)).toEqual([
-      'Work',
-      'Work › Mono auth',
-      'Work › Mono auth › Login pages',
-      'Personal',
+describe('the backlog as a tree of tasks', () => {
+  const items = [
+    item('auth', 'epic', 'work', { title: 'Mono auth' }),
+    item('pages', 'outcome', 'auth', { title: 'Login pages' }),
+    item('reset', 'outcome', 'auth', { title: 'Password reset' }),
+    item('form', 'task', 'pages', { title: 'Login form' }),
+    item('cookie', 'task', 'pages', { title: 'Session cookie' }),
+    item('csrf', 'task', 'auth', { title: 'CSRF token' }),
+    item('call', 'task', 'work', { title: 'Call Priya' }),
+    item('gate', 'task', 'personal', { title: 'Fix the gate' }),
+    item('old', 'epic', 'work', { title: 'Old epic', status: 'done' }),
+    item('hidden', 'task', 'old'),
+    item('ticked', 'task', 'pages', { status: 'done' }),
+  ]
+
+  /** A node as names: its own, then its tasks', then its children's. */
+  const shape = (node: TaskTreeNode): unknown => [
+    `${node.kind}: ${node.name}`,
+    node.tasks.map((t) => t.title),
+    node.children.map(shape),
+  ]
+
+  it('holds every open task under the place it sits in, empty places included', () => {
+    expect(taskTree(items, [work, personal]).map(shape)).toEqual([
+      [
+        'area: Work',
+        ['Call Priya'],
+        [
+          [
+            'epic: Mono auth',
+            ['CSRF token'],
+            [
+              ['outcome: Login pages', ['Login form', 'Session cookie'], []],
+              ['outcome: Password reset', [], []],
+            ],
+          ],
+        ],
+      ],
+      ['area: Personal', ['Fix the gate'], []],
     ])
+  })
+
+  it('is built once per backlog snapshot', () => {
+    expect(taskTree(items, [work, personal])).toBe(taskTree(items, [work, personal]))
+  })
+
+  it('groups some tasks under the places they sit in, and nothing else', () => {
+    expect(groupTasks(['cookie', 'call', 'gate'], items, [work, personal]).map(shape)).toEqual([
+      [
+        'area: Work',
+        ['Call Priya'],
+        [['epic: Mono auth', [], [['outcome: Login pages', ['Session cookie'], []]]]],
+      ],
+      ['area: Personal', ['Fix the gate'], []],
+    ])
+    expect(groupTasks(['hidden', 'ticked'], items, [work, personal])).toEqual([])
   })
 })
 
@@ -349,7 +401,7 @@ describe('a large backlog', () => {
     const started = performance.now()
 
     expect(activeTasks(items, [work])).toHaveLength(10_000)
-    expect(placesForTasks(items, [work])).toHaveLength(1 + 100 + 500)
+    expect(taskTree(items, [work])[0]!.children).toHaveLength(100)
     for (let e = 0; e < 100; e++) {
       for (let o = 0; o < 5; o++) expect(tasksOfOutcome(`e${e}o${o}`, items, [work])).toHaveLength(20)
     }
@@ -367,7 +419,7 @@ describe('a large backlog', () => {
     const items = build()
     const areas = [work]
     expect(activeTasks(items, areas)).toBe(activeTasks(items, areas))
-    expect(placesForTasks(items, areas)).toBe(placesForTasks(items, areas))
+    expect(taskTree(items, areas)).toBe(taskTree(items, areas))
     // A new snapshot is a new answer.
     expect(activeTasks([...items], areas)).not.toBe(activeTasks(items, areas))
   })

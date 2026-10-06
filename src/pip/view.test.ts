@@ -5,7 +5,7 @@ import type { Phase } from '@/domain/machine'
 
 /** A shaped day, mid-morning, with a deep block waiting. The ordinary case. */
 const facts = (over: Partial<MiniFacts> = {}): MiniFacts => ({
-  dayShaped: true,
+  setup: null,
   withinHours: true,
   nextBlockKind: 'deep',
   nextRegionStart: null,
@@ -14,8 +14,7 @@ const facts = (over: Partial<MiniFacts> = {}): MiniFacts => ({
 
 const PHASES: Phase[] = [
   { name: 'idle' },
-  { name: 'definingPurpose', blockKind: 'deep', afterReflection: false },
-  { name: 'reflecting' },
+  { name: 'definingPurpose', blockKind: 'deep', deciding: null },
   { name: 'focusing' },
   { name: 'blockComplete' },
   { name: 'choosingBreak' },
@@ -41,10 +40,17 @@ describe('every phase has somewhere to go', () => {
 describe('the idle precedence', () => {
   const idle: Phase = { name: 'idle' }
 
-  it('puts an unshaped day above everything else', () => {
+  it('puts an opening question on the stage above everything else', () => {
     expect(
-      miniViewFor(idle, facts({ dayShaped: false, withinHours: false, nextBlockKind: null })),
-    ).toEqual({ kind: 'unshaped' })
+      miniViewFor(
+        idle,
+        facts({
+          setup: { stage: 'hours', revisiting: false },
+          withinHours: false,
+          nextBlockKind: null,
+        }),
+      ),
+    ).toEqual({ kind: 'setup', stage: 'hours', revisiting: false })
   })
 
   it('will not offer a block in time the user declared unstructured', () => {
@@ -71,24 +77,23 @@ describe('the idle precedence', () => {
 })
 
 describe('what the phases carry through', () => {
-  it('keeps the block kind and the reflection flag for the purpose prompt', () => {
-    const phase: Phase = { name: 'definingPurpose', blockKind: 'short', afterReflection: true }
+  it('keeps the block kind for the purpose prompt', () => {
+    const phase: Phase = { name: 'definingPurpose', blockKind: 'short', deciding: null }
     expect(miniViewFor(phase, facts())).toEqual({
       kind: 'purpose',
       blockKind: 'short',
-      afterReflection: true,
+      deciding: null,
     })
   })
 
-  // Priorities is a real block, so it runs like one out here. The difference
-  // between it and a deep block is the label on the timer, which reads it off
-  // the active segment rather than off this.
-  it('runs a reflection as a block, and a break as a break', () => {
+  it("carries the purpose prompt's deciding timer, so the window can show it", () => {
+    const deciding = { startedAt: 100, endsAt: 400 }
+    const phase: Phase = { name: 'definingPurpose', blockKind: 'deep', deciding }
+    expect(miniViewFor(phase, facts())).toEqual({ kind: 'purpose', blockKind: 'deep', deciding })
+  })
+
+  it('runs a block as a block, and a break as a break', () => {
     expect(miniViewFor({ name: 'focusing' }, facts())).toEqual({
-      kind: 'running',
-      segment: 'block',
-    })
-    expect(miniViewFor({ name: 'reflecting' }, facts())).toEqual({
       kind: 'running',
       segment: 'block',
     })
@@ -107,17 +112,30 @@ describe('what the phases carry through', () => {
 })
 
 /**
- * The one place the mini window deliberately disagrees with the stage.
- *
- * Going back to re-read the opening questions is where the user is *looking*,
- * not a fact about the day. Following it out here would point the mini window
- * at the window they are already reading, for as long as they read it.
+ * The window follows the stage exactly. It used to follow `dayShaped` instead,
+ * and offered the next block while the tab was back on the hours.
  */
-describe('re-opening the questions in the tab', () => {
-  it('does not turn the mini window into a signpost', () => {
-    expect(miniViewFor({ name: 'idle' }, facts({ dayShaped: true }))).toEqual({
-      kind: 'ready',
-      blockKind: 'deep',
+describe('the opening questions', () => {
+  const idle: Phase = { name: 'idle' }
+
+  it.each(['commitments', 'hours', 'intentions'] as const)(
+    'shows %s whenever the stage does, first time or not',
+    (stage) => {
+      for (const revisiting of [false, true]) {
+        expect(miniViewFor(idle, facts({ setup: { stage, revisiting } }))).toEqual({
+          kind: 'setup',
+          stage,
+          revisiting,
+        })
+      }
+    },
+  )
+
+  it('only while nothing is running', () => {
+    const setup = { stage: 'intentions' as const, revisiting: true }
+    expect(miniViewFor({ name: 'focusing' }, facts({ setup }))).toEqual({
+      kind: 'running',
+      segment: 'block',
     })
   })
 })

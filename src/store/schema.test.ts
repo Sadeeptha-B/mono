@@ -35,6 +35,7 @@ const EVERY_EVENT = {
       ambience: 'rain',
       ambienceVolume: 0.4,
       popOutOnStart: false,
+      popOutOnDecide: false,
     },
   },
   'commitment/added': {
@@ -116,13 +117,13 @@ const EVERY_EVENT = {
   'intention/added': {
     type: 'intention/added',
     at: 18,
-    intention: { id: 'intention-added', title: 'Mono auth', link: { kind: 'epic', id: 'epic-1' } },
+    intention: { id: 'intention-added', title: 'Mono auth' },
   },
   'intention/updated': {
     type: 'intention/updated',
     at: 19,
     id: 'intention-updated',
-    patch: { title: 'Billing ticket', link: { kind: 'area', id: 'work' } },
+    patch: { title: 'Billing ticket' },
   },
   'intention/removed': { type: 'intention/removed', at: 20, id: 'intention-removed' },
   'intention/taskLinked': {
@@ -210,17 +211,22 @@ describe('the v4 schema', () => {
     ])
   })
 
-  it('drops an intention with an unreadable link, an empty patch, and a bad link target', () => {
+  it("leaves an older log's intention links behind, and drops an edit that only moved one", () => {
     const events = [
       {
         type: 'intention/added',
         at: 1,
-        intention: { id: 'i', title: 'x', link: { kind: 'planet', id: 'p' } },
+        intention: { id: 'i', title: 'x', link: { kind: 'epic', id: 'e' } },
       },
-      { type: 'intention/updated', at: 2, id: 'i', patch: {} },
-      { type: 'intention/taskLinked', at: 3, taskId: 't', intentionId: 4 },
+      { type: 'intention/updated', at: 2, id: 'i', patch: { title: 'y', link: null } },
+      { type: 'intention/updated', at: 3, id: 'i', patch: { link: { kind: 'area', id: 'work' } } },
+      { type: 'intention/updated', at: 4, id: 'i', patch: {} },
+      { type: 'intention/taskLinked', at: 5, taskId: 't', intentionId: 4 },
     ]
-    expect(migratePersisted({ events, dayKey: null }, SCHEMA_VERSION).events).toEqual([])
+    expect(migratePersisted({ events, dayKey: null }, SCHEMA_VERSION).events).toEqual([
+      { type: 'intention/added', at: 1, intention: { id: 'i', title: 'x' } },
+      { type: 'intention/updated', at: 2, id: 'i', patch: { title: 'y' } },
+    ])
   })
 
   it('leaves the backlog alone for a file that carries none', () => {

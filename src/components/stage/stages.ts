@@ -25,7 +25,6 @@ export type StageId =
   | SetupStageId
   | 'ready'
   | 'purpose'
-  | 'priorities'
   | 'focus'
   | 'done'
   | 'break'
@@ -49,12 +48,11 @@ export type StageMeta = {
  * much that is.
  */
 export const STAGES: readonly StageMeta[] = [
-  { id: 'commitments', name: "What's already fixed", setup: true },
-  { id: 'hours', name: "Today's hours", setup: true },
-  { id: 'intentions', name: "Today's intentions", setup: true },
+  { id: 'commitments', name: 'Commitments', setup: true },
+  { id: 'hours', name: 'Hours', setup: true },
+  { id: 'intentions', name: 'Intentions', setup: true },
   { id: 'ready', name: 'Ready', setup: false },
   { id: 'purpose', name: 'One thing', setup: false },
-  { id: 'priorities', name: 'Priorities', setup: false },
   { id: 'focus', name: 'Focusing', setup: false },
   { id: 'done', name: 'Block done', setup: false },
   { id: 'break', name: 'Break', setup: false },
@@ -147,8 +145,6 @@ export function stageFor(
       return setupOpen ? setupStage : 'ready'
     case 'definingPurpose':
       return 'purpose'
-    case 'reflecting':
-      return 'priorities'
     case 'focusing':
       return 'focus'
     case 'blockComplete':

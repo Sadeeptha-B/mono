@@ -5,8 +5,10 @@ import {
   openMono,
   stage,
   calendar,
+  carousel,
   blocksOf,
   startDay,
+  addBlockTask,
   addStandup,
   shapeDay,
   startBlock,
@@ -19,7 +21,7 @@ test('plans the runway on a time axis and charges a break against the plan', asy
 
   // A day with no shape asks for one, in place rather than behind a button.
   await expect(
-    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+    stage(page).getByRole('heading', { name: "What are your commitments for today?" }),
   ).toBeVisible()
 
   await addStandup(page)
@@ -90,21 +92,34 @@ test('asks what happened when a block ended while the machine was asleep', async
   await expect(blocksOf(page, 'Away')).toHaveCount(1)
 })
 
-test('offers five minutes to think when a purpose will not come', async ({ page }) => {
+test('offers five minutes to decide when a purpose will not come, and records none of it', async ({
+  page,
+}) => {
   await openMono(page)
   await addStandup(page)
 
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
-  await page.getByRole('button', { name: "I can't pick one" }).click()
+  // A timer on the question, not a block of its own with a stage of its own.
+  await expect(stage(page).getByRole('button', { name: "I can't pick one" })).toHaveCount(0)
+  await expect(carousel(page).getByRole('button', { name: 'Priorities' })).toHaveCount(0)
 
-  await expect(stage(page).getByText('Working out priorities')).toBeVisible()
-  await expect(stage(page).getByRole('button', { name: /Show elapsed time$/ })).toHaveText('5:00')
-
+  await stage(page).getByRole('button', { name: 'Take 5 mins to decide' }).click()
+  await expect(stage(page).getByLabel('Time left to decide')).toHaveText('5:00')
   await page.clock.fastForward('05:00')
 
-  // Straight back to the question, with the day's shape now worked out.
-  await expect(stage(page).getByRole('heading', { name: 'One thing' })).toBeVisible()
-  await expect(stage(page).getByText(/Now that the day has a shape/)).toBeVisible()
+  // At zero it stops, and the question is still the question.
+  await expect(stage(page)).toContainText("Time's up")
+  await expect(
+    stage(page).getByRole('heading', { name: 'Your purpose for this block' }),
+  ).toBeVisible()
+
+  // The block starts when it is named, so none of that time is charged to it.
+  await addBlockTask(page)
+  await stage(page).getByLabel('Purpose for this block', { exact: true }).fill('Write the plan')
+  await stage(page).getByRole('button', { name: 'Start', exact: true }).click()
+  await expect(stage(page).getByRole('button', { name: /Show elapsed time$/ })).toHaveText(
+    /^(45|20):00$/,
+  )
 })
 
 test('survives a reload mid-block', async ({ page }) => {
@@ -142,7 +157,7 @@ test('the guide is a page of its own, and keeps a running block in sight', async
   await page.clock.fastForward('10:00')
   await expect(page.getByTitle('Back to the timer')).toContainText('35:00')
 
-  await page.getByRole('link', { name: 'Back to today', exact: true }).click()
+  await page.getByRole('link', { name: 'Mono — back to today', exact: true }).click()
   await expect(stage(page).getByText('Write the planner tests')).toBeVisible()
   await expect(stage(page).getByRole('button', { name: /Show elapsed time$/ })).toHaveText('35:00')
 
@@ -152,7 +167,7 @@ test('the guide is a page of its own, and keeps a running block in sight', async
   await expect(page.getByTitle('Back to the timer').getByText('focused')).toBeVisible()
   await page.clock.fastForward('05:00')
   await expect(page.getByTitle('Back to the timer')).toContainText('15:00')
-  await page.getByRole('link', { name: 'Back to today', exact: true }).click()
+  await page.getByRole('link', { name: 'Mono — back to today', exact: true }).click()
   await expect(stage(page).getByRole('button', { name: /Show time remaining$/ })).toHaveText('15:00')
 })
 
@@ -283,7 +298,7 @@ test('the commitment form accepts typing while the clock is running', async ({ p
   await expect(page.getByLabel('At', { exact: true })).toHaveValue('17:00')
 
   // And the same for the calendar's own composer.
-  await page.getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
   await startDay(page)
   await calendar(page).getByRole('button', { name: '+ Commitment' }).click()
 

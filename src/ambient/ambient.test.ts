@@ -25,10 +25,10 @@ describe('ambient settings', () => {
     expect(resolveAmbience('off', 'mono')).toBeNull()
   })
 
-  it('only wants ambience during a running focus or priorities block', () => {
+  it('only wants ambience during a running focus block', () => {
     const active = { kind: 'block', id: 'b', blockKind: 'deep', purpose: null, startedAt: 0, endsAt: 1, taskIds: [] as string[] } as const
     expect(wantsAmbience({ name: 'focusing' }, active)).toBe(true)
-    expect(wantsAmbience({ name: 'reflecting' }, active)).toBe(true)
+    expect(wantsAmbience({ name: 'definingPurpose', blockKind: 'deep', deciding: null }, active)).toBe(false)
     expect(wantsAmbience({ name: 'blockComplete' }, active)).toBe(false)
     expect(wantsAmbience({ name: 'idle' }, null)).toBe(false)
   })

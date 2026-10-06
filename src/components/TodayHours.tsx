@@ -26,7 +26,7 @@ import type { DefaultRegion, Ms, WorkRegion } from '@/domain/types'
  * on screen at once now, and two fieldsets of identically named rows are
  * ambiguous to a screen reader long before they are ambiguous to a test.
  */
-export const TODAY_HOURS_LABEL = "Today's hours"
+export const TODAY_HOURS_LABEL = 'Hours'
 
 /** What the domain takes back: absolute instants, no id yet. */
 export type ResolvedRegion = { startsAt: Ms; endsAt: Ms }
@@ -141,7 +141,7 @@ export function TodayHoursFields({
   draft: DefaultRegion[]
   onDraft: (regions: DefaultRegion[]) => void
   now: Ms
-  /** For callers whose own heading already reads "Today's hours". */
+  /** For callers whose own heading already names the hours. */
   hideLegend?: boolean
 }) {
   const dropped = draft.length - resolveHours(now, draft).length

@@ -10,7 +10,7 @@
  * conversation — which dialog is open — and it should not survive a reload in
  * a way that could resurrect a stale prompt. What survives is the log. A
  * *running segment* does have to survive, though, so `phaseForActive()` in the
- * store rebuilds `focusing` / `reflecting` / `onBreak` from the replayed log.
+ * store rebuilds `focusing` / `onBreak` from the replayed log.
  * Without it, reloading mid-block offered to start a block that was already
  * running; there is an e2e test holding that shut.
  *
@@ -18,10 +18,10 @@
  *
  * ```
  * idle ──startBlock──▶ definingPurpose ──setPurpose──▶ focusing
- *                           │                              │
- *                     cannotDecide                   timerElapsed
- *                           ▼                              ▼
- *                    reflecting (5m) ──────▶        blockComplete
+ *                         ↺ startDeciding                  │
+ *                                                    timerElapsed
+ *                                                          ▼
+ *                                                   blockComplete
  *                                                   │           │
  *                                              skipBreak    takeBreak
  *                                                   │           ▼
@@ -32,9 +32,11 @@
  *
  * `awayDetected` outranks every phase and jumps straight to `reconciling`.
  * `focusing` also accepts `abandonBlock` — there is no pause, deliberately;
- * see `docs/decisions.md`. And `reflecting` is a real `reflect` block: it
- * consumes plan time and lands in history like anything else, rather than
- * being a special case living outside the model.
+ * see `docs/decisions.md`. `startDeciding` gives the purpose prompt a few
+ * minutes to work out what matters, and is the one transition that stays in
+ * the same phase: it is a timer on the question, like the intentions
+ * question's, and records nothing. It replaced the priorities block, a real
+ * block that took plan time and armed site blocking for not knowing yet.
  */
 
 import type { MonoEvent, SessionState } from './events'
@@ -42,9 +44,12 @@ import { minutesToMs, type ActiveSegment, type BlockKind, type Ms } from './type
 
 export type Phase =
   | { name: 'idle' }
-  /** The purpose prompt. `afterReflection` softens the copy on the second ask. */
-  | { name: 'definingPurpose'; blockKind: BlockKind; afterReflection: boolean }
-  | { name: 'reflecting' }
+  /**
+   * The purpose prompt, and its deciding timer once it has been asked for. The
+   * timer lives here rather than in the log because it is part of the
+   * question, which is gone the moment the prompt is.
+   */
+  | { name: 'definingPurpose'; blockKind: BlockKind; deciding: DecidingTimer | null }
   | { name: 'focusing' }
   /** The timer reached zero and we are asking about a break. */
   | { name: 'blockComplete' }
@@ -55,6 +60,9 @@ export type Phase =
    * guess what happened, so the user resolves it.
    */
   | { name: 'reconciling'; lastSeenAt: Ms; blockEndedAt: Ms }
+
+/** The two instants the purpose prompt's deciding timer runs between. */
+export type DecidingTimer = { startedAt: Ms; endsAt: Ms }
 
 export const initialPhase: Phase = { name: 'idle' }
 
@@ -84,7 +92,7 @@ export const initialPhase: Phase = { name: 'idle' }
  * consumers ever genuinely need to disagree, split this then — not before.
  */
 export const isBlockRunning = (phase: Phase, active: ActiveSegment | null): boolean =>
-  active?.kind === 'block' && (phase.name === 'focusing' || phase.name === 'reflecting')
+  active?.kind === 'block' && phase.name === 'focusing'
 
 export type Action =
   | { type: 'startBlock'; at: Ms; blockKind: BlockKind }
@@ -93,7 +101,8 @@ export type Action =
    * a purpose that is not blank, or the prompt stays where it is.
    */
   | { type: 'setPurpose'; at: Ms; purpose: string; taskIds: string[] }
-  | { type: 'cannotDecide'; at: Ms }
+  /** Give the purpose prompt a few minutes to decide in. Records nothing. */
+  | { type: 'startDeciding'; at: Ms }
   | { type: 'timerElapsed'; at: Ms }
   | { type: 'abandonBlock'; at: Ms }
   | { type: 'takeBreak'; at: Ms }
@@ -133,11 +142,7 @@ export function transition(
   switch (phase.name) {
     case 'idle':
       if (action.type === 'startBlock') {
-        return stay({
-          name: 'definingPurpose',
-          blockKind: action.blockKind,
-          afterReflection: false,
-        })
+        return stay({ name: 'definingPurpose', blockKind: action.blockKind, deciding: null })
       }
       return stay(phase)
 
@@ -146,8 +151,8 @@ export function transition(
         // Refused rather than started without them. The prompt does not offer
         // Start with nothing ticked or nothing named; this is the same rule for
         // a stale click or a direct dispatch, so no focus block reaches the log
-        // without saying what it is for. A block that cannot say is the
-        // priorities block's job, through `cannotDecide`.
+        // without saying what it is for. Not knowing yet is what the prompt's
+        // own deciding timer is for, through `startDeciding`.
         const taskIds = [...new Set(action.taskIds)]
         if (taskIds.length === 0 || action.purpose.trim() === '') return stay(phase)
         // The block starts now, not when the prompt opened, so the timer is
@@ -168,43 +173,15 @@ export function transition(
         }
       }
 
-      if (action.type === 'cannotDecide') {
-        // Not being able to name a purpose is itself a signal. Five minutes to
-        // work out what the day is for, recorded like any other block.
-        return {
-          phase: { name: 'reflecting' },
-          events: [
-            {
-              type: 'block/started',
-              at: action.at,
-              id: deps.newId(),
-              blockKind: 'reflect',
-              endsAt: action.at + blockDuration(session, 'reflect'),
-              purpose: null,
-            },
-          ],
-        }
+      if (action.type === 'startDeciding') {
+        // A few minutes to work out what matters, on the question itself. Not a
+        // block: it takes no plan time, blocks no site and records nothing, and
+        // the block that follows starts when it is named, not before.
+        const minutes = minutesToMs(session.settings.reflectMinutes)
+        return stay({ ...phase, deciding: { startedAt: action.at, endsAt: action.at + minutes } })
       }
 
       if (action.type === 'abandonBlock') return stay({ name: 'idle' })
-      return stay(phase)
-    }
-
-    case 'reflecting': {
-      if (action.type === 'timerElapsed' || action.type === 'abandonBlock') {
-        const completed = action.type === 'timerElapsed'
-        return {
-          // Straight back to the question, now with the priorities worked out.
-          phase: {
-            name: 'definingPurpose',
-            blockKind: AFTER_REFLECTION_KIND,
-            afterReflection: true,
-          },
-          events: [
-            { type: completed ? 'block/completed' : 'block/abandoned', at: action.at },
-          ],
-        }
-      }
       return stay(phase)
     }
 
@@ -232,11 +209,7 @@ export function transition(
         // Straight into the next block, which means straight to the purpose
         // prompt — no block ever runs without one.
         return {
-          phase: {
-            name: 'definingPurpose',
-            blockKind: action.nextBlockKind,
-            afterReflection: false,
-          },
+          phase: { name: 'definingPurpose', blockKind: action.nextBlockKind, deciding: null },
           events: [{ type: 'block/completed', at: action.at }],
         }
       }
@@ -311,9 +284,3 @@ function blockDuration(session: SessionState, kind: BlockKind): Ms {
     kind === 'deep' ? deepMinutes : kind === 'short' ? shortMinutes : reflectMinutes
   return minutesToMs(minutes)
 }
-
-/**
- * After reflection we default to a deep block: the user has just spent five
- * minutes working out what matters, which is exactly when depth pays.
- */
-const AFTER_REFLECTION_KIND: BlockKind = 'deep'

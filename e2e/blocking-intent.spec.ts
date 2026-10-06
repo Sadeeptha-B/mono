@@ -191,20 +191,16 @@ test('reloading mid-block republishes the same end instant', async ({ page }) =>
   expect(intent?.startedAt).toBe(TWO_PM.getTime())
 })
 
-test('the priorities timer blocks too, and carries no purpose', async ({ page }) => {
+test('deciding what a block is for blocks nothing', async ({ page }) => {
   await openMono(page)
   await shapeDay(page)
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
-  await page.getByRole('button', { name: "I can't pick one" }).click()
+  await stage(page).getByRole('button', { name: 'Take 5 mins to decide' }).click()
+  await expect(stage(page).getByLabel('Time left to decide')).toBeVisible()
 
-  // It is a real block that consumes plan time and lands in history, so it is a
-  // real block here too. Not being able to name a purpose is not a reason to
-  // hand someone their distractions back.
-  expect(await latest(page)).toMatchObject({
-    running: true,
-    blockKind: 'reflect',
-    purpose: null,
-  })
+  // A timer on the question, not a block: nothing is running yet, so nothing
+  // is blocked until the block is named.
+  expect(await latest(page)).toMatchObject({ running: false })
 })
 
 test('the extension can ask the app to end a block, and is not obeyed blindly', async ({

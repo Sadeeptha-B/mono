@@ -22,7 +22,7 @@ test('the day opens by asking what is already fixed, then for the hours', async 
   // Commitments come first: they are the part of the day you cannot move, so
   // they decide how much of it is left to declare.
   await expect(
-    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+    stage(page).getByRole('heading', { name: "What are your commitments for today?" }),
   ).toBeVisible()
 
   // An empty day is a complete answer. Before "Start the day" existed, a user
@@ -40,24 +40,24 @@ test('the opening questions can be answered in either order', async ({ page }) =
 
   // The carousel is a control while the day is being set up, not just an
   // indicator: both questions are reachable from either one.
-  await goToStage(page, "Today's hours")
+  await goToStage(page, 'Hours')
   await expect(
     stage(page).getByRole('heading', { name: 'Are these your hours today?' }),
   ).toBeVisible()
-  await expect(stage(page).getByLabel("Today's hours 1 start")).toHaveValue('09:00')
+  await expect(stage(page).getByLabel('Hours 1 start', { exact: true })).toHaveValue('09:00')
 
   await stage(page).getByRole('button', { name: '+ Add a stretch' }).click()
-  await stage(page).getByLabel("Today's hours 2 start").fill('20:00')
-  await stage(page).getByLabel("Today's hours 2 end").fill('22:00')
+  await stage(page).getByLabel('Hours 2 start', { exact: true }).fill('20:00')
+  await stage(page).getByLabel('Hours 2 end', { exact: true }).fill('22:00')
 
   // Back to the other question and forward again: the edit is still there,
   // because the drafts outlive the switch.
-  await goToStage(page, "What's already fixed")
+  await goToStage(page, 'Commitments')
   await expect(
-    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+    stage(page).getByRole('heading', { name: "What are your commitments for today?" }),
   ).toBeVisible()
-  await goToStage(page, "Today's hours")
-  await expect(stage(page).getByLabel("Today's hours 2 start")).toHaveValue('20:00')
+  await goToStage(page, 'Hours')
+  await expect(stage(page).getByLabel('Hours 2 start', { exact: true })).toHaveValue('20:00')
 
   await startDay(page)
   await expect(page.getByText(/Working until 10:00 PM/)).toBeVisible()
@@ -70,9 +70,9 @@ test('hours edited on one question survive finishing from the other', async ({ p
   // finishing from the commitments side dropped the edit on the floor.
   await openMono(page)
 
-  await goToStage(page, "Today's hours")
-  await stage(page).getByLabel("Today's hours 1 end").fill('20:00')
-  await goToStage(page, "What's already fixed")
+  await goToStage(page, 'Hours')
+  await stage(page).getByLabel('Hours 1 end', { exact: true }).fill('20:00')
+  await goToStage(page, 'Commitments')
   await startDay(page)
 
   await expect(page.getByText(/Working until 8:00 PM/)).toBeVisible()
@@ -89,26 +89,26 @@ test('the opening questions can be re-opened once the day is under way', async (
   await shapeDay(page)
   await expect(page.getByRole('button', { name: 'Start deep block' })).toBeVisible()
 
-  await goToStage(page, "What's already fixed")
+  await goToStage(page, 'Commitments')
   await expect(
-    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+    stage(page).getByRole('heading', { name: "What are your commitments for today?" }),
   ).toBeVisible()
 
   await page.getByLabel('Next commitment', { exact: true }).fill('Dentist')
   await page.getByLabel('At', { exact: true }).fill('16:00')
   await page.getByLabel('For (minutes)', { exact: true }).fill('30')
-  await page.getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
 
   // The way out is not "Start the day" a second time: the day has already
   // begun, and `day/shaped` records having been asked rather than the answer.
-  await stage(page).getByRole('button', { name: 'Back to the day' }).click()
+  await stage(page).getByRole('button', { name: 'Focus', exact: true }).click()
   await expect(page.getByRole('button', { name: 'Start deep block' })).toBeVisible()
   await expect(blocksOf(page, 'Dentist')).toHaveCount(1)
 
   // Hours edited on the way through are saved by the same button.
-  await goToStage(page, "Today's hours")
-  await stage(page).getByLabel("Today's hours 1 end").fill('16:00')
-  await stage(page).getByRole('button', { name: 'Back to the day' }).click()
+  await goToStage(page, 'Hours')
+  await stage(page).getByLabel('Hours 1 end', { exact: true }).fill('16:00')
+  await stage(page).getByRole('button', { name: 'Focus', exact: true }).click()
   await expect(page.getByText(/Working until 4:00 PM/)).toBeVisible()
 })
 
@@ -120,10 +120,10 @@ test('the strip never offers the questions while a block is running', async ({ p
   await startBlock(page, 'Write the thing')
 
   await expect(
-    carousel(page).getByRole('button', { name: "What's already fixed" }),
+    carousel(page).getByRole('button', { name: 'Commitments', exact: true }),
   ).toHaveAttribute('aria-disabled', 'true')
   await expect(
-    carousel(page).getByRole('button', { name: "Today's hours" }),
+    carousel(page).getByRole('button', { name: 'Hours', exact: true }),
   ).toHaveAttribute('aria-disabled', 'true')
 })
 
@@ -134,17 +134,17 @@ test("there is only ever one editor of today's hours on screen", async ({ page }
   await shapeDay(page)
 
   await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
-  await expect(calendar(page).getByLabel("Today's hours 1 end")).toBeVisible()
+  await expect(calendar(page).getByLabel('Hours 1 end', { exact: true })).toBeVisible()
 
   // Going to the question on the stage closes the composer.
-  await goToStage(page, "Today's hours")
-  await expect(stage(page).getByLabel("Today's hours 1 end")).toBeVisible()
-  await expect(calendar(page).getByLabel("Today's hours 1 end")).toBeHidden()
+  await goToStage(page, 'Hours')
+  await expect(stage(page).getByLabel('Hours 1 end', { exact: true })).toBeVisible()
+  await expect(calendar(page).getByLabel('Hours 1 end', { exact: true })).toBeHidden()
 
   // And opening the composer takes the question back off the stage.
   await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
-  await expect(calendar(page).getByLabel("Today's hours 1 end")).toBeVisible()
-  await expect(stage(page).getByLabel("Today's hours 1 end")).toBeHidden()
+  await expect(calendar(page).getByLabel('Hours 1 end', { exact: true })).toBeVisible()
+  await expect(stage(page).getByLabel('Hours 1 end', { exact: true })).toBeHidden()
   await expect(page.getByRole('button', { name: 'Start deep block' })).toBeVisible()
 })
 
@@ -154,12 +154,12 @@ test('the unanswered day moves to the other question rather than asking twice', 
   // The same rule where the setup panel cannot simply close, because the day
   // has not been shaped yet. The question moves; the composer wins the edit.
   await openMono(page)
-  await goToStage(page, "Today's hours")
+  await goToStage(page, 'Hours')
 
   await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
-  await expect(calendar(page).getByLabel("Today's hours 1 end")).toBeVisible()
+  await expect(calendar(page).getByLabel('Hours 1 end', { exact: true })).toBeVisible()
   await expect(
-    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+    stage(page).getByRole('heading', { name: "What are your commitments for today?" }),
   ).toBeVisible()
 })
 
@@ -174,7 +174,7 @@ test('a commitment can carry the time it costs either side of itself', async ({ 
   await stage(page).getByRole('button', { name: '+ Time either side' }).click()
   await page.getByLabel('Getting ready', { exact: true }).fill('30')
   await page.getByLabel('Getting back', { exact: true }).fill('20')
-  await page.getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
 
   // It is listed with what it really costs before the day even starts.
   await expect(stage(page).getByText('Swimming')).toBeVisible()
@@ -216,7 +216,7 @@ test('the time either side folds away again, and folding it clears it', async ({
   await stage(page).getByRole('button', { name: '− Time either side' }).click()
   await expect(stage(page).getByLabel('Getting ready', { exact: true })).toBeHidden()
 
-  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
   await expect(stage(page).getByText(/1h 00m$/)).toBeVisible()
 
   await startDay(page)
@@ -239,7 +239,7 @@ test('editing a commitment cannot hide what it costs either side', async ({ page
   await stage(page).getByRole('button', { name: '+ Time either side' }).click()
   await stage(page).getByLabel('Getting ready', { exact: true }).fill('30')
   await stage(page).getByLabel('Getting back', { exact: true }).fill('20')
-  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
 
   // A fresh form over a day that already has one: the fold starts closed,
   // which is the state the bug needed.
@@ -253,7 +253,7 @@ test('editing a commitment cannot hide what it costs either side', async ({ page
 
   // And it closes again once the form is back to adding, because what is on
   // screen follows the draft rather than the last thing that was clicked.
-  await stage(page).getByRole('button', { name: 'Save commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
   await expect(stage(page).getByLabel('Getting ready', { exact: true })).toBeHidden()
   await expect(stage(page).getByText(/1h 00m \+ 50m around/)).toBeVisible()
 })
@@ -267,11 +267,11 @@ test('the opening question lists commitments in the order the day happens', asyn
 
   await stage(page).getByLabel('Next commitment', { exact: true }).fill('Swimming')
   await stage(page).getByLabel('At', { exact: true }).fill('16:00')
-  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByLabel('At', { exact: true }).press('Enter')
 
   await stage(page).getByLabel('Next commitment', { exact: true }).fill('Daily standup')
   await stage(page).getByLabel('At', { exact: true }).fill('09:00')
-  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByLabel('At', { exact: true }).press('Enter')
 
   const rows = fixedList(page).getByRole('listitem')
   await expect(rows.first()).toContainText('Daily standup')
@@ -293,10 +293,10 @@ test('the axis starts where the day does, not where the hours do', async ({ page
 
   // Only *empty* hours go. Anything that happened up there still reaches back
   // for them, because it is an entry rather than a region.
-  await goToStage(page, "What's already fixed")
+  await goToStage(page, 'Commitments')
   await stage(page).getByLabel('Next commitment', { exact: true }).fill('Standup')
   await stage(page).getByLabel('At', { exact: true }).fill('09:00')
-  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
 
   await expect(calendar(page).getByText('9 AM', { exact: true })).toBeVisible()
   await expect(blocksOf(page, 'Standup')).toHaveCount(1)
@@ -310,24 +310,25 @@ test('the commitment form folds away once the day has something in it', async ({
   // Nothing fixed yet, so the form is the question and there is nothing to
   // fold back to.
   await expect(stage(page).getByLabel('Next commitment', { exact: true })).toBeVisible()
-  await expect(stage(page).getByRole('button', { name: 'Cancel' })).toHaveCount(0)
+  await expect(stage(page).getByRole('button', { name: 'Cancel new commitment' })).toHaveCount(0)
+  await expect(stage(page).getByRole('button', { name: 'Add commitment', exact: true })).toHaveCount(0)
 
   await stage(page).getByLabel('Next commitment', { exact: true }).fill('Daily standup')
   await stage(page).getByLabel('At', { exact: true }).fill('17:00')
-  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByLabel('At', { exact: true }).press('Enter')
 
-  // Still open straight after adding: the commonest next thing is another one.
+  // Still open straight after Enter: the commonest next thing is another one.
   await expect(stage(page).getByLabel('Next commitment', { exact: true })).toBeVisible()
 
-  await stage(page).getByRole('button', { name: 'Cancel' }).click()
+  // The × at the heading folds it, and the heading is left to open it again.
+  await stage(page).getByRole('button', { name: 'Cancel new commitment' }).click()
   await expect(stage(page).getByLabel('Next commitment', { exact: true })).toBeHidden()
-  await expect(
-    stage(page).getByRole('button', { name: '+ Another commitment' }),
-  ).toBeVisible()
+  await expect(stage(page).getByRole('button', { name: 'Add commitment', exact: true })).toHaveAttribute('aria-expanded', 'false')
+  await expect(stage(page).getByRole('button', { name: 'Add commitment', exact: true })).toBeFocused()
 
   // Coming back to the question shows the answer, not the next question.
-  await goToStage(page, "Today's hours")
-  await goToStage(page, "What's already fixed")
+  await goToStage(page, 'Hours')
+  await goToStage(page, 'Commitments')
   await expect(stage(page).getByLabel('Next commitment', { exact: true })).toBeHidden()
   await expect(fixedList(page).getByRole('listitem')).toHaveCount(1)
 
@@ -336,10 +337,8 @@ test('the commitment form folds away once the day has something in it', async ({
   await expect(stage(page).getByLabel('This commitment', { exact: true })).toHaveValue(
     'Daily standup',
   )
-  await stage(page).getByRole('button', { name: 'Cancel' }).click()
-  await expect(
-    stage(page).getByRole('button', { name: '+ Another commitment' }),
-  ).toBeVisible()
+  await stage(page).getByRole('button', { name: 'Cancel editing' }).click()
+  await expect(stage(page).getByRole('button', { name: 'Add commitment', exact: true })).toHaveAttribute('aria-expanded', 'false')
 
   // And with the list empty again the question needs the form back, without
   // anything having to notice the removal.
@@ -357,36 +356,33 @@ test('arriving at the question folds away a form nobody was using', async ({
   await openMono(page)
   await stage(page).getByLabel('Next commitment', { exact: true }).fill('Daily standup')
   await stage(page).getByLabel('At', { exact: true }).fill('17:00')
-  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
-  await stage(page).getByRole('button', { name: 'Cancel' }).click()
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
 
   // Opened and left alone: gone on return.
   await stage(page).getByRole('button', { name: 'Edit Daily standup' }).click()
   await expect(stage(page).getByLabel('This commitment', { exact: true })).toBeVisible()
-  await goToStage(page, "Today's hours")
-  await goToStage(page, "What's already fixed")
+  await goToStage(page, 'Hours')
+  await goToStage(page, 'Commitments')
   await expect(stage(page).getByLabel('This commitment', { exact: true })).toBeHidden()
-  await expect(
-    stage(page).getByRole('button', { name: '+ Another commitment' }),
-  ).toBeVisible()
+  await expect(stage(page).getByRole('button', { name: 'Add commitment', exact: true })).toHaveAttribute('aria-expanded', 'false')
 
   // Opened and changed: still there, still pointed at the same row.
   await stage(page).getByRole('button', { name: 'Edit Daily standup' }).click()
   await stage(page).getByLabel('This commitment', { exact: true }).fill('Design review')
-  await goToStage(page, "Today's hours")
-  await goToStage(page, "What's already fixed")
+  await goToStage(page, 'Hours')
+  await goToStage(page, 'Commitments')
   await expect(stage(page).getByLabel('This commitment', { exact: true })).toHaveValue(
     'Design review',
   )
-  await stage(page).getByRole('button', { name: 'Cancel' }).click()
+  await stage(page).getByRole('button', { name: 'Cancel editing' }).click()
 
   // And the same promise for a half-written *new* one: the fold closes over it
   // on the way out, and reopening finds it rather than a fresh form.
-  await stage(page).getByRole('button', { name: '+ Another commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Add commitment', exact: true }).click()
   await stage(page).getByLabel('Next commitment', { exact: true }).fill('Dentist')
-  await goToStage(page, "Today's hours")
-  await goToStage(page, "What's already fixed")
-  await stage(page).getByRole('button', { name: '+ Another commitment' }).click()
+  await goToStage(page, 'Hours')
+  await goToStage(page, 'Commitments')
+  await stage(page).getByRole('button', { name: 'Add commitment', exact: true }).click()
   await expect(stage(page).getByLabel('Next commitment', { exact: true })).toHaveValue(
     'Dentist',
   )
@@ -406,7 +402,7 @@ test('a commitment just after midnight does not pull yesterday onto the axis', a
   await stage(page).getByLabel('For (minutes)', { exact: true }).fill('60')
   await stage(page).getByRole('button', { name: '+ Time either side' }).click()
   await stage(page).getByLabel('Getting ready', { exact: true }).fill('30')
-  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
   await startDay(page)
 
   // The day starts at midnight and no earlier.
@@ -431,7 +427,7 @@ test('a commitment can be rewritten from the opening question', async ({ page })
   await stage(page).getByLabel('Next commitment', { exact: true }).fill('Daily standup')
   await stage(page).getByLabel('At', { exact: true }).fill('17:00')
   await stage(page).getByLabel('For (minutes)', { exact: true }).fill('15')
-  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
 
   await stage(page).getByRole('button', { name: 'Edit Daily standup' }).click()
   const what = stage(page).getByLabel('This commitment', { exact: true })
@@ -440,7 +436,7 @@ test('a commitment can be rewritten from the opening question', async ({ page })
 
   await what.fill('Design review')
   await stage(page).getByLabel('At', { exact: true }).fill('16:00')
-  await stage(page).getByRole('button', { name: 'Save commitment' }).click()
+  await stage(page).getByLabel('At', { exact: true }).press('Enter')
 
   // Moved and renamed, not duplicated, and the form is back to adding.
   await expect(fixedList(page).getByRole('listitem')).toHaveCount(1)
@@ -462,14 +458,14 @@ test('the calendar follows the hours question as it is typed', async ({ page }) 
   await openMono(page)
   await expect(page.getByText(/Working until 6:00 PM/)).toBeVisible()
 
-  await goToStage(page, "Today's hours")
-  await stage(page).getByLabel("Today's hours 1 end").fill('20:00')
+  await goToStage(page, 'Hours')
+  await stage(page).getByLabel('Hours 1 end', { exact: true }).fill('20:00')
 
   await expect(page.getByText(/Working until 8:00 PM/)).toBeVisible()
   await expect(calendar(page).getByText('7 PM', { exact: true })).toBeVisible()
 
   // Still a draft: the composer, which edits the saved thing, is unchanged.
   await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
-  await expect(calendar(page).getByLabel("Today's hours 1 end")).toHaveValue('18:00')
+  await expect(calendar(page).getByLabel('Hours 1 end', { exact: true })).toHaveValue('18:00')
   await expect(page.getByText(/Working until 6:00 PM/)).toBeVisible()
 })

@@ -133,7 +133,7 @@ export function RegionShapeEditor({
           + Add a stretch
         </GhostButton>
         <p className="min-w-40 flex-1 text-xs leading-relaxed text-muted">
-          Leave a gap for anything unstructured. Planning resumes after it.
+          Leave a gap for anything unstructured.
         </p>
       </div>
     </fieldset>

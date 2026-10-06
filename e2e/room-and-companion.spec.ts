@@ -110,7 +110,7 @@ test('volume keeps drag steps local and journals only the committed value', asyn
   await volume.focus()
   await volume.press('ArrowRight')
   await expect(volume).toHaveValue('81')
-  await stage(page).getByRole('heading', { name: "What's already fixed today?" }).click()
+  await stage(page).getByRole('heading', { name: "What are your commitments for today?" }).click()
   await expect(roomMenu).toBeHidden()
   await expect.poll(async () => page.evaluate(() => {
     const stored = JSON.parse(localStorage.getItem('mono.session')!)
@@ -205,9 +205,9 @@ test('the finished day reads back as a postcard', async ({ page }) => {
 
   // Setup outranks the postcard. The ordinary companion must return with the
   // setup panel instead of leaving the stage with neither scene.
-  await goToStage(page, "What's already fixed")
+  await goToStage(page, 'Commitments')
   await expect(
-    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+    stage(page).getByRole('heading', { name: "What are your commitments for today?" }),
   ).toBeVisible()
   await expect(stage(page).getByRole('heading', { name: 'Day done' })).toHaveCount(0)
   await expect(stage(page).getByRole('button', { name: /Pet Mono/ })).toBeVisible()

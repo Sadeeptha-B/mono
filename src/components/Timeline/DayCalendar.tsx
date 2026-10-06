@@ -72,7 +72,6 @@ type Props = {
   now: Ms
   /** Today's hours, for the editor. Not the same list as `timeline.regions`. */
   regions: readonly WorkRegion[]
-  usingDefaultRegions: boolean
   /**
    * The two lists an editor can be pointed at, as the store holds them.
    *
@@ -99,7 +98,6 @@ export function DayCalendar({
   timeline,
   now,
   regions,
-  usingDefaultRegions,
   commitments,
   breaks,
   composer,
@@ -217,7 +215,6 @@ export function DayCalendar({
         <HoursComposer
           now={now}
           regions={regions}
-          usingDefaults={usingDefaultRegions}
           onSave={(next) => {
             // `null` means the draft matched what the day already says. Saving
             // it anyway would override the day with its own current shape and

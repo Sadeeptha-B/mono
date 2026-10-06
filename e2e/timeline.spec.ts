@@ -172,7 +172,7 @@ test('the calendar edits itself in place, without covering the day', async ({ pa
   // Clicking the open control closes it again.
   await hours.click()
   await expect(hours).toHaveAttribute('aria-expanded', 'false')
-  await expect(calendar(page).getByLabel("Today's hours 1 start")).toBeHidden()
+  await expect(calendar(page).getByLabel('Hours 1 start', { exact: true })).toBeHidden()
 })
 
 test('a commitment stays on the calendar once it is over', async ({ page }) => {
@@ -265,11 +265,11 @@ test('an editor closes when the thing it is editing is cleared', async ({ page }
   // without touching the calendar's own composer. Every locator here is scoped
   // to the stage: two forms are deliberately on screen at once, and they share
   // the field names — which is the whole reason this case exists.
-  await goToStage(page, "What's already fixed")
+  await goToStage(page, 'Commitments')
   await stage(page).getByLabel('Next commitment', { exact: true }).fill('Design review')
   await stage(page).getByLabel('At', { exact: true }).fill('17:00')
   await stage(page).getByLabel('For (minutes)', { exact: true }).fill('45')
-  await stage(page).getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
 
   await expect(calendar(page).getByLabel('From', { exact: true })).toBeHidden()
 })
@@ -351,8 +351,8 @@ test('plans only inside working hours, and resumes after an unstructured gap', a
   // Carve the evening: stop at 6, take 6-8 unstructured, work again 8-10.
   await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
   await calendar(page).getByRole('button', { name: '+ Add a stretch' }).click()
-  await calendar(page).getByLabel("Today's hours 2 start").fill('20:00')
-  await calendar(page).getByLabel("Today's hours 2 end").fill('22:00')
+  await calendar(page).getByLabel('Hours 2 start', { exact: true }).fill('20:00')
+  await calendar(page).getByLabel('Hours 2 end', { exact: true }).fill('22:00')
   await calendar(page).getByRole('button', { name: 'Save for today' }).click()
 
   // The day now runs to 10, and the evening stretch is planned.
@@ -369,11 +369,11 @@ test('says when the next stretch opens instead of planning through a gap', async
   // hours is no reason to be refused the form that sets them.
   await openMono(page, new Date(2026, 7, 20, 19, 0, 0))
 
-  await goToStage(page, "Today's hours")
+  await goToStage(page, 'Hours')
   await expect(stage(page).getByText(/your day starts at|past everything below/)).toBeVisible()
   await stage(page).getByRole('button', { name: '+ Add a stretch' }).click()
-  await stage(page).getByLabel("Today's hours 2 start").fill('20:00')
-  await stage(page).getByLabel("Today's hours 2 end").fill('22:00')
+  await stage(page).getByLabel('Hours 2 start', { exact: true }).fill('20:00')
+  await stage(page).getByLabel('Hours 2 end', { exact: true }).fill('22:00')
   await startDay(page)
 
   await expect(
@@ -385,7 +385,7 @@ test('says when the next stretch opens instead of planning through a gap', async
 
   // The escape hatch opens the calendar's own editor, in place.
   await page.getByRole('button', { name: "Change today's hours" }).click()
-  await expect(calendar(page).getByLabel("Today's hours 1 start")).toBeVisible()
+  await expect(calendar(page).getByLabel('Hours 1 start', { exact: true })).toBeVisible()
 })
 
 test('saving the hours editor unchanged leaves the day following the default', async ({
@@ -401,7 +401,7 @@ test('saving the hours editor unchanged leaves the day following the default', a
 
   await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
   await calendar(page).getByRole('button', { name: 'Save for today' }).click()
-  await expect(calendar(page).getByLabel("Today's hours 1 start")).toBeHidden()
+  await expect(calendar(page).getByLabel('Hours 1 start', { exact: true })).toBeHidden()
 
   // Change the recurring shape. An uncustomised day has to follow it.
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
@@ -418,7 +418,7 @@ test('a real edit in the hours editor still overrides the day', async ({ page })
   await shapeDay(page)
 
   await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
-  await calendar(page).getByLabel("Today's hours 1 end").fill('16:00')
+  await calendar(page).getByLabel('Hours 1 end', { exact: true }).fill('16:00')
   await calendar(page).getByRole('button', { name: 'Save for today' }).click()
 
   await expect(page.getByText(/Working until 4:00 PM/)).toBeVisible()
@@ -511,15 +511,15 @@ test('a time field is never drawn narrower than it can render', async ({ page })
     expect(field!.width, `settings at ${width}`).toBeGreaterThanOrEqual(needed - 1)
     await page.keyboard.press('Escape')
 
-    await goToStage(page, "Today's hours")
-    const stageField = await stage(page).getByLabel("Today's hours 1 start").boundingBox()
+    await goToStage(page, 'Hours')
+    const stageField = await stage(page).getByLabel('Hours 1 start', { exact: true }).boundingBox()
     expect(stageField!.width, `the hours question at ${width}`).toBeGreaterThanOrEqual(
       needed - 1,
     )
 
     await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
     const calendarField = await calendar(page)
-      .getByLabel("Today's hours 1 start")
+      .getByLabel('Hours 1 start', { exact: true })
       .boundingBox()
     expect(calendarField, `the calendar hours editor at ${width}`).not.toBeNull()
     expect(

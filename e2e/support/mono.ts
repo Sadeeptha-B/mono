@@ -95,8 +95,13 @@ export const intentionList = (page: Page) =>
 
 /** Name one thing today is for, on the intentions question. */
 export async function addIntention(page: Page, title: string) {
-  await stage(page).getByLabel('Next intention', { exact: true }).fill(title)
-  await stage(page).getByRole('button', { name: 'Add intention' }).click()
+  const field = stage(page).getByLabel('Next intention', { exact: true })
+  // Folded behind `+ Add intention` once something is named.
+  if (!(await field.isVisible())) {
+    await stage(page).getByRole('button', { name: 'Add intention', exact: true }).click()
+  }
+  await field.fill(title)
+  await field.press('Enter')
 }
 
 /**
@@ -108,7 +113,7 @@ export async function addIntention(page: Page, title: string) {
  * drafts outlive the switch, which is a rule the setup specs hold separately.
  */
 export async function startDay(page: Page) {
-  await goToStage(page, "Today's intentions")
+  await goToStage(page, 'Intentions')
   if ((await intentionList(page).count()) === 0) await addIntention(page, 'Ship the planner')
   await stage(page).getByRole('button', { name: 'Start the day' }).click()
 }
@@ -123,7 +128,7 @@ export async function addStandup(page: Page) {
   // Exact matching throughout: "At" is a substring of "What".
   await page.getByLabel('At', { exact: true }).fill('17:00')
   await page.getByLabel('For (minutes)', { exact: true }).fill('15')
-  await page.getByRole('button', { name: 'Add commitment' }).click()
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
   await startDay(page)
 }
 
@@ -133,15 +138,27 @@ export async function shapeDay(page: Page) {
 }
 
 /**
- * Write a task down on the purpose prompt and tick it for this block.
+ * Write a task down on the purpose prompt and tick it for this block: written
+ * into an area's inbox from the block's own dropdown, which links it to no
+ * intention.
  *
  * The default title is deliberately unlike any purpose a spec types, so a
  * text query for the purpose never also finds the task listed under the timer.
  */
-export async function addBlockTask(page: Page, title = 'The task at hand') {
-  await stage(page).getByLabel('New task', { exact: true }).fill(title)
-  await stage(page).getByRole('button', { name: 'Add task' }).click()
+export async function addBlockTask(page: Page, title = 'The task at hand', area = 'Work') {
+  const picker = blockPicker(page)
+  await picker.click()
+  const panel = stage(page).getByRole('group', { name: 'Tasks for this block', exact: true })
+  await panel.getByRole('button', { name: `Add a task to ${area}`, exact: true }).click()
+  const field = panel.getByLabel(`New task in ${area}`, { exact: true })
+  await field.fill(title)
+  await field.press('Enter')
+  await picker.click()
 }
+
+/** The purpose prompt's dropdown of tasks for this block alone. */
+export const blockPicker = (page: Page) =>
+  stage(page).getByRole('button', { name: 'Tasks for this block', exact: true })
 
 /**
  * Start a block with a purpose. Every focus block carries a task, so this

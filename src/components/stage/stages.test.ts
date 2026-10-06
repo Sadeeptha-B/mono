@@ -34,6 +34,6 @@ describe('the opening questions', () => {
   })
 
   it('name each question the way its dot does', () => {
-    expect(setupStageName('intentions')).toBe("Today's intentions")
+    expect(setupStageName('intentions')).toBe('Intentions')
   })
 })

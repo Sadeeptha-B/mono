@@ -476,10 +476,9 @@ export function completeBlock(
   }
 }
 
-/** Merge an edit into an intention. `link: null` is a removal. */
+/** Merge an edit into an intention. */
 function applyIntentionPatch(intention: Intention, patch: IntentionPatch): Intention {
-  const { link, ...rest } = { ...intention, ...patch }
-  return link ? { ...rest, link } : rest
+  return { ...intention, ...patch }
 }
 
 /** Close an open segment so a malformed log cannot strand one. */

@@ -31,28 +31,46 @@ import {
   FREE_BREAK,
 } from '@/components/breakCost'
 import { BlockTasks } from '@/components/BlockTasks'
+import { QuestionClock } from '@/components/QuestionClock'
 import { GhostButton, PrimaryButton } from '@/components/ui'
 import { timerFace } from '@/components/timerFace'
 import { formatClock, formatDuration, type TimerMode } from '@/domain/time'
-import type { ActiveSegment, BlockKind, Ms } from '@/domain/types'
+import type {
+  ActiveSegment,
+  BlockKind,
+  Commitment,
+  Intention,
+  Ms,
+  WorkRegion,
+} from '@/domain/types'
+import type { SetupStageId } from '@/components/stage/stages'
 import type { DayProgress } from '@/domain/dayProgress'
 
-/** The heading above a question, sized for a window this small. */
+/**
+ * The heading above a question, sized for a window this small, with the same
+ * room level with the title that the stage's `StagePrompt` keeps for a timer on
+ * the question.
+ */
 export function MiniPrompt({
   eyebrow,
   title,
   detail,
+  aside,
 }: {
   eyebrow: string
   title: string
   detail?: string
+  aside?: ReactNode
 }) {
   return (
     <div>
       <div className="text-[10px] font-medium tracking-widest text-muted uppercase">
         {eyebrow}
       </div>
-      <h2 className="mt-0.5 text-xl leading-tight font-light text-bright">{title}</h2>
+      <div className="mt-0.5 flex items-start justify-between gap-2">
+        <h2 className="min-w-0 text-xl leading-tight font-light text-bright">{title}</h2>
+        {aside && <div className="shrink-0">{aside}</div>}
+      </div>
       {detail && <p className="mt-1 text-xs leading-snug text-muted">{detail}</p>}
     </div>
   )
@@ -131,32 +149,6 @@ const TONE = {
   break: 'text-rest',
 } as const
 
-/**
- * The day has never been shaped, and this window is not where that is done.
- *
- * Hours and commitments are only answerable with the day drawn beside them —
- * the reason Mono has no modals — and there is no calendar here. So it says so
- * and points back, rather than offering a form that could not show its own
- * consequences. Chromium puts a back-to-tab button on this window's own title
- * bar; the button here is the same journey, said in Mono's words.
- */
-export function MiniUnshaped({ onOpenTab }: { onOpenTab: () => void }) {
-  return (
-    <div>
-      <MiniPrompt
-        eyebrow="Not started"
-        title="Give the day a shape"
-        detail="What's fixed today, and which hours are yours. Both need the calendar beside them."
-      />
-      <Row>
-        <PrimaryButton type="button" onClick={onOpenTab}>
-          Open Mono
-        </PrimaryButton>
-      </Row>
-    </div>
-  )
-}
-
 export function MiniOutsideHours({
   now,
   nextStart,
@@ -219,32 +211,57 @@ export function MiniNothingFits() {
  * the backlog, or writing one down. That is a list to browse and a form to
  * fill, and it needs the room the tab has; squeezed into this window it would be
  * the one panel you had to scroll to answer. So this says where the question is
- * and keeps the two answers that need no list: not starting after all, and not
- * being able to pick, which starts the priorities block from here as it always
- * has.
+ * and keeps the one answer that needs no list: not starting after all.
+ *
+ * The title is the question put plainly, with the length of the block in it,
+ * rather than the stage's own name for it: this window is glanced at, and "One
+ * thing" only means something to someone who has read the strip under the
+ * stage.
+ *
+ * The prompt's deciding timer is here as well as in the tab, the same instants
+ * on the same clock. Working out what a block is for is the stretch most likely
+ * to drift into something else, and an always-on-top window is the one place a
+ * clock stays in view while you go and look at what the answer depends on.
  *
  * Nothing in it takes focus. The tab has the field the user is about to type
  * in, and a focused control here could raise this window over it.
  */
 export function MiniPickInTab({
+  now,
   blockKind,
   minutes,
+  deciding,
+  decidingMinutes,
+  onStartDeciding,
   onOpenTab,
-  onCannotDecide,
   onCancel,
 }: {
+  now: Ms
   blockKind: BlockKind
   minutes: number
+  deciding: { endsAt: Ms } | null
+  /** The setting, for the label on the play button. */
+  decidingMinutes: number
+  onStartDeciding: () => void
   onOpenTab: () => void
-  onCannotDecide: () => void
   onCancel: () => void
 }) {
   return (
     <div>
       <MiniPrompt
-        eyebrow={`${minutes} minute ${blockKind === 'deep' ? 'deep' : 'short'} block`}
-        title="One thing"
+        eyebrow={blockKind === 'deep' ? 'Deep block' : 'Short block'}
+        title={`Decide what the next ${minutes} minutes are for`}
         detail="Pick this block's tasks in the tab, where your intentions are."
+        aside={
+          <QuestionClock
+            now={now}
+            timer={deciding}
+            minutes={decidingMinutes}
+            onStart={onStartDeciding}
+            timeLeftLabel="Time left to decide"
+            hint="Left to work out what this block is for"
+          />
+        }
       />
       <Row>
         <PrimaryButton type="button" onClick={onOpenTab}>
@@ -253,13 +270,109 @@ export function MiniPickInTab({
         <GhostButton type="button" onClick={onCancel}>
           Not yet
         </GhostButton>
-        <button
-          type="button"
-          onClick={onCannotDecide}
-          className="ml-auto text-xs text-muted underline-offset-4 transition hover:text-body hover:underline"
-        >
-          I can't pick one
-        </button>
+      </Row>
+    </div>
+  )
+}
+
+/**
+ * The opening questions, out here as the stage is asking them.
+ *
+ * None of them is answered here. Hours and commitments need the calendar drawn
+ * beside them, and intentions are written with tasks chosen from the backlog,
+ * and this window has room for neither. What it can do is say where the answer
+ * stands — what is fixed, which hours, what is named so far — so a glance at it
+ * agrees with the tab, and offer the way back to the tab to change it.
+ *
+ * The intentions question also brings its timer, which is the part worth
+ * keeping in view: deciding what a day is for is evaluative work, and the way
+ * it goes wrong is quietly turning into something else.
+ *
+ * The titles are the stage's own, so the two windows ask the same question in
+ * the same words; the intentions one is said as the purpose prompt's is out
+ * here, as something to decide.
+ */
+export function MiniSetup({
+  stage,
+  revisiting,
+  now,
+  commitments,
+  regions,
+  intentions,
+  timer,
+  timerMinutes,
+  onStartTimer,
+  onOpenTab,
+}: {
+  stage: SetupStageId
+  revisiting: boolean
+  now: Ms
+  commitments: readonly Commitment[]
+  /** Today's hours as the calendar draws them, an unsaved draft included. */
+  regions: readonly WorkRegion[]
+  intentions: readonly Intention[]
+  /** The intentions question's timer. */
+  timer: { endsAt: Ms } | null
+  /** The setting, for the label on the play button. */
+  timerMinutes: number
+  onStartTimer: () => void
+  onOpenTab: () => void
+}) {
+  const eyebrow = revisiting ? 'Changing today' : 'To begin'
+
+  return (
+    <div>
+      {stage === 'commitments' ? (
+        <MiniPrompt
+          eyebrow={eyebrow}
+          title="What are your commitments for today?"
+          detail={
+            commitments.length === 0
+              ? "Nothing fixed yet. Add anything you can't move in the tab."
+              : `Fixed: ${[...commitments]
+                  .sort((a, b) => a.startsAt - b.startsAt)
+                  .map((c) => `${c.title} at ${formatClock(c.startsAt)}`)
+                  .join(', ')}.`
+          }
+        />
+      ) : stage === 'hours' ? (
+        <MiniPrompt
+          eyebrow={eyebrow}
+          title="Are these your hours today?"
+          detail={
+            regions.length === 0
+              ? 'No working hours yet. Mono plans only inside them.'
+              : `${[...regions]
+                  .sort((a, b) => a.startsAt - b.startsAt)
+                  .map((r) => `${formatClock(r.startsAt)}–${formatClock(r.endsAt)}`)
+                  .join(', ')}. Change them in the tab, beside the calendar.`
+          }
+        />
+      ) : (
+        <MiniPrompt
+          eyebrow={eyebrow}
+          title="Decide what today is for"
+          detail={
+            intentions.length === 0
+              ? 'Name your intentions in the tab, with the tasks under each.'
+              : `Named so far: ${intentions.map((i) => i.title).join(', ')}.`
+          }
+          aside={
+            <QuestionClock
+              now={now}
+              timer={timer}
+              minutes={timerMinutes}
+              onStart={onStartTimer}
+              timeLeftLabel="Time left for intentions"
+              hint="Left to name what today is for"
+            />
+          }
+        />
+      )}
+      <Row>
+        <PrimaryButton type="button" onClick={onOpenTab}>
+          Open Mono
+        </PrimaryButton>
       </Row>
     </div>
   )

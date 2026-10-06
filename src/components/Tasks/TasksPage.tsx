@@ -8,9 +8,11 @@
  * `App` swaps the view without unmounting anything, so a block keeps running
  * while you are here, and the header says what the timer would be saying.
  *
- * Two parts, in the order a morning uses them. **Today** is the day's
- * intentions and the tasks gathered under each — the grouping the day keeps,
- * and edits through the event log. **Areas** are the backlog itself, one band
+ * Two parts, in the order a morning uses them. **My intentions for today** is
+ * the day's intentions, each with its tasks under the places they live in —
+ * written, edited and deleted here as on the opening question, through the
+ * same fields and the same save (`IntentionFields`), and kept in the event
+ * log like everything else about the day. **Areas** are the backlog itself, one band
  * each, drawn as a board rather than as a general-purpose tree, because three
  * levels is the whole depth the model allows. A rule splits every band in two.
  * Down the left is what the area is made of: its name, one card per epic, and
@@ -30,6 +32,20 @@
  * subtree too, the same way and for good (`isGone`), so it asks first, naming
  * how much will go with it.
  *
+ * A task moves by being carried: dragged by its row to any other column, or,
+ * from the keyboard or a touch screen, picked up with the grip on its row and
+ * put down with the `Move here` that every other column then offers. One
+ * piece of state, `Carry`, holds the task in hand either way, so the two
+ * cannot disagree about which columns will take it. The drag is the browser's
+ * own rather than Motion's: Motion's drag moves an element under the pointer
+ * but knows nothing about what it is over, so the columns, the hit-testing and
+ * the scrolling at the page's edge would all have been written here, and its
+ * drag features would have been one more chunk to load for one page. The
+ * native drag brings drop targets and edge scrolling with it, and what it does
+ * badly — touch, and anyone not using a pointer — is what the pick-up path is
+ * for. Only open tasks are carried, and every column on the page takes one,
+ * because every column is a place a task can live.
+ *
  * Every edit here is a backlog edit — the task store writes the one record it
  * changed — except linking a task to an intention, which is a fact about today
  * and goes to the log like the intentions themselves. A task that is dropped
@@ -45,16 +61,27 @@ import {
   useMemo,
   useRef,
   useState,
+  type DragEvent,
   type ReactNode,
+  type RefObject,
 } from 'react'
 
-import { PixelCat } from '../Companion/PixelCat'
+import { HeaderMark } from '../HeaderMark'
+import { GroupedTasks } from '../GroupedTasks'
 import { HeaderStatus } from '../HeaderStatus'
+import { IntentionFields, useIntentionBacklog, useSaveIntention } from '../IntentionFields'
 import { StorageWarning } from '../StorageWarning'
-import { EditGlyph, fieldClass, GhostButton, headerControlClass, InlineSelect } from '../ui'
+import {
+  AddFold,
+  EditGlyph,
+  fieldClass,
+  GhostButton,
+  headerControlClass,
+  InlineSelect,
+  PageLinks,
+} from '../ui'
 import { PopOutButton } from '@/pip/PopOutButton'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
-import { DAY_HASH } from '@/hooks/useRoute'
 import { RoomMenu } from '@/ambient/RoomMenu'
 import { useSession } from '@/store/session'
 import { useTasks } from '@/store/tasks'
@@ -65,13 +92,11 @@ import {
   isLive,
   liveDescendantsOf,
   openTasksUnder,
-  pathOf,
-  PATH_SEPARATOR,
-  placesForTasks,
   type Area,
   type Item,
-  type Place,
+  type TaskTreeNode,
 } from '@/domain/tasks'
+import { emptyIntentionDraft, type IntentionDraft } from '@/domain/intentions'
 import type { TimerMode } from '@/domain/time'
 import type { ActiveSegment, Intention, Ms } from '@/domain/types'
 
@@ -98,17 +123,63 @@ export function TasksPage({
   const items = useTasks((s) => s.items)
   const addArea = useTasks((s) => s.addArea)
   const unarchiveArea = useTasks((s) => s.unarchiveArea)
+  const moveItem = useTasks((s) => s.moveItem)
 
   const areas = activeAreas(allAreas)
   const archived = allAreas.filter((a) => isLive(a) && a.archivedAt !== undefined)
   // Per backlog snapshot, not per render: the header's timer re-renders this
   // page every second, and the backlog has not changed on most of those.
-  const places = useMemo(() => placesForTasks(items, allAreas), [items, allAreas])
   const inPlay = useMemo(() => activeTasks(items, allAreas), [items, allAreas])
+  const inPlayById = useMemo(() => new Map(inPlay.map((t) => [t.id, t])), [inPlay])
   const [addField, setAddField] = useState<string | null>(null)
   // Stable across the timer's once-a-second render, so no field re-runs its
   // fold check for a tick.
   const addFields = useMemo(() => ({ current: addField, claim: setAddField }), [addField])
+
+  const [carrying, setCarrying] = useState<{ id: string; by: CarryMode } | null>(null)
+  const [over, setOver] = useState<string | null>(null)
+  const landed = useRef<string | null>(null)
+  // The task is read back from the backlog rather than kept, so a task in hand
+  // is always where the backlog says it is. One that leaves play while held —
+  // ticked or deleted in another tab, its epic finished — is simply put down.
+  const heldTask = carrying ? inPlayById.get(carrying.id) : undefined
+  const carry = useMemo<CarryContext>(() => {
+    const putDown = () => {
+      setCarrying(null)
+      setOver(null)
+    }
+    const held = heldTask && carrying ? { task: heldTask, by: carrying.by } : null
+    return {
+      held,
+      over,
+      hover: setOver,
+      pickUp: (task, by) => {
+        setCarrying({ id: task.id, by })
+        setOver(null)
+      },
+      putDown,
+      moveTo: (parentId) => {
+        if (!held) return
+        moveItem(held.task.id, parentId)
+        // From the keyboard, focus goes with the task to its new column.
+        if (held.by === 'pick') landed.current = held.task.id
+        putDown()
+      },
+      landed,
+    }
+  }, [heldTask, carrying, over, moveItem])
+
+  // Escape puts a picked-up task back down. A drag has its own Escape.
+  const picked = carry.held?.by === 'pick' ? carry.held.task : null
+  const putDown = carry.putDown
+  useEffect(() => {
+    if (!picked) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') putDown()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [picked, putDown])
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink lg:h-dvh">
@@ -116,30 +187,17 @@ export function TasksPage({
           sticky on a narrow one, and carrying the timer either way. */}
       <header className="sticky top-0 z-20 shrink-0 border-b border-line bg-ink px-4 py-3 sm:px-6 lg:static">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            <PixelCat
-              phase={phase}
-              progress={null}
-              variant="mark"
-              className="h-7 w-11"
-              decorative
-            />
-            <span className="text-sm font-medium tracking-widest text-body uppercase">
-              Mono
-            </span>
-          </div>
+          <HeaderMark phase={phase} home={false} />
 
           <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
             <StorageWarning onOpenSettings={onOpenSettings} />
             <HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />
             <RoomMenu idPrefix="tasks-header" />
             <PopOutButton mini={mini} />
+            <PageLinks current="tasks" />
             <button type="button" onClick={onOpenSettings} className={headerControlClass}>
               Settings
             </button>
-            <a href={DAY_HASH} className={headerControlClass}>
-              Back to today
-            </a>
           </div>
         </div>
       </header>
@@ -158,130 +216,289 @@ export function TasksPage({
             <p className="mt-8 text-sm text-muted">Loading your tasks…</p>
           ) : (
             <>
-              <Section title="Today">
-                {intentions.length === 0 ? (
-                  <p className="text-sm text-muted">
-                    No intentions yet. They are the day's third opening question, and can be
-                    changed between blocks from the dots under the timer.
-                  </p>
-                ) : (
-                  <div className="flex flex-col gap-5">
-                    {intentions.map((intention) => (
-                      <TodayGroup
-                        key={intention.id}
-                        intention={intention}
-                        // Only tasks still in play: one inside an archived or
-                        // finished epic leaves today's list with its epic.
-                        tasks={inPlay.filter((t) => taskIntentions[t.id] === intention.id)}
-                        pathFor={(t) => pathOf(t.id, items, allAreas).join(PATH_SEPARATOR)}
-                        onUnlink={(taskId) => linkTask(taskId, null)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </Section>
-
               <AddFields.Provider value={addFields}>
-                {/* One rule above the first band and one under each, so every
-                    area reads as its own band and the last is closed off from
-                    the control that adds another. */}
-                <div className="mt-8 border-t border-line">
-                  {areas.map((area) => (
-                    <AreaBand
-                      key={area.id}
-                      area={area}
-                      places={places}
-                      items={items}
-                      intentions={intentions}
-                      taskIntentions={taskIntentions}
-                      onLink={linkTask}
-                    />
-                  ))}
-                </div>
+                <Section title="My intentions for today">
+                  <IntentionsToday intentions={intentions} taskIntentions={taskIntentions} />
+                </Section>
 
-                <div className="mt-6">
-                  <AddForm
-                    opener="Add area"
-                    variant="prominent"
-                    label="New area"
-                    placeholder="Health, Home, Side project"
-                    button="Add area"
-                    maxLength={60}
-                    className="max-w-md"
-                    onAdd={addArea}
-                  />
+                <Carry.Provider value={carry}>
+                    {/* One rule above the first band and one under each, so every
+                        area reads as its own band and the last is closed off from
+                        the control that adds another. */}
+                    <div className="mt-8 border-t border-line">
+                      {areas.map((area) => (
+                        <AreaBand
+                          key={area.id}
+                          area={area}
+                          items={items}
+                          intentions={intentions}
+                          taskIntentions={taskIntentions}
+                          onLink={linkTask}
+                        />
+                      ))}
+                    </div>
 
-                  {archived.length > 0 && (
-                    <details className="mt-4">
-                      <summary className="cursor-pointer text-xs text-muted hover:text-body">
-                        Archived ({archived.length})
-                      </summary>
-                      <ul className="mt-2 flex max-w-md flex-col gap-1.5">
-                        {archived.map((area) => (
-                          <li key={area.id} className="flex items-center justify-between gap-3 text-sm">
-                            <span className="text-muted">{area.name}</span>
-                            <TextButton onClick={() => unarchiveArea(area.id)}>Restore</TextButton>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
-                </div>
+                    <div className="mt-6">
+                      <AddForm
+                        opener="Add area"
+                        variant="prominent"
+                        label="New area"
+                        placeholder="Health, Home, Side project"
+                        maxLength={60}
+                        className="max-w-md"
+                        onAdd={addArea}
+                      />
+
+                      {archived.length > 0 && (
+                        <details className="mt-4">
+                          <summary className="cursor-pointer text-xs text-muted hover:text-body">
+                            Archived ({archived.length})
+                          </summary>
+                          <ul className="mt-2 flex max-w-md flex-col gap-1.5">
+                            {archived.map((area) => (
+                              <li key={area.id} className="flex items-center justify-between gap-3 text-sm">
+                                <span className="text-muted">{area.name}</span>
+                                <TextButton onClick={() => unarchiveArea(area.id)}>Restore</TextButton>
+                              </li>
+                            ))}
+                          </ul>
+                        </details>
+                      )}
+                    </div>
+                </Carry.Provider>
               </AddFields.Provider>
             </>
           )}
         </main>
       </div>
+
+      {/* What a pick-up is waiting for, and the way out of it, kept where a
+          thumb can reach it: the column it is looking for may be a long way
+          down the page from the row it left. */}
+      {picked && (
+        <div
+          role="status"
+          className="fixed inset-x-4 bottom-4 z-30 mx-auto flex max-w-md items-center gap-3 rounded-xl border border-muted/70 bg-surface-raised px-4 py-3 text-sm shadow-lg"
+        >
+          <span className="min-w-0 flex-1 text-body">
+            Moving <span className="text-bright">{picked.title}</span>. Choose{' '}
+            <span className="text-deep">Move here</span> where it goes.
+          </span>
+          <TextButton onClick={putDown} label={`Cancel moving ${picked.title}`}>
+            Cancel
+          </TextButton>
+        </div>
+      )}
     </div>
   )
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
+  const headingId = useId()
   return (
-    <section className="mt-8 border-t border-line pt-6">
-      <h2 className="mb-3 text-xs font-medium tracking-widest text-muted uppercase">{title}</h2>
+    <section aria-labelledby={headingId} className="mt-8 border-t border-line pt-6">
+      <h2 id={headingId} className="mb-3 text-xs font-medium tracking-widest text-muted uppercase">
+        {title}
+      </h2>
       {/* Lines of text, so held to a reading width while the bands go wide. */}
       <div className="max-w-3xl">{children}</div>
     </section>
   )
 }
 
+/**
+ * Today's intentions, each with its tasks, and the form that writes one.
+ *
+ * At most one intention form is open at a time — a new one, or an edit drawn
+ * in place of the intention it changes — so the draft is one piece of state
+ * saying which. A draft aimed at an intention that has since gone (removed on
+ * the opening question, or by the midnight reset) is no draft at all. It keeps
+ * the page's rule for add fields: opening it folds any other that is empty,
+ * and opening another folds it while nothing has been written in it.
+ */
+function IntentionsToday({
+  intentions,
+  taskIntentions,
+}: {
+  intentions: readonly Intention[]
+  taskIntentions: Readonly<Record<string, string>>
+}) {
+  const linkTask = useSession((s) => s.linkTask)
+  const addIntention = useSession((s) => s.addIntention)
+  const updateIntention = useSession((s) => s.updateIntention)
+  const removeIntention = useSession((s) => s.removeIntention)
+  const backlog = useIntentionBacklog(taskIntentions)
+  const save = useSaveIntention({
+    taskIntentions,
+    onAdd: addIntention,
+    onUpdate: updateIntention,
+    onLinkTask: linkTask,
+  })
+
+  const [stored, setDraft] = useState<IntentionDraft | null>(null)
+  const formId = useId()
+  const { current, claim } = useContext(AddFields)
+  // Another field was opened: close this form if nothing has been written in it.
+  useEffect(() => {
+    if (current === null || current === formId) return
+    setDraft((d) => (d && d.editing === null && d.title === '' && d.taskIds.length === 0 ? null : d))
+  }, [current, formId])
+  const open = (next: IntentionDraft) => {
+    setDraft(next)
+    claim(formId)
+  }
+  const draft =
+    stored && (stored.editing === null || intentions.some((i) => i.id === stored.editing))
+      ? stored
+      : null
+  const adding = draft !== null && draft.editing === null
+
+  const close = () => {
+    setDraft(null)
+    if (current === formId) claim(null)
+  }
+
+  /** Enter keeps a new one and stays open for the next; `Done` keeps it and closes. */
+  const submit = (then: 'next' | 'done') => {
+    if (draft === null || save(draft) === null) return
+    if (then === 'next' && draft.editing === null) setDraft(emptyIntentionDraft)
+    else close()
+  }
+
+  const form = (current: IntentionDraft) => (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        submit('next')
+      }}
+    >
+      <IntentionFields
+        draft={current}
+        onDraft={setDraft}
+        intentions={intentions}
+        taskIntentions={taskIntentions}
+        // Opened by a click asking for exactly this form.
+        autoFocus
+        onEscape={close}
+      />
+      {/* With nothing typed it only closes. */}
+      <GhostButton
+        type="button"
+        onClick={() => (current.title.trim() ? submit('done') : close())}
+        className="mt-3 px-3 py-1.5 text-xs"
+      >
+        Done
+      </GhostButton>
+    </form>
+  )
+
+  return (
+    <div className="flex flex-col gap-5">
+      {intentions.length === 0 && (
+        <p className="text-sm text-muted">
+          No intentions yet. Add one here, or answer the day's third opening question.
+        </p>
+      )}
+      {intentions.map((intention) =>
+        draft?.editing === intention.id ? (
+          <AddFold
+            key={intention.id}
+            title="Edit intention"
+            open
+            onOpen={() => undefined}
+            onCancel={close}
+            cancelLabel={`Cancel editing ${intention.title}`}
+            className="text-sm text-body"
+          >
+            {form(draft)}
+          </AddFold>
+        ) : (
+          <TodayGroup
+            key={intention.id}
+            intention={intention}
+            groups={backlog.group(backlog.tasksUnder(intention.id))}
+            onEdit={() =>
+              open({
+                title: intention.title,
+                taskIds: backlog.tasksUnder(intention.id),
+                editing: intention.id,
+              })
+            }
+            onDelete={() => removeIntention(intention.id)}
+            onUnlink={(taskId) => linkTask(taskId, null)}
+          />
+        ),
+      )}
+      <AddFold
+        title="Add intention"
+        open={adding}
+        onOpen={() => open(emptyIntentionDraft)}
+        onCancel={close}
+        cancelLabel="Cancel new intention"
+        className="text-sm text-body"
+      >
+        {adding && form(draft)}
+      </AddFold>
+    </div>
+  )
+}
+
+/**
+ * One intention: its title and what can be done to it, and its tasks under the
+ * places they live in, each place said once rather than on every task.
+ */
 function TodayGroup({
   intention,
-  tasks,
-  pathFor,
+  groups,
+  onEdit,
+  onDelete,
   onUnlink,
 }: {
   intention: Intention
-  tasks: readonly Item[]
-  /** Where each task lives, so two tasks of the same name can be told apart. */
-  pathFor: (task: Item) => string
+  groups: readonly TaskTreeNode[]
+  onEdit: () => void
+  onDelete: () => void
   onUnlink: (taskId: string) => void
 }) {
   return (
     <div>
-      <h3 className="text-sm text-bright">{intention.title}</h3>
-      {tasks.length === 0 ? (
+      <div className="flex items-baseline gap-3">
+        <h3 className="min-w-0 flex-1 text-sm text-bright wrap-break-word">{intention.title}</h3>
+        <TextButton onClick={onEdit} label={`Edit intention ${intention.title}`}>
+          Edit
+        </TextButton>
+        {/* At once, as on the opening question: its tasks stay in the backlog,
+            only their place under it goes. */}
+        <TextButton onClick={onDelete} label={`Delete intention ${intention.title}`}>
+          Delete
+        </TextButton>
+      </div>
+      {groups.length === 0 ? (
         <p className="mt-1 text-xs text-muted">
-          Nothing open under this one. Put a task here from its area below.
+          Nothing open under this one. Edit it to choose tasks, or put one here from its row below.
         </p>
       ) : (
-        <ul aria-label={`Today: ${intention.title}`} className="mt-1.5 flex flex-col gap-1">
-          {tasks.map((task) => (
-            <li key={task.id} className="flex items-center justify-between gap-3 text-sm">
-              <span className="min-w-0 truncate text-body">
-                {task.title}
-                <span className="ml-2 text-xs text-muted">{pathFor(task)}</span>
-              </span>
-              <TextButton
+        <GroupedTasks
+          label={`Today: ${intention.title}`}
+          groups={groups}
+          className="mt-1.5"
+          renderTask={(task) => (
+            <div className="flex items-center justify-between gap-3 text-sm">
+              <span className="min-w-0 truncate text-body">{task.title}</span>
+              {/* Out of the intention, not out of the backlog: the task stays
+                  in its column below. */}
+              <button
+                type="button"
                 onClick={() => onUnlink(task.id)}
-                label={`Take ${task.title} out of ${intention.title}`}
+                aria-label={`Take ${task.title} out of ${intention.title}`}
+                title="Not today"
+                className="shrink-0 px-1 text-muted transition hover:text-bright"
               >
-                Not today
-              </TextButton>
-            </li>
-          ))}
-        </ul>
+                ×
+              </button>
+            </div>
+          )}
+        />
       )}
     </div>
   )
@@ -290,7 +507,6 @@ function TodayGroup({
 /** Shared down the tree: everything a task row or a card needs to act. */
 type TreeProps = {
   items: readonly Item[]
-  places: readonly Place[]
   intentions: readonly Intention[]
   taskIntentions: Readonly<Record<string, string>>
   onLink: (taskId: string, intentionId: string | null) => void
@@ -368,7 +584,6 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
             openerLabel={`Add an epic to ${area.name}`}
             label={`New epic in ${area.name}`}
             placeholder="A new epic"
-            button="Add epic"
             onAdd={(title) =>
               useTasks.getState().addItem({ kind: 'epic', title, parentId: area.id })
             }
@@ -378,7 +593,7 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
 
       <Row side={<h3 className="text-sm text-body md:pt-2">Inbox</h3>}>
         <Board>
-          <div className="min-w-0">
+          <DropZone parent={area.id} className="min-w-0">
             <TaskList
               parent={area.id}
               name={area.name}
@@ -386,7 +601,7 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
               empty="The inbox is empty."
               {...tree}
             />
-          </div>
+          </DropZone>
         </Board>
         <PutAway items={[...finishedTasks(children), ...putAway]} allItems={tree.items} />
       </Row>
@@ -461,13 +676,12 @@ function EpicRow({ epic, ...tree }: TreeProps & { epic: Item }) {
             openerLabel={`Add an outcome to ${epic.title}`}
             label={`New outcome in ${epic.title}`}
             placeholder="A new outcome"
-            button="Add"
             onAdd={(title) =>
               useTasks.getState().addItem({ kind: 'outcome', title, parentId: epic.id })
             }
           />
         </div>
-        <div className="min-w-0">
+        <DropZone parent={epic.id} className="min-w-0">
           <TaskList
             parent={epic.id}
             name={epic.title}
@@ -475,7 +689,7 @@ function EpicRow({ epic, ...tree }: TreeProps & { epic: Item }) {
             empty="No tasks directly under this epic."
             {...tree}
           />
-        </div>
+        </DropZone>
       </Board>
 
       <PutAway
@@ -486,19 +700,25 @@ function EpicRow({ epic, ...tree }: TreeProps & { epic: Item }) {
   )
 }
 
-/** An outcome's column: its card, its open tasks beneath, and what it has put away. */
+/**
+ * An outcome's column: its card, its open tasks beneath, and what it has put
+ * away. The whole column takes a dropped task, card included, since the card
+ * is the biggest thing in it that says which outcome this is.
+ */
 function OutcomeColumn({ outcome, ...tree }: TreeProps & { outcome: Item }) {
   return (
-    <section aria-label={`Outcome: ${outcome.title}`} className="flex min-w-0 flex-col gap-2">
-      <ContainerCard item={outcome} allItems={tree.items} />
-      <TaskList
-        parent={outcome.id}
-        name={outcome.title}
-        listLabel={`${outcome.title} tasks`}
-        empty="No tasks yet."
-        {...tree}
-      />
-      <PutAway items={finishedTasks(childrenOf(outcome.id, tree.items))} allItems={tree.items} />
+    <section aria-label={`Outcome: ${outcome.title}`} className="min-w-0">
+      <DropZone parent={outcome.id} className="flex flex-col gap-2">
+        <ContainerCard item={outcome} allItems={tree.items} />
+        <TaskList
+          parent={outcome.id}
+          name={outcome.title}
+          listLabel={`${outcome.title} tasks`}
+          empty="No tasks yet."
+          {...tree}
+        />
+        <PutAway items={finishedTasks(childrenOf(outcome.id, tree.items))} allItems={tree.items} />
+      </DropZone>
     </section>
   )
 }
@@ -587,6 +807,7 @@ function TaskList({
 
   return (
     <>
+      <MoveHere parent={parent} name={name} />
       {open.length === 0 ? (
         <p className="text-sm text-muted">{empty}</p>
       ) : (
@@ -595,7 +816,6 @@ function TaskList({
             <TaskRow
               key={task.id}
               task={task}
-              places={tree.places}
               intentions={tree.intentions}
               intentionId={tree.taskIntentions[task.id] ?? null}
               onLink={(id) => tree.onLink(task.id, id)}
@@ -609,18 +829,19 @@ function TaskList({
         label={`New task in ${name}`}
         // The column already says whose; a column is too narrow to say it twice.
         placeholder="Add a task"
-        button="Add"
         onAdd={(title) => useTasks.getState().addItem({ kind: 'task', title, parentId: parent })}
       />
     </>
   )
 }
 
-const OPENER_CLASS = {
-  // `self-start` so a flex column (an outcome's) does not stretch it to full width.
-  inline: 'mt-2 self-start text-xs text-muted',
-  prominent: 'mt-2 self-start text-sm text-body',
-  slot: 'w-full rounded-xl border border-dashed border-line px-3 py-4 text-left text-xs text-muted hover:border-muted',
+const FOLD_CLASS = {
+  inline: { box: 'mt-2', heading: 'text-xs text-muted' },
+  prominent: { box: 'mt-2', heading: 'text-sm text-body' },
+  slot: {
+    box: 'rounded-xl border border-dashed border-line px-3 py-4 hover:border-muted',
+    heading: 'w-full text-xs text-muted',
+  },
 } as const
 
 /**
@@ -636,18 +857,19 @@ const AddFields = createContext<{
 })
 
 /**
- * A `+ Add …` button that opens into the field it asks for.
+ * An `Add …` heading that opens into the field it asks for (`AddFold`).
  *
  * Folded because the board has one in every column, every epic and every area,
  * and open they outweighed the tasks they add to: a page that is mostly empty
  * fields reads as a form to fill in rather than as the backlog. The fold costs
  * one click, and only on the rarer visit that adds rather than ticks.
  *
- * Once open it stays open after each add, cleared and focused, because things
- * are usually written down in runs — three tasks for one outcome, not one. It
- * folds again on Escape or ×, which hand focus back to the button, and when
+ * Enter adds and keeps it open, cleared and focused, because things are
+ * usually written down in runs — three tasks for one outcome, not one. `Done`
+ * adds what is typed and folds it. The caret, the × and Escape fold it without
+ * adding, and all three hand focus back to the heading. It also folds when
  * another field is opened while it is empty, so at most one empty field is
- * ever showing and nothing typed is ever thrown away.
+ * ever showing and nothing typed is thrown away unasked.
  *
  * Not on blur, which was tried first. A press elsewhere blurs the field before
  * the release that completes the click, so a field folding on blur moved the
@@ -662,24 +884,22 @@ function AddForm({
   variant = 'inline',
   label,
   placeholder,
-  button,
   maxLength = 120,
   className = '',
   onAdd,
 }: {
-  /** The folded button's text, after its `+`. */
+  /** The heading: `Add task`, `Add outcome`. */
   opener: string
-  /** The folded button's accessible name, when its text alone does not say where. */
+  /** The heading's accessible name, when its text alone does not say where. */
   openerLabel?: string
   /**
-   * `inline` under what it adds to; `prominent` for the page's own `+ Add
+   * `inline` under what it adds to; `prominent` for the page's own `Add
    * area`, sized as the page's last word rather than a column's; `slot` for a
    * whole column of the board, outlined where the new column will stand.
    */
   variant?: 'inline' | 'prominent' | 'slot'
   label: string
   placeholder: string
-  button: string
   maxLength?: number
   className?: string
   /** Returns the new id, or null when the store refused it. */
@@ -697,86 +917,183 @@ function AddForm({
   }, [current, id])
 
   const field = useRef<HTMLInputElement>(null)
-  const openerButton = useRef<HTMLButtonElement>(null)
-  const refocusOpener = useRef(false)
-
-  // The button only exists again once the fold has rendered, so focus is
-  // handed back after it rather than in the handler that folds it.
-  useEffect(() => {
-    if (open || !refocusOpener.current) return
-    refocusOpener.current = false
-    openerButton.current?.focus()
-  }, [open])
 
   const fold = () => {
-    refocusOpener.current = true
     setTitle(null)
     if (current === id) claim(null)
   }
 
-  if (!open) {
-    return (
-      <button
-        ref={openerButton}
-        type="button"
-        onClick={() => {
+  // Keeps what is typed, if anything, and folds; a refusal keeps it open.
+  const done = () => {
+    if (title !== null && title.trim() !== '' && onAdd(title) === null) return
+    fold()
+  }
+
+  const style = FOLD_CLASS[variant]
+  return (
+    <div className={`${style.box} ${className}`}>
+      <AddFold
+        title={opener}
+        {...(openerLabel ? { label: openerLabel } : {})}
+        open={open}
+        onOpen={() => {
           setTitle('')
           claim(id)
         }}
-        {...(openerLabel ? { 'aria-label': openerLabel } : {})}
-        className={`transition hover:text-bright ${OPENER_CLASS[variant]} ${className}`}
+        onCancel={fold}
+        cancelLabel={`Cancel ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
+        className={style.heading}
       >
-        <span aria-hidden="true">+ </span>
-        {opener}
-      </button>
-    )
+        <form
+          className="flex items-center gap-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            if (title === null || onAdd(title) === null) return
+            setTitle('')
+            field.current?.focus()
+          }}
+        >
+          <input
+            ref={field}
+            value={title ?? ''}
+            onChange={(e) => setTitle(e.target.value)}
+            onKeyDown={(e) => e.key === 'Escape' && fold()}
+            placeholder={placeholder}
+            aria-label={label}
+            // Opened by a click asking for exactly this field.
+            autoFocus
+            maxLength={maxLength}
+            className={`${fieldClass} py-1.5 text-sm`}
+          />
+          {/* Smaller than the page's other buttons: every column can carry one. */}
+          <GhostButton type="button" onClick={done} className="shrink-0 px-3 py-1.5 text-xs">
+            Done
+          </GhostButton>
+        </form>
+      </AddFold>
+    </div>
+  )
+}
+
+/** How a task is being carried: under the pointer, or picked up to be put down. */
+type CarryMode = 'drag' | 'pick'
+
+/**
+ * The task in hand, page-wide, and the verbs that carry it.
+ *
+ * A drag and a pick-up are the same move begun two ways, so they share this
+ * state: whichever started it, the columns that will take the task are the
+ * same ones, and putting it down is the same write.
+ */
+type CarryContext = {
+  held: { task: Item; by: CarryMode } | null
+  /** The column a drag is over, so only that one lights up. */
+  over: string | null
+  hover: (parentId: string | null | ((current: string | null) => string | null)) => void
+  pickUp: (task: Item, by: CarryMode) => void
+  putDown: () => void
+  /** Put the task in hand under `parentId`, and let go of it. */
+  moveTo: (parentId: string) => void
+  /** The task a pick-up just put down, which takes focus when it lands. */
+  landed: RefObject<string | null>
+}
+
+const Carry = createContext<CarryContext>({
+  held: null,
+  over: null,
+  hover: () => undefined,
+  pickUp: () => undefined,
+  putDown: () => undefined,
+  moveTo: () => undefined,
+  landed: { current: null },
+})
+
+/** Whether the task in hand can go under `parent`: anywhere but where it is. */
+const takes = (held: CarryContext['held'], parent: string): held is NonNullable<CarryContext['held']> =>
+  held !== null && held.task.parentId !== parent
+
+/**
+ * A column that takes a carried task, drawn as one while there is one to take:
+ * outlined while a task is in hand, lit while a drag is over it.
+ *
+ * The outline is an outline rather than a border so that showing it moves
+ * nothing. The drag begins with this state changing, and a column that grew a
+ * border would shift the page under the pointer mid-gesture. A drag from
+ * outside the page carries no task, so no column answers it.
+ */
+function DropZone({
+  parent,
+  className = '',
+  children,
+}: {
+  parent: string
+  className?: string
+  children: ReactNode
+}) {
+  const { held, over, hover, moveTo } = useContext(Carry)
+  const open = takes(held, parent)
+  const lit = open && over === parent
+
+  const accept = (e: DragEvent) => {
+    if (!open || held.by !== 'drag') return
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    if (over !== parent) hover(parent)
   }
 
   return (
-    <form
-      className={`flex items-center gap-2 ${variant === 'slot' ? '' : 'mt-2'} ${className}`}
-      onSubmit={(e) => {
-        e.preventDefault()
-        if (onAdd(title) === null) return
-        setTitle('')
-        field.current?.focus()
+    <div
+      onDragEnter={accept}
+      onDragOver={accept}
+      onDragLeave={(e) => {
+        // Leaving for one of its own children is not leaving.
+        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+        hover((current) => (current === parent ? null : current))
       }}
+      onDrop={(e) => {
+        if (!open) return
+        e.preventDefault()
+        moveTo(parent)
+      }}
+      className={`rounded-xl outline-offset-4 ${
+        lit
+          ? 'bg-surface/60 outline-2 outline-deep'
+          : open
+            ? 'outline-1 outline-muted/70 outline-dashed'
+            : ''
+      } ${className}`}
     >
-      <input
-        ref={field}
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        onKeyDown={(e) => e.key === 'Escape' && fold()}
-        placeholder={placeholder}
-        aria-label={label}
-        // Opened by a click asking for exactly this field.
-        autoFocus
-        maxLength={maxLength}
-        className={`${fieldClass} py-1.5 text-sm`}
-      />
-      {/* Smaller than the page's other buttons: every column can carry one. */}
-      <GhostButton
-        type="submit"
-        disabled={title.trim() === ''}
-        className="shrink-0 px-3 py-1.5 text-xs"
-      >
-        {button}
-      </GhostButton>
-      <button
-        type="button"
-        onClick={fold}
-        aria-label={`Cancel ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
-        className="shrink-0 px-1 text-muted transition hover:text-bright"
-      >
-        ×
-      </button>
-    </form>
+      {children}
+    </div>
+  )
+}
+
+/**
+ * Where a picked-up task can be put down: a button at the head of every column
+ * that would take it. Only for a pick-up — a drag has the column itself.
+ */
+function MoveHere({ parent, name }: { parent: string; name: string }) {
+  const { held, moveTo } = useContext(Carry)
+  if (!takes(held, parent) || held.by !== 'pick') return null
+  return (
+    <button
+      type="button"
+      onClick={() => moveTo(parent)}
+      aria-label={`Move ${held.task.title} to ${name}`}
+      className="mb-2 w-full rounded-lg border border-dashed border-deep/70 px-3 py-2 text-left text-xs text-deep transition hover:bg-surface-raised"
+    >
+      Move here
+    </button>
   )
 }
 
 /**
  * One open task: tick it, rename it, put it under one of today's intentions,
- * move it anywhere a task can live, drop it, or delete it.
+ * carry it to any other column, drop it, or delete it.
+ *
+ * The whole row drags, which is what a card on a board invites; the grip is
+ * where it says so, and the button that picks it up without a pointer. A row
+ * being renamed does not drag, so that selecting its text selects text.
  *
  * Drop and delete are different on purpose. Dropping is deciding not to do
  * it, and it stays in the finished list as a decision; deleting is a mistake
@@ -784,27 +1101,61 @@ function AddForm({
  */
 function TaskRow({
   task,
-  places,
   intentions,
   intentionId,
   onLink,
 }: {
   task: Item
-  places: readonly Place[]
   intentions: readonly Intention[]
   intentionId: string | null
   onLink: (intentionId: string | null) => void
 }) {
   const completeItem = useTasks((s) => s.completeItem)
   const renameItem = useTasks((s) => s.renameItem)
-  const moveItem = useTasks((s) => s.moveItem)
   const dropItem = useTasks((s) => s.dropItem)
   const deleteItem = useTasks((s) => s.deleteItem)
   const [renaming, setRenaming] = useState<string | null>(null)
+  const { held, pickUp, putDown, landed } = useContext(Carry)
+  const picked = held?.task.id === task.id && held.by === 'pick'
+
+  // A row mounts afresh in the column it was moved to; the one a pick-up just
+  // put down takes focus there, so the keyboard ends where the task did.
+  const grip = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (landed.current !== task.id) return
+    landed.current = null
+    grip.current?.focus()
+  }, [landed, task.id])
 
   return (
-    <li className="rounded-lg border border-muted/70 px-3 py-2">
+    <li
+      draggable={renaming === null}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = 'move'
+        // Firefox starts no drag without data, and a title is what a drag
+        // carried out of the page would sensibly drop as.
+        e.dataTransfer.setData('text/plain', task.title)
+        pickUp(task, 'drag')
+      }}
+      onDragEnd={putDown}
+      className={`rounded-lg border px-3 py-2 ${
+        picked ? 'border-dashed border-deep/70 bg-surface/60' : 'border-muted/70'
+      }`}
+    >
       <div className="flex items-start gap-2">
+        <button
+          ref={grip}
+          type="button"
+          onClick={() => (picked ? putDown() : pickUp(task, 'pick'))}
+          aria-label={`Move ${task.title}`}
+          aria-pressed={picked}
+          title="Drag to move, or click to pick up"
+          className={`-ml-1.5 mt-0.5 shrink-0 cursor-grab rounded px-0.5 py-0.5 transition hover:text-bright active:cursor-grabbing ${
+            picked ? 'text-deep' : 'text-muted'
+          }`}
+        >
+          <GripGlyph />
+        </button>
         {/* Level with the first line of the title, which now wraps: a column
             is too narrow to cut a title short and still say which task it is. */}
         <input
@@ -840,11 +1191,11 @@ function TaskRow({
         )}
       </div>
 
-      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-6 text-xs">
+      <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-9 text-xs">
         {intentions.length > 0 && (
           <InlineSelect
             label={`Today's intention for ${task.title}`}
-            prefix="Today"
+            prefix="Intention:"
             value={intentionId ?? ''}
             onChange={(value) => onLink(value === '' ? null : value)}
             options={[
@@ -852,9 +1203,6 @@ function TaskRow({
               ...intentions.map((i) => ({ value: i.id, name: i.title })),
             ]}
           />
-        )}
-        {places.length > 1 && (
-          <MovePicker task={task} places={places} onMove={(value) => moveItem(task.id, value)} />
         )}
         <span className="ml-auto flex gap-3">
           <TextButton onClick={() => dropItem(task.id)} label={`Drop ${task.title}`}>
@@ -870,85 +1218,21 @@ function TaskRow({
 }
 
 /**
- * Where a task lives, shown as a button that becomes the select only when
- * asked.
- *
- * A select in every row mounts every place as an option in every row: a
- * thousand tasks across sixty places is sixty thousand elements, growing with
- * both, and re-rendered with the page each second — for a control used on one
- * row at a time. The button says where the task is; the whole list exists only
- * once it is asked for. It stays a select until a place is picked, rather than
- * folding back when focus leaves: a press elsewhere blurs it before the click
- * completes, and the fold would move the row under that click — the trap the
- * add fields fell into. What stays mounted is bounded by the rows someone
- * actually opened.
+ * Six dots in two columns: the mark that says a row can be picked up. Drawn
+ * rather than typed, because the braille character that looks like it is read
+ * aloud as braille.
  */
-function MovePicker({
-  task,
-  places,
-  onMove,
-}: {
-  task: Item
-  places: readonly Place[]
-  onMove: (parentId: string) => void
-}) {
-  const [choosing, setChoosing] = useState(false)
-  const select = useRef<HTMLSelectElement>(null)
-  useEffect(() => {
-    if (!choosing) return
-    select.current?.focus()
-    // Opened at once where the browser allows it, so a move is still one
-    // click; elsewhere the focused select opens on the next.
-    try {
-      select.current?.showPicker()
-    } catch {
-      // Unsupported, or the click's activation has lapsed. Focus is enough.
-    }
-  }, [choosing])
-
-  if (!choosing) {
-    const here = labelsOf(places).get(task.parentId) ?? '—'
-    return (
-      <button
-        type="button"
-        onClick={() => setChoosing(true)}
-        aria-label={`Move ${task.title} from ${here}`}
-        className="flex min-w-0 items-center gap-1.5 text-muted transition hover:text-bright"
-      >
-        <span>In</span>
-        <span className="max-w-[11rem] min-w-0 truncate rounded-md border border-muted/70 px-1.5 py-0.5 text-body">
-          {here}
-        </span>
-      </button>
-    )
-  }
+function GripGlyph() {
   return (
-    <InlineSelect
-      ref={select}
-      label={`Where ${task.title} lives`}
-      prefix="In"
-      value={task.parentId}
-      onChange={(value) => {
-        setChoosing(false)
-        onMove(value)
-      }}
-      options={places.map((p) => ({ value: p.id, name: p.label }))}
-    />
+    <svg aria-hidden="true" viewBox="0 0 8 12" width="8" height="12" fill="currentColor">
+      {[2, 6, 10].map((y) => (
+        <g key={y}>
+          <circle cx="2" cy={y} r="1" />
+          <circle cx="6" cy={y} r="1" />
+        </g>
+      ))}
+    </svg>
   )
-}
-
-/**
- * Each place's label by id, built once per list of places — which is once per
- * backlog snapshot — so a row's button finds its own in one lookup.
- */
-const placeLabels = new WeakMap<readonly Place[], ReadonlyMap<string, string>>()
-function labelsOf(places: readonly Place[]): ReadonlyMap<string, string> {
-  let labels = placeLabels.get(places)
-  if (!labels) {
-    labels = new Map(places.map((p) => [p.id, p.label]))
-    placeLabels.set(places, labels)
-  }
-  return labels
 }
 
 /**

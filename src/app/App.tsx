@@ -25,7 +25,7 @@ import { createPortal } from 'react-dom'
 import { Clock } from '@/components/Clock'
 import { SettingsPanel } from '@/components/SettingsPanel'
 import { Companion } from '@/components/Companion/Companion'
-import { PixelCat } from '@/components/Companion/PixelCat'
+import { HeaderMark } from '@/components/HeaderMark'
 import { Stage } from '@/components/stage/Stage'
 import { StageCarousel } from '@/components/stage/StageCarousel'
 import {
@@ -43,7 +43,7 @@ import {
   useHoursDraft,
   withIds,
 } from '@/components/TodayHours'
-import { GhostButton, headerControlClass, PrimaryButton } from '@/components/ui'
+import { GhostButton, headerControlClass, PageLinks, PrimaryButton } from '@/components/ui'
 import type { Composer } from '@/components/Timeline/SegmentEditor'
 
 import { MiniWindow } from '@/pip/MiniWindow'
@@ -51,7 +51,7 @@ import { PopOutButton } from '@/pip/PopOutButton'
 import { useMiniWindow } from '@/pip/useMiniWindow'
 
 import { useNow } from '@/hooks/useNow'
-import { useRoute, GUIDE_HASH, TASKS_HASH } from '@/hooks/useRoute'
+import { useRoute } from '@/hooks/useRoute'
 import { useReconciliation } from '@/hooks/useReconciliation'
 import { useBlockEndAlerts, useUnlock } from '@/hooks/useNotifications'
 import { useAmbience } from '@/ambient/useAmbience'
@@ -63,9 +63,7 @@ import { dayProgressFor } from '@/domain/dayProgress'
 import { dayKey, formatDuration, isWithinRegions, nextRegionStart } from '@/domain/time'
 import type { TimerMode } from '@/domain/time'
 import { useSession, useStorageHealth, toPlanInput, selectRegions } from '@/store/session'
-import { useTasks } from '@/store/tasks'
-import { placesForTasks } from '@/domain/tasks'
-import { playChime } from '@/ambient/audio'
+import { playChime, unlockAudio } from '@/ambient/audio'
 import type { IntentionTimer } from '@/components/stage/IntentionsPanel'
 import { minutesToMs, type BlockKind, type Ms } from '@/domain/types'
 
@@ -214,11 +212,6 @@ export function App() {
    * and on any re-visit, only from its own button.
    */
   const [intentionTimer, setIntentionTimer] = useState<IntentionTimer | null>(null)
-  // Where an intention can point. Read from the backlog store, which the day
-  // otherwise never needs; it re-renders this component only when tasks change.
-  const taskItems = useTasks((s) => s.items)
-  const taskAreas = useTasks((s) => s.areas)
-  const places = useMemo(() => placesForTasks(taskItems, taskAreas), [taskItems, taskAreas])
 
   const { phase, session } = store
   const today = dayKey(now)
@@ -379,6 +372,10 @@ export function App() {
    * once — what is fixed today and which hours are yours both keep changing.
    */
   const goToSetupStage = (next: SetupStageId) => {
+    // The intentions timer starts by itself the first time that question is
+    // shown on an unshaped day, during render where no window can be asked
+    // for — so this click, which is what shows it, asks instead.
+    if (next === 'intentions' && !dayShaped && intentionTimer === null) popOutForDeciding()
     setSetupStage(next)
     setRevisitingSetup(true)
     if (next === 'hours' && composer?.kind === 'hours') setComposer(null)
@@ -426,10 +423,11 @@ export function App() {
    * because activation outlives a render, but "works because the grant has not
    * expired yet" is not a thing to build on.
    *
-   * The moment is `setPurpose` and `cannotDecide` rather than `startBlock`,
-   * which is a distinction worth keeping. `startBlock` only opens the naming
-   * prompt; a window arriving then would take the focus off the field the user
-   * is still typing in. These two are where a timer actually starts running.
+   * The moment is `setPurpose` rather than `startBlock`, which is a distinction
+   * worth keeping. `startBlock` only opens the naming prompt; a window arriving
+   * then would take the focus off the field the user is still typing in.
+   * `setPurpose` is where the block's timer actually starts running. A
+   * question's own timer has its own setting; see `popOutForDeciding`.
    *
    * A no-op when a window is already open, when the setting is off, and on any
    * browser without the API — all three are handled inside `open`.
@@ -443,10 +441,29 @@ export function App() {
     store.dispatch({ type: 'setPurpose', at: Date.now(), purpose, taskIds })
   }
 
-  const cannotDecide = () => {
-    popOutForBlock()
-    store.dispatch({ type: 'cannotDecide', at: Date.now() })
+  /**
+   * The same window for a question's own timer: the intentions question's and
+   * the purpose prompt's few minutes to decide. Behind its own setting, because
+   * this click is made while the question is still being answered in the tab —
+   * see `popOutOnDecide`. Called from the click for the same reason as above.
+   */
+  const popOutForDeciding = () => {
+    if (session.settings.popOutOnDecide) mini.open()
   }
+
+  const startDeciding = () => {
+    popOutForDeciding()
+    store.dispatch({ type: 'startDeciding', at: Date.now() })
+  }
+
+  // The purpose prompt's deciding timer chimes at zero as the intentions
+  // question's does, and for the same reasons only while the prompt is open,
+  // and on a single boolean that flips once.
+  const decideTimeUp =
+    phase.name === 'definingPurpose' && phase.deciding !== null && now >= phase.deciding.endsAt
+  useEffect(() => {
+    if (decideTimeUp && soundEnabled) playChime()
+  }, [decideTimeUp])
 
   // Settings is the last dialog in Mono, and the only thing both routes offer.
   // Opening it closes whatever the calendar had expanded: they both edit
@@ -522,18 +539,32 @@ export function App() {
         dayProgress={dayProgress}
         ambience={ambience}
         facts={{
-          // `dayShaped`, not `setupOpen`: going back to re-read the opening
-          // questions is where the user is looking, and the mini window should
-          // not become a sign pointing at the window they are reading.
-          dayShaped,
+          // Exactly the stage's question, so the two windows cannot disagree
+          // about where the day is; see `miniViewFor`.
+          setup: setupOpen ? { stage: setupStage, revisiting: dayShaped } : null,
           withinHours,
           nextBlockKind,
           nextRegionStart: upNext,
         }}
         planned={planned}
         costOf={(minutes) => breakCost(planInput, now, minutes, timeline)}
+        commitments={session.commitments}
+        // As the calendar draws them, so an hours draft typed into the stage
+        // shows out here as it does beside it.
+        regions={planInput.regions}
+        intentions={session.intentions}
+        intentionTimer={intentionTimer}
+        // Both clocks chime at zero, and a click out here is the gesture that
+        // lets that chime be heard, as the stage's own play buttons do.
+        onStartIntentionTimer={() => {
+          void unlockAudio()
+          startIntentionTimer(Date.now())
+        }}
+        onStartDeciding={() => {
+          void unlockAudio()
+          startDeciding()
+        }}
         onStartBlock={startBlock}
-        onCannotDecide={cannotDecide}
         onAbandon={() => store.dispatch({ type: 'abandonBlock', at: Date.now() })}
         onTakeBreak={() => store.dispatch({ type: 'takeBreak', at: Date.now() })}
         onSkipBreak={(kind) =>
@@ -621,32 +652,14 @@ export function App() {
       */}
       <div className="mx-auto flex max-w-6xl flex-col p-4 sm:p-6 lg:h-dvh">
         <header className="mb-5 flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <PixelCat
-              phase={phase}
-              progress={null}
-              variant="mark"
-              className="h-7 w-11"
-              decorative
-            />
-            <span className="text-sm font-medium tracking-widest text-body uppercase">
-              Mono
-            </span>
-          </div>
+          <HeaderMark phase={phase} home />
           <div className="flex flex-wrap items-center justify-end gap-2">
             {/* Nothing at all unless the browser has started refusing to save,
                 which is the one failure worth a permanent place on screen. */}
             <StorageWarning onOpenSettings={openSettings} />
             <RoomMenu idPrefix="day-header" />
             <PopOutButton mini={mini} />
-            {/* A real link, so the guide can be opened in its own tab and
-                survives a reload like the document it is. */}
-            <a href={TASKS_HASH} className={headerControlClass}>
-              Tasks
-            </a>
-            <a href={GUIDE_HASH} className={headerControlClass}>
-              Guide
-            </a>
+            <PageLinks current="day" />
             <button type="button" onClick={openSettings} className={headerControlClass}>
               Settings
             </button>
@@ -725,10 +738,12 @@ export function App() {
                 intentions={session.intentions}
                 taskIntentions={session.taskIntentions}
                 onLinkTask={store.linkTask}
-                places={places}
                 planned={planned}
                 intentionTimer={intentionTimer}
-                onStartIntentionTimer={() => startIntentionTimer(Date.now())}
+                onStartIntentionTimer={() => {
+                  popOutForDeciding()
+                  startIntentionTimer(Date.now())
+                }}
                 onAddIntention={store.addIntention}
                 onUpdateIntention={store.updateIntention}
                 onRemoveIntention={store.removeIntention}
@@ -736,7 +751,7 @@ export function App() {
                 onEditHours={() => openComposer({ kind: 'hours' })}
                 onStartBlock={startBlock}
                 onSetPurpose={setPurpose}
-                onCannotDecide={cannotDecide}
+                onStartDeciding={startDeciding}
                 onAbandon={() => store.dispatch({ type: 'abandonBlock', at: Date.now() })}
                 onTakeBreak={() => store.dispatch({ type: 'takeBreak', at: Date.now() })}
                 onSkipBreak={(kind) =>
@@ -777,7 +792,6 @@ export function App() {
             timeline={timeline}
             now={now}
             regions={regions}
-            usingDefaultRegions={session.regionOverrides === null}
             composer={composer}
             onComposer={openComposer}
             commitments={session.commitments}
