@@ -200,6 +200,21 @@ test('coming back to the intentions later does not start the timer by itself', a
   await field.press('Escape')
   await expect(field).toHaveCount(0)
   await expect(opener).toBeFocused()
+
+  // A draft is whatever has been written in it. Tasks chosen before the title
+  // keep the form open across the other questions, as typed text does.
+  await opener.click()
+  const picker = stage(page).getByRole('button', { name: 'Tasks for this intention' })
+  await picker.click()
+  const tree = stage(page).getByRole('group', { name: 'Tasks for this intention' })
+  await tree.getByRole('button', { name: 'Add a task to Work', exact: true }).click()
+  await tree.getByLabel('New task in Work', { exact: true }).fill('Draft task')
+  await tree.getByLabel('New task in Work', { exact: true }).press('Enter')
+  await picker.click()
+  await goToStage(page, 'Hours')
+  await goToStage(page, 'Intentions')
+  await expect(field).toBeVisible()
+  await expect(picker).toContainText('Draft task')
 })
 
 test('intentions survive a reload and are gone the next day', async ({ page }) => {

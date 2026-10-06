@@ -15,7 +15,15 @@
  * It opens over the stage, lined up under its button, rather than in the flow
  * of the page, which would push the rest of the question down for the length
  * of a choice; and upwards when the window has more room above it, since the
- * stage scrolls inside itself on a wide screen. It closes on Escape, on the
+ * stage scrolls inside itself on a wide screen. Across, it hangs from the
+ * button's left edge while there is room to the right, and otherwise lines up
+ * with the right of the screen or the scroller it is in (`placeAcross`), so a
+ * button halfway across a phone does not push the panel off the edge. Across
+ * is kept in step while the panel is open, because the panel is placed against
+ * the button and the button does not hold still: choosing a task changes the
+ * summary it shows, and a phone turned on its side changes the room. Measured
+ * once, a right-aligned panel was left hanging from the button's old right
+ * edge, off the screen again. It closes on Escape, on the
  * button again, on a finished click outside it, and when focus moves to
  * something outside it. That last is safe here, unlike for the add fields: the
  * panel floats, so closing it moves nothing under the pointer.
@@ -30,19 +38,68 @@
  * a rename both carry a ✓ that keeps what is typed and a × that does not;
  * Enter in a new task's field keeps it and stays open for the next.
  *
+ * Those two fields are editors, and they keep the rule every editor in Mono
+ * keeps: one whose subject vanishes closes, before paint. A rename lasts only
+ * while its task is drawn and a new task's field only while its place is,
+ * whether a search hid it or an update from another tab took it. The fields
+ * are held up here by id, above the rows they edit, so without the rule the
+ * state outlived the row, and when the task came back — its epic reopened, the
+ * search cleared — the old editor came back with it.
+ *
+ * A field is focused by the press that opens it, never by mounting. The two
+ * used to be the same thing, and then every other reason a field mounts took
+ * focus too: the editor coming back with its task, or a task moved by another
+ * tab from one place to another, whose rename unmounts under the old place and
+ * mounts under the new, draft and all. Each of those took focus from the
+ * search or wherever the user had gone. So `+ Task` and ✎ ask for their field
+ * by key, and it is focused after the render that draws it; a field drawn for
+ * any other reason is drawn and left alone.
+ *
+ * Controls leave the panel while it stays open: a field closed by ✓, × or
+ * Escape, a row whose × deleted it, or anything another tab deletes, finishes,
+ * closes or moves. When the one with focus goes, focus falls to the page, out
+ * of reach of the panel's own Escape and of the blur that closes it on Tab, so
+ * a keyboard had no way left to close it. So the panel remembers the control
+ * that last had focus, and once that control has left the page with focus
+ * lost, focus goes to the first of these still drawn: the same control drawn
+ * again (a rename its task moved), what opened it (a field's `+ Task` or ✎),
+ * the place its row is in, the search, the button. Only when focus was lost:
+ * if it already moved somewhere on purpose, it stays there, the rule `AddFold`
+ * keeps. A control's own key is `data-focus-key`; a field names its opener in
+ * `data-focus-back`, and a place's list in `data-home`.
+ *
  * The tree is drawn only while the panel is open, so a backlog of hundreds of
  * tasks costs nothing on a stage that re-renders every second.
  */
 
-import { useEffect, useId, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type ReactNode,
+} from 'react'
 
+import { PANEL_MAX_WIDTH, PANEL_MIN_WIDTH, placeAcross, roomFor, type Across } from './panelPlacement'
 import { EditGlyph } from './ui'
 import type { Item, TaskTreeNode } from '@/domain/tasks'
 
 /** Room the panel wants below its button before it opens upwards instead. */
 const PANEL_ROOM = 320
+/** Clear space kept between the panel and the edge of the screen. */
+const GUTTER = 16
 
 const LEVEL: Record<TaskTreeNode['kind'], string> = { area: 'Area', epic: 'Epic', outcome: 'Outcome' }
+
+const sameAcross = (a: Across, b: Across): boolean =>
+  a.side === b.side &&
+  a.offset === b.offset &&
+  a.minWidth === b.minWidth &&
+  a.maxWidth === b.maxWidth
 
 export function TaskTreePicker({
   label,
@@ -71,15 +128,34 @@ export function TaskTreePicker({
 }) {
   const [open, setOpen] = useState(false)
   const [upwards, setUpwards] = useState(false)
+  const [across, setAcross] = useState<Across>({
+    side: 'left',
+    offset: 0,
+    minWidth: PANEL_MIN_WIDTH,
+    maxWidth: PANEL_MAX_WIDTH,
+  })
   /** The place a new task is being written into, if any, and what is typed. */
   const [adding, setAdding] = useState<{ parentId: string; title: string } | null>(null)
   /** The task being renamed, if any, and its title as typed. */
   const [renaming, setRenaming] = useState<{ taskId: string; title: string } | null>(null)
   const [query, setQuery] = useState('')
   const shown = narrow(tree, query.trim().toLowerCase())
+  // An editor whose subject is no longer drawn closes — see the header.
+  // Adjusted during render, as `TasksPage` drops a carry, so the stale editor
+  // is never painted and never mounts again on its own.
+  if (renaming && !drawsTask(shown, renaming.taskId)) setRenaming(null)
+  if (adding && !drawsPlace(shown, adding.parentId)) setAdding(null)
 
   const root = useRef<HTMLDivElement>(null)
   const toggle = useRef<HTMLButtonElement>(null)
+  const search = useRef<HTMLInputElement>(null)
+  /**
+   * The control in the panel that last had focus, and the keys of where focus
+   * goes if it is taken away, in order — see the header.
+   */
+  const lastFocus = useRef<{ control: Element; to: (string | null)[] } | null>(null)
+  /** The field a press has just opened, to be focused once it is drawn. */
+  const focusField = useRef<string | null>(null)
   const panelId = `${useId()}-tasks`
 
   // Titles by id, for the button's summary of what is chosen. Per tree, which
@@ -101,6 +177,18 @@ export function TaskTreePicker({
         ? chosen[0]!
         : `${chosen[0]!} + ${chosen.length - 1} more`
 
+  /**
+   * Where the panel goes across, measured now from the box it is placed
+   * against — the button's wrapper — and the room around it. Leaves the state
+   * alone when nothing moved, so a resize that changes nothing renders nothing.
+   */
+  const placePanel = useCallback(() => {
+    const anchor = toggle.current?.parentElement
+    if (!anchor) return
+    const next = placeAcross(anchor.getBoundingClientRect(), roomFor(anchor, GUTTER))
+    setAcross((current) => (sameAcross(current, next) ? current : next))
+  }, [])
+
   // Which way to open is decided as it opens, in the handler, so the panel
   // never paints facing one way and then jumps to the other.
   const openPanel = () => {
@@ -110,8 +198,32 @@ export function TaskTreePicker({
       const below = height - box.bottom
       setUpwards(below < PANEL_ROOM && box.top > below)
     }
+    placePanel()
     setOpen(true)
   }
+
+  // Across, kept in step while open — see the header. The summary is the usual
+  // reason the button changes width, and a layout effect re-places the panel
+  // before that change is painted. Anything else that resizes the button, and
+  // the window itself changing size, is heard through an observer and the
+  // window's own resize — the window this was drawn into, which is not always
+  // the tab's.
+  useLayoutEffect(() => {
+    if (open) placePanel()
+  }, [open, summary, placePanel])
+  useEffect(() => {
+    if (!open) return
+    const anchor = toggle.current?.parentElement
+    const view = anchor?.ownerDocument.defaultView
+    if (!anchor || !view) return
+    view.addEventListener('resize', placePanel)
+    const observer = 'ResizeObserver' in view ? new view.ResizeObserver(placePanel) : null
+    observer?.observe(anchor)
+    return () => {
+      view.removeEventListener('resize', placePanel)
+      observer?.disconnect()
+    }
+  }, [open, placePanel])
   const close = (refocus: boolean) => {
     setOpen(false)
     setAdding(null)
@@ -140,6 +252,40 @@ export function TaskTreePicker({
     doc.addEventListener('click', onClick)
     return () => doc.removeEventListener('click', onClick)
   }, [open])
+
+  // After every render: a field a press has just opened is focused; otherwise,
+  // once the control that last had focus has left the page and focus went
+  // with it, focus is handed back. Not before it has gone, since the render
+  // that takes it may not be this one.
+  useEffect(() => {
+    const doc = root.current?.ownerDocument
+    if (!doc) return
+    const keyed = (key: string | null) =>
+      key ? root.current?.querySelector<HTMLElement>(`[data-focus-key="${CSS.escape(key)}"]`) : null
+
+    // A field a press has just opened: focused here, after the render that
+    // drew it, rather than by mounting — see the header.
+    const wanted = focusField.current
+    if (wanted) {
+      focusField.current = null
+      keyed(wanted)?.focus()
+      return
+    }
+
+    // Forgotten as the panel closes, so a later opening — by a click that, in
+    // Safari, focuses nothing — is never taken for focus lost.
+    if (!open) {
+      lastFocus.current = null
+      return
+    }
+    const last = lastFocus.current
+    if (!last || last.control.isConnected) return
+    lastFocus.current = null
+    const active = doc.activeElement
+    if (active !== null && active !== doc.body) return
+    const named = last.to.map(keyed).find((el) => el)
+    ;(named ?? search.current ?? toggle.current)?.focus()
+  })
 
   const toggleTask = (id: string) =>
     onChange(selected.includes(id) ? selected.filter((t) => t !== id) : [...selected, id])
@@ -188,14 +334,20 @@ export function TaskTreePicker({
         </span>
         <button
           type="button"
-          onClick={() => setAdding({ parentId: node.id, title: '' })}
+          onClick={() => {
+            focusField.current = `add:${node.id}`
+            setAdding({ parentId: node.id, title: '' })
+          }}
           aria-label={`Add a task to ${node.name}`}
+          data-focus-key={`place:${node.id}`}
           className="shrink-0 self-center text-xs text-muted transition hover:text-bright"
         >
           + Task
         </button>
       </div>
-      <ul>
+      {/* Every row and field in here belongs to this place: where focus goes
+          if one of them is taken away from under it. */}
+      <ul data-home={`place:${node.id}`}>
         {adding?.parentId === node.id && (
           <li className="flex items-stretch gap-2 px-2.5 py-1">
             {guides(depth + 1)}
@@ -205,6 +357,8 @@ export function TaskTreePicker({
               onEnter={() => write('next')}
               onKeep={() => write('done')}
               onCancel={() => setAdding(null)}
+              focusKey={`add:${node.id}`}
+              focusBack={`place:${node.id}`}
               placeholder="A new task"
               label={`New task in ${node.name}`}
               keepLabel={`Add the new task to ${node.name}`}
@@ -223,6 +377,8 @@ export function TaskTreePicker({
                 onEnter={rename}
                 onKeep={rename}
                 onCancel={() => setRenaming(null)}
+                focusKey={`rename:${task.id}`}
+                focusBack={`edit:${task.id}`}
                 placeholder={task.title}
                 label={`Rename ${task.title}`}
                 keepLabel={`Save the name of ${task.title}`}
@@ -236,7 +392,10 @@ export function TaskTreePicker({
               guides={guides(depth + 1)}
               checked={selected.includes(task.id)}
               onToggle={() => toggleTask(task.id)}
-              onRename={() => setRenaming({ taskId: task.id, title: task.title })}
+              onRename={() => {
+                focusField.current = `rename:${task.id}`
+                setRenaming({ taskId: task.id, title: task.title })
+              }}
               onDelete={() => onDelete(task.id)}
               elsewhere={elsewhere(task.id)}
             />
@@ -251,6 +410,13 @@ export function TaskTreePicker({
       ref={root}
       className="min-w-0"
       onKeyDown={onKeyDown}
+      onFocus={(e) => {
+        const near = (name: string) => e.target.closest(`[${name}]`)?.getAttribute(name) ?? null
+        lastFocus.current = {
+          control: e.target,
+          to: [e.target.getAttribute('data-focus-key'), near('data-focus-back'), near('data-home')],
+        }
+      }}
       onBlur={(e) => {
         // Focus moved somewhere outside — by Tab, or a press on another
         // control. A blur with nowhere to go is a click on nothing, which the
@@ -262,6 +428,10 @@ export function TaskTreePicker({
       <div className="flex min-w-0 items-center gap-1.5 text-muted">
         <span className="shrink-0">{prefix}</span>
         <div className="relative min-w-0">
+          {/* No wider than the wrapper as well as no wider than 18rem. A button
+              sizes to its content rather than to its box, so with only the
+              18rem cap a long summary on a phone ran the button past its
+              wrapper and off the screen, widening the page. */}
           <button
             ref={toggle}
             type="button"
@@ -269,7 +439,7 @@ export function TaskTreePicker({
             aria-label={label}
             aria-expanded={open}
             {...(open ? { 'aria-controls': panelId } : {})}
-            className="flex max-w-[18rem] min-w-0 items-center gap-1.5 rounded-md border border-muted/70 bg-ink px-1.5 py-0.5 text-body transition hover:text-bright focus:border-deep focus:outline-none"
+            className="flex max-w-[min(18rem,100%)] min-w-0 items-center gap-1.5 rounded-md border border-muted/70 bg-ink px-1.5 py-0.5 text-body transition hover:text-bright focus:border-deep focus:outline-none"
           >
             <span className="min-w-0 truncate">{summary}</span>
             <svg
@@ -293,7 +463,12 @@ export function TaskTreePicker({
               id={panelId}
               role="group"
               aria-label={label}
-              className={`mono-scroll absolute left-0 z-30 max-h-80 w-max max-w-[min(26rem,calc(100vw-2rem))] min-w-[16rem] overflow-y-auto rounded-lg border border-muted/70 bg-ink py-1.5 shadow-lg ${
+              style={{
+                ...(across.side === 'left' ? { left: 0 } : { right: across.offset }),
+                minWidth: across.minWidth,
+                maxWidth: across.maxWidth,
+              }}
+              className={`mono-scroll absolute z-30 max-h-80 w-max overflow-y-auto rounded-lg border border-muted/70 bg-ink py-1.5 shadow-lg ${
                 upwards ? 'bottom-full mb-1' : 'top-full mt-1'
               }`}
             >
@@ -301,6 +476,7 @@ export function TaskTreePicker({
                 <div className="relative px-2.5 pt-0.5 pb-1.5">
                   <SearchGlyph className="pointer-events-none absolute top-1/2 left-5 -translate-y-1/2 text-muted" />
                   <input
+                    ref={search}
                     value={query}
                     onChange={(e) => setQuery(e.target.value)}
                     onKeyDown={(e) => {
@@ -342,6 +518,8 @@ function InlineField({
   onEnter,
   onKeep,
   onCancel,
+  focusKey,
+  focusBack,
   placeholder,
   label,
   keepLabel,
@@ -352,13 +530,17 @@ function InlineField({
   onEnter: () => void
   onKeep: () => void
   onCancel: () => void
+  /** Who it is, for the press that opens it and for focus coming back to it. */
+  focusKey: string
+  /** What opened it, where focus goes when it closes with focus in it. */
+  focusBack: string
   placeholder: string
   label: string
   keepLabel: string
   cancelLabel: string
 }) {
   return (
-    <span className="flex min-w-0 flex-1 items-center gap-1.5">
+    <span data-focus-back={focusBack} className="flex min-w-0 flex-1 items-center gap-1.5">
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -372,8 +554,9 @@ function InlineField({
         }}
         placeholder={placeholder}
         aria-label={label}
-        // Opened by a click asking for exactly this field.
-        autoFocus
+        // Focused by the press that opened it, not here: see the picker's
+        // header for what focusing on mount did.
+        data-focus-key={focusKey}
         maxLength={120}
         className="min-w-0 flex-1 rounded-md border border-muted/70 bg-ink px-2 py-1 text-sm text-bright placeholder:text-muted/90 focus:border-deep focus:outline-none"
       />
@@ -436,6 +619,7 @@ function TaskOption({
         type="button"
         onClick={onRename}
         aria-label={`Edit task ${task.title}`}
+        data-focus-key={`edit:${task.id}`}
         className="shrink-0 self-center px-0.5 text-muted transition hover:text-bright"
       >
         <EditGlyph />
@@ -451,6 +635,14 @@ function TaskOption({
     </li>
   )
 }
+
+/** Whether this tree, as drawn, has a row for the task. */
+const drawsTask = (nodes: readonly TaskTreeNode[], taskId: string): boolean =>
+  nodes.some((node) => node.tasks.some((t) => t.id === taskId) || drawsTask(node.children, taskId))
+
+/** Whether this tree, as drawn, has the place. */
+const drawsPlace = (nodes: readonly TaskTreeNode[], placeId: string): boolean =>
+  nodes.some((node) => node.id === placeId || drawsPlace(node.children, placeId))
 
 /**
  * The tree as a search leaves it. Empty asks for nothing and gets the whole

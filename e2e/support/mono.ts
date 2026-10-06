@@ -19,6 +19,11 @@
  * - **Seed storage with `addInitScript`, before the first `goto`.** Set after
  *   navigating, it loses to the app's own write, and the day rollover then sees
  *   a stale key and wipes the log down to one `day/reset`.
+ * - **A backlog edit is on screen before it is on disk.** The backlog updates
+ *   memory at once and queues the IndexedDB write, so a reload straight after
+ *   an edit can abort the write carrying it — and the reloaded page is then
+ *   right to show what the disk had. A spec that reloads to prove an edit was
+ *   kept polls `storedRecord` for it first, never a delay.
  * - **Locators are substring and case-insensitive by default.** `getByLabel('At')`
  *   matches "Wh*at*", a `5m` button matches "1*5m*", `2 PM` matches "1*2 PM*",
  *   and `Hours` matches "Change today's *hours*". Use `{ exact: true }`
@@ -205,4 +210,47 @@ export async function addOnTasksPage(
   }
   await field.fill(title)
   await field.press('Enter')
+}
+
+/** The fields of a stored backlog record a spec may wait on. */
+export type StoredRecord = {
+  id: string
+  title?: string
+  name?: string
+  parentId?: string
+  status?: string
+  deletedAt?: number
+}
+
+/**
+ * Every area and item the backlog's IndexedDB holds right now, read in the
+ * page through a connection of its own.
+ *
+ * The disk, not the screen, which is the point: see the trap above. Use it
+ * with `expect.poll` before a reload that is meant to prove an edit was kept.
+ */
+export function storedItems(page: Page): Promise<StoredRecord[]> {
+  return page.evaluate(
+    () =>
+      new Promise<StoredRecord[]>((resolve, reject) => {
+        const open = indexedDB.open('mono')
+        open.onerror = () => reject(open.error)
+        open.onsuccess = () => {
+          const db = open.result
+          const tx = db.transaction(['areas', 'items'], 'readonly')
+          const areas = tx.objectStore('areas').getAll()
+          const items = tx.objectStore('items').getAll()
+          tx.oncomplete = () => {
+            db.close()
+            resolve([...areas.result, ...items.result] as StoredRecord[])
+          }
+          tx.onerror = () => reject(tx.error)
+        }
+      }),
+  )
+}
+
+/** The stored record with this title or name, or null until the disk has it. */
+export async function storedRecord(page: Page, label: string): Promise<StoredRecord | null> {
+  return (await storedItems(page)).find((r) => r.title === label || r.name === label) ?? null
 }
