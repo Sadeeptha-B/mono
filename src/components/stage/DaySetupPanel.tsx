@@ -35,13 +35,18 @@
  * complete answer, and before there was somewhere to put it a day with no
  * meetings could never get past the question at all.
  *
- * The first question is a list with a form under it, and the form folds away.
- * Once the day has anything fixed in it, the answer to "what's already fixed?"
- * is the list — four fields under it are the *next* answer, asked before the
- * first one has been read. So arriving at the question shows what is there and
- * offers to add another, and a day with nothing fixed yet skips straight to the
- * form, because a lone button over an empty space is a question with the answer
- * hidden behind it.
+ * The first question is a list with a form under it, and the form folds away
+ * behind its `Add commitment` heading (`AddFold`), as every add field on the
+ * stage and the tasks page does. Once the day has anything fixed in it, the
+ * answer to "what's already fixed?" is the list — four fields under it are the
+ * *next* answer, asked before the first one has been read. So arriving at the
+ * question shows what is there and offers to add another, and a day with
+ * nothing fixed yet skips straight to the form, with no caret or × to fold it,
+ * because a lone heading over an empty space is a question with the answer
+ * hidden behind it. Enter keeps a commitment and leaves the form open for the
+ * next; `Done` keeps it and folds; the caret and × fold it without keeping
+ * anything. The hours question's `+ Add a stretch` is not one of these: a
+ * stretch is a row of the answer itself, not a new thing being written down.
  *
  * The same panel comes back when the questions are re-opened from the strip
  * later in the day, which is what `revisiting` is for. Only the way out
@@ -54,7 +59,7 @@
 import { useState } from 'react'
 import { format } from 'date-fns'
 
-import { EditGlyph, GhostButton, PrimaryButton, StagePrompt } from '../ui'
+import { AddFold, EditGlyph, GhostButton, PrimaryButton, StagePrompt } from '../ui'
 import {
   CommitmentFields,
   draftFromCommitment,
@@ -77,7 +82,6 @@ import {
   setupStageName,
   type SetupStageId,
 } from './stages'
-import type { Place } from '@/domain/tasks'
 import { formatClock, formatDuration, nextHalfHour } from '@/domain/time'
 import {
   commitmentSpan,
@@ -106,7 +110,8 @@ export function DaySetupPanel({
   onUpdateCommitment,
   onRemoveCommitment,
   intentions,
-  places,
+  taskIntentions,
+  onLinkTask,
   planned,
   intentionTimer,
   intentionMinutes,
@@ -134,14 +139,15 @@ export function DaySetupPanel({
   onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onRemoveCommitment: (id: string) => void
   intentions: readonly Intention[]
-  /** Areas, epics and outcomes an intention can point at. */
-  places: readonly Place[]
+  /** Which of today's intentions each task is under. */
+  taskIntentions: Readonly<Record<string, string>>
+  onLinkTask: (taskId: string, intentionId: string | null) => void
   /** What the plan can still hold, quoted by the intentions question. */
   planned: { blocks: number; minutes: number }
   intentionTimer: IntentionTimer | null
   intentionMinutes: number
   onStartIntentionTimer: () => void
-  onAddIntention: (input: Omit<Intention, 'id'>) => void
+  onAddIntention: (input: Omit<Intention, 'id'>) => string
   onUpdateIntention: (id: string, patch: IntentionPatch) => void
   onRemoveIntention: (id: string) => void
   onDone: () => void
@@ -246,6 +252,10 @@ export function DaySetupPanel({
   // the form is folded away has to leave the question answerable, and it does
   // so without anything having to notice the removal.
   const formOpen = expanded || editing !== null || inOrder.length === 0
+  // Folding is offered only where it would fold something: with nothing in the
+  // list the form is the whole question.
+  const canFold = inOrder.length > 0 || editing !== null
+
 
   // Not the same read: an edit is merged onto what is already there, so it has
   // to say a margin is zero rather than leave it out. See `readCommitmentEdit`.
@@ -256,6 +266,28 @@ export function DaySetupPanel({
   const noHours = resolveHours(now, hours).length === 0
   const noIntentions = intentions.length === 0
   const eyebrow = revisiting ? 'Changing today' : 'To begin'
+
+  /** Fold without keeping anything: the caret, the ×, Escape. */
+  const fold = () => {
+    clearForm()
+    setExpanded(false)
+  }
+
+  /** Keep what the form says. Enter stays open for the next; `Done` folds. */
+  const save = (then: 'next' | 'done') => {
+    if (!ready) return
+    if (editing) onUpdateCommitment(editing, ready)
+    else onAddCommitment(ready)
+    clearForm()
+    if (then === 'done') {
+      setExpanded(false)
+      return
+    }
+    // Left open, cleared, whichever it was: the commonest thing after writing
+    // one of these down is writing another, and folding the form away under
+    // the hand that just used it would charge a click for the second.
+    setExpanded(true)
+  }
   const previous = previousSetupStage(stage)
   const next = nextSetupStage(stage)
 
@@ -265,7 +297,7 @@ export function DaySetupPanel({
         <>
           <StagePrompt
             eyebrow={eyebrow}
-            title="What's already fixed today?"
+            title="What are your commitments for today?"
             detail="Anything you can't move. These come first because they decide how much of the day is yours to spend."
           />
 
@@ -285,19 +317,28 @@ export function DaySetupPanel({
             </ul>
           )}
 
-          {formOpen ? (
+          <AddFold
+            title={editing ? 'Edit commitment' : 'Add commitment'}
+            open={formOpen}
+            onOpen={openForm}
+            onCancel={fold}
+            cancelLabel={editing ? 'Cancel editing' : 'Cancel new commitment'}
+            canFold={canFold}
+            className="text-sm text-body"
+          >
+            {/* Enter is caught here rather than left to the browser:
+              with several fields and no submit button it would do
+              nothing, and `Done` means something else. */}
             <form
-              onSubmit={(e) => {
+              onSubmit={(e) => e.preventDefault()}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape' && canFold) {
+                  e.preventDefault()
+                  fold()
+                }
+                if (e.key !== 'Enter' || !(e.target instanceof HTMLInputElement)) return
                 e.preventDefault()
-                if (!ready) return
-                if (editing) onUpdateCommitment(editing, ready)
-                else onAddCommitment(ready)
-                clearForm()
-                // Left open, cleared, whichever it was: the commonest thing
-                // after writing one of these down is writing another, and
-                // folding the form away under the hand that just used it would
-                // charge a click for the second.
-                setExpanded(true)
+                save('next')
               }}
             >
               <CommitmentFields
@@ -310,30 +351,21 @@ export function DaySetupPanel({
                 onDraft={setDraft}
                 large
               />
-              <div className="mt-4 flex flex-wrap gap-2">
-                <GhostButton type="submit" disabled={!ready}>
-                  {editing ? 'Save commitment' : 'Add commitment'}
+              {/* With nothing written it only folds — which is nothing
+                to do while the form is the whole question. With
+                something written that does not read yet, it waits
+                rather than throw the writing away. */}
+              <div className="mt-4">
+                <GhostButton
+                  type="button"
+                  disabled={!ready && (!canFold || draft.title.trim() !== '')}
+                  onClick={() => (ready ? save('done') : fold())}
+                >
+                  Done
                 </GhostButton>
-                {/* No way out of a form that is the whole question: with
-                    nothing in the list there is nothing to fold back to. */}
-                {inOrder.length > 0 && (
-                  <GhostButton
-                    type="button"
-                    onClick={() => {
-                      clearForm()
-                      setExpanded(false)
-                    }}
-                  >
-                    Cancel
-                  </GhostButton>
-                )}
               </div>
             </form>
-          ) : (
-            <GhostButton type="button" onClick={openForm}>
-              + Another commitment
-            </GhostButton>
-          )}
+          </AddFold>
         </>
       ) : stage === 'hours' ? (
         <>
@@ -353,7 +385,8 @@ export function DaySetupPanel({
           onStartTimer={onStartIntentionTimer}
           planned={planned}
           intentions={intentions}
-          places={places}
+          taskIntentions={taskIntentions}
+          onLinkTask={onLinkTask}
           draft={intentionDraft}
           onDraft={setIntentionDraft}
           onAdd={onAddIntention}
@@ -370,7 +403,7 @@ export function DaySetupPanel({
           onClick={onDone}
           disabled={!revisiting && (noHours || noIntentions)}
         >
-          {revisiting ? 'Back to the day' : 'Start the day'}
+          {revisiting ? 'Focus' : 'Start the day'}
         </PrimaryButton>
         {/* Named after the question they lead to, like its dot in the strip. */}
         {previous && (
@@ -478,14 +511,14 @@ function footnote({
 }): string {
   if (noHours) {
     return revisiting
-      ? "With no stretches left under Today's hours there is nowhere for Mono to plan. Go back and the rest of the day stays empty."
-      : "Mono plans inside your working hours and nowhere else, so it needs at least one stretch. Add one under Today's hours."
+      ? "With no stretches left under Hours there is nowhere for Mono to plan. Go back and the rest of the day stays empty."
+      : "Mono plans inside your working hours and nowhere else, so it needs at least one stretch. Add one under Hours."
   }
   if (revisiting) return 'Anything you change here re-derives the plan. Nothing running is disturbed.'
   if (noIntentions) {
     return stage === 'intentions'
       ? 'Name at least one thing today is for, and the day can start.'
-      : "Before the day starts, name at least one thing it is for under Today's intentions."
+      : "Before the day starts, name at least one thing it is for under Intentions."
   }
   if (stage === 'intentions') return 'A handful is plenty. You can change them between blocks.'
   return commitments === 0

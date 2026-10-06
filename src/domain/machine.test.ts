@@ -47,11 +47,7 @@ describe('starting a block', () => {
   it('asks for a purpose before the timer starts', () => {
     const { phase, session } = run([{ type: 'startBlock', at: at(14), blockKind: 'deep' }])
 
-    expect(phase).toEqual({
-      name: 'definingPurpose',
-      blockKind: 'deep',
-      afterReflection: false,
-    })
+    expect(phase).toEqual({ name: 'definingPurpose', blockKind: 'deep', deciding: null })
     // Nothing is running yet — deciding is not focusing.
     expect(session.active).toBeNull()
   })
@@ -120,61 +116,42 @@ describe('starting a block', () => {
   })
 })
 
-describe('not being able to name a purpose', () => {
-  it('starts a five minute reflection block', () => {
+describe('not being able to name a purpose yet', () => {
+  it('gives the prompt a few minutes to decide in, and records nothing', () => {
     const { phase, session } = run([
       { type: 'startBlock', at: at(14), blockKind: 'deep' },
-      { type: 'cannotDecide', at: at(14) },
-    ])
-
-    expect(phase).toEqual({ name: 'reflecting' })
-    expect(session.active).toMatchObject({
-      kind: 'block',
-      blockKind: 'reflect',
-      purpose: null,
-      endsAt: at(14) + minutesToMs(5),
-    })
-  })
-
-  it('returns to the purpose prompt once reflection ends', () => {
-    const { phase, session } = run([
-      { type: 'startBlock', at: at(14), blockKind: 'deep' },
-      { type: 'cannotDecide', at: at(14) },
-      { type: 'timerElapsed', at: at(14, 5) },
+      { type: 'startDeciding', at: at(14) },
     ])
 
     expect(phase).toEqual({
       name: 'definingPurpose',
       blockKind: 'deep',
-      afterReflection: true,
+      deciding: { startedAt: at(14), endsAt: at(14) + minutesToMs(5) },
     })
     expect(session.active).toBeNull()
+    expect(session.history).toHaveLength(0)
   })
 
-  it('records the reflection in history like any other block', () => {
-    const { session } = run([
-      { type: 'startBlock', at: at(14), blockKind: 'deep' },
-      { type: 'cannotDecide', at: at(14) },
-      { type: 'timerElapsed', at: at(14, 5) },
-    ])
-
-    expect(session.history).toHaveLength(1)
-    expect(session.history[0]).toMatchObject({
-      kind: 'block',
-      blockKind: 'reflect',
-      result: 'completed',
-    })
-  })
-
-  it('records an abandoned reflection and still returns to the prompt', () => {
+  it('starts the block when it is named, not when deciding began', () => {
     const { phase, session } = run([
       { type: 'startBlock', at: at(14), blockKind: 'deep' },
-      { type: 'cannotDecide', at: at(14) },
-      { type: 'abandonBlock', at: at(14, 2) },
+      { type: 'startDeciding', at: at(14) },
+      { type: 'setPurpose', at: at(14, 7), purpose: 'Write the planner', taskIds: ['task'] },
     ])
 
-    expect(phase.name).toBe('definingPurpose')
-    expect(session.history[0]).toMatchObject({ result: 'abandoned', endedAt: at(14, 2) })
+    expect(phase).toEqual({ name: 'focusing' })
+    expect(session.active).toMatchObject({ startedAt: at(14, 7), endsAt: at(14, 52) })
+  })
+
+  it('forgets the timer along with the prompt', () => {
+    const { phase } = run([
+      { type: 'startBlock', at: at(14), blockKind: 'deep' },
+      { type: 'startDeciding', at: at(14) },
+      { type: 'abandonBlock', at: at(14, 2) },
+      { type: 'startBlock', at: at(14, 3), blockKind: 'deep' },
+    ])
+
+    expect(phase).toEqual({ name: 'definingPurpose', blockKind: 'deep', deciding: null })
   })
 })
 
@@ -200,11 +177,7 @@ describe('finishing a block', () => {
       { type: 'skipBreak', at: at(14, 45), nextBlockKind: 'deep' },
     ])
 
-    expect(phase).toEqual({
-      name: 'definingPurpose',
-      blockKind: 'deep',
-      afterReflection: false,
-    })
+    expect(phase).toEqual({ name: 'definingPurpose', blockKind: 'deep', deciding: null })
     expect(session.active).toBeNull()
     expect(session.history[0]).toMatchObject({ result: 'completed' })
   })
@@ -532,8 +505,7 @@ describe('whether a block is actually running', () => {
 
   const PHASES: Phase[] = [
     { name: 'idle' },
-    { name: 'definingPurpose', blockKind: 'deep', afterReflection: false },
-    { name: 'reflecting' },
+    { name: 'definingPurpose', blockKind: 'deep', deciding: null },
     { name: 'focusing' },
     { name: 'blockComplete' },
     { name: 'choosingBreak' },
@@ -541,8 +513,8 @@ describe('whether a block is actually running', () => {
     { name: 'reconciling', lastSeenAt: at(9, 30), blockEndedAt: at(9, 45) },
   ]
 
-  it.each(['focusing', 'reflecting'])('is true while %s a block', (name) => {
-    expect(isBlockRunning({ name } as Phase, block)).toBe(true)
+  it('is true while focusing on a block', () => {
+    expect(isBlockRunning({ name: 'focusing' }, block)).toBe(true)
   })
 
   it.each(['idle', 'definingPurpose', 'blockComplete', 'choosingBreak', 'onBreak', 'reconciling'])(

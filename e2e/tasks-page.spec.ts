@@ -32,6 +32,19 @@ test('a new backlog starts with Work and Personal, and an inbox is just tasks', 
   await expect(main(page).getByRole('heading', { name: 'Work' })).toBeVisible()
   await expect(main(page).getByRole('heading', { name: 'Personal' })).toBeVisible()
 
+  // Every header carries both pages, the one you are on marked rather than
+  // dropped, so the guide is one click away from here and back.
+  const tasksLink = page.getByRole('link', { name: 'Tasks', exact: true })
+  await expect(tasksLink).toHaveAttribute('aria-current', 'page')
+  await page.getByRole('link', { name: 'Guide', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'How Mono works' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Guide', exact: true })).toHaveAttribute(
+    'aria-current',
+    'page',
+  )
+  await tasksLink.click()
+  await expect(tasksLink).toHaveAttribute('aria-current', 'page')
+
   await addTo(page, 'Work', 'Call Priya')
   await expect(inbox(page, 'Work')).toContainText('Call Priya')
 
@@ -107,14 +120,18 @@ test('a task can be renamed, moved, dropped, reopened and deleted', async ({ pag
   await main(page).getByLabel('Rename Buy a cable', { exact: true }).press('Enter')
   await expect(inbox(page, 'Work')).toContainText('Buy a USB-C cable')
 
-  // Where it lives is a button until asked, so a long backlog does not mount
-  // every place in every row.
-  await expect(main(page).getByLabel('Where Buy a USB-C cable lives')).toHaveCount(0)
-  await main(page).getByRole('button', { name: 'Move Buy a USB-C cable from Work' }).click()
-  await main(page).getByLabel('Where Buy a USB-C cable lives').selectOption({ label: 'Personal' })
-  await expect(main(page).getByLabel('Where Buy a USB-C cable lives')).toHaveCount(0)
+  // Without a pointer, it is picked up by its grip and put down with the
+  // `Move here` every other column then offers; focus goes with it.
+  const grip = main(page).getByRole('button', { name: 'Move Buy a USB-C cable', exact: true })
+  await grip.click()
+  await expect(grip).toHaveAttribute('aria-pressed', 'true')
+  await main(page)
+    .getByRole('button', { name: 'Move Buy a USB-C cable to Personal', exact: true })
+    .click()
   await expect(inbox(page, 'Personal')).toContainText('Buy a USB-C cable')
   await expect(inbox(page, 'Work')).toHaveCount(0)
+  await expect(grip).toBeFocused()
+  await expect(main(page).getByRole('button', { name: 'Move here' })).toHaveCount(0)
 
   // Dropping is a decision, so it is kept and can be undone.
   await main(page).getByRole('button', { name: 'Drop Buy a USB-C cable' }).click()
@@ -131,11 +148,14 @@ test("a task can be put under one of today's intentions and taken out again", as
   page,
 }) => {
   await openMono(page)
-  await goToStage(page, "Today's intentions")
+  await goToStage(page, 'Intentions')
   await addIntention(page, 'Mono auth')
   await stage(page).getByRole('button', { name: 'Start the day' }).click()
 
   await openTasks(page)
+  await expect(
+    main(page).getByRole('heading', { name: 'My intentions for today' }),
+  ).toBeVisible()
   await addTo(page, 'Work', 'Login form')
   await main(page)
     .getByLabel("Today's intention for Login form")
@@ -157,6 +177,50 @@ test("a task can be put under one of today's intentions and taken out again", as
   await expect(today).toHaveCount(0)
 })
 
+test("today's intentions can be written, edited and deleted from the tasks page", async ({
+  page,
+}) => {
+  await openMono(page)
+  await openTasks(page)
+  await buildAuthEpic(page)
+
+  // Written with its tasks, as on the opening question. Opening it folds the
+  // empty add field the backlog was left with, as opening any add field does.
+  const section = main(page).getByRole('region', { name: 'My intentions for today' })
+  await expect(main(page).getByLabel('New task in Mono auth', { exact: true })).toBeVisible()
+  await section.getByRole('button', { name: 'Add intention', exact: true }).click()
+  await expect(main(page).getByLabel('New task in Mono auth', { exact: true })).toHaveCount(0)
+  await section.getByLabel('Next intention', { exact: true }).fill('Ship it')
+  await section.getByRole('button', { name: 'Tasks for this intention' }).click()
+  await section
+    .getByRole('group', { name: 'Tasks for this intention' })
+    .getByRole('checkbox', { name: 'Login form' })
+    .check()
+  await section.getByRole('button', { name: 'Done', exact: true }).click()
+
+  // Its tasks under their places, each said once.
+  const today = section.getByRole('list', { name: 'Today: Ship it' })
+  await expect(today).toContainText('Work › Mono auth › Login pages')
+  await expect(today).toContainText('Login form')
+
+  await section.getByRole('button', { name: 'Edit intention Ship it' }).click()
+  await section.getByLabel('This intention', { exact: true }).fill('Ship the login pages')
+  await section.getByRole('button', { name: 'Done', exact: true }).click()
+  await expect(section.getByRole('list', { name: 'Today: Ship the login pages' })).toContainText(
+    'Login form',
+  )
+
+  // Deleting it leaves its tasks in the backlog.
+  await section.getByRole('button', { name: 'Delete intention Ship the login pages' }).click()
+  await expect(main(page).getByRole('heading', { name: 'Ship the login pages' })).toHaveCount(0)
+  await expect(outcome(page, 'Login pages')).toContainText('Login form')
+
+  // And the opening question sees what the page did.
+  await page.getByRole('link', { name: 'Back to today' }).click()
+  await goToStage(page, 'Intentions')
+  await expect(stage(page).getByRole('list', { name: 'Intended today' })).toHaveCount(0)
+})
+
 test('areas can be added, renamed, archived and restored', async ({ page }) => {
   await openMono(page)
   await openTasks(page)
@@ -165,8 +229,14 @@ test('areas can be added, renamed, archived and restored', async ({ page }) => {
   await expect(main(page).getByLabel('New area', { exact: true })).toHaveCount(0)
   await main(page).getByRole('button', { name: 'Add area' }).click()
   await main(page).getByLabel('New area', { exact: true }).fill('Health')
-  await main(page).getByRole('button', { name: 'Add area' }).click()
+  // Done keeps what was typed and folds the field away under its heading.
+  await main(page).getByRole('button', { name: 'Done', exact: true }).click()
   await expect(main(page).getByRole('heading', { name: 'Health' })).toBeVisible()
+  await expect(main(page).getByLabel('New area', { exact: true })).toHaveCount(0)
+  await expect(main(page).getByRole('button', { name: 'Add area' })).toHaveAttribute(
+    'aria-expanded',
+    'false',
+  )
 
   await main(page).getByRole('button', { name: 'Rename Health' }).click()
   await main(page).getByLabel('Rename Health', { exact: true }).fill('Fitness')
@@ -182,7 +252,7 @@ test('areas can be added, renamed, archived and restored', async ({ page }) => {
 
 test('a block keeps running while the tasks page is open', async ({ page }) => {
   await openMono(page)
-  await goToStage(page, "Today's intentions")
+  await goToStage(page, 'Intentions')
   await addIntention(page, 'Mono auth')
   await stage(page).getByRole('button', { name: 'Start the day' }).click()
   await startBlock(page, 'Write the planner')
@@ -223,17 +293,43 @@ test('an epic holds outcomes, and both hold tasks', async ({ page }) => {
     outcome(page, 'Login pages').getByRole('list', { name: 'Login pages tasks' }),
   ).toContainText('Login form')
 
-  // A task moves anywhere a task can live, by its full path.
+  // A task is dragged to any column a task can live in.
   await addTo(page, 'Work', 'Rate limiting')
-  await main(page).getByRole('button', { name: 'Move Rate limiting' }).click()
-  await main(page)
-    .getByLabel('Where Rate limiting lives')
-    .selectOption({ label: 'Work › Mono auth › Login pages' })
+  await inbox(page, 'Work')
+    .getByRole('listitem')
+    .filter({ hasText: 'Rate limiting' })
+    .dragTo(outcome(page, 'Login pages'))
   await expect(outcome(page, 'Login pages')).toContainText('Rate limiting')
   await expect(inbox(page, 'Work')).toHaveCount(0)
 
   await page.reload()
   await expect(outcome(page, 'Login pages')).toContainText('Rate limiting')
+})
+
+test('a task picked up is put back with Escape, and only other columns offer to take it', async ({
+  page,
+}) => {
+  await openMono(page)
+  await openTasks(page)
+  await buildAuthEpic(page)
+
+  await main(page).getByRole('button', { name: 'Move Login form', exact: true }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Moving Login form' })).toBeVisible()
+  // Every column but its own: the epic's, and each area's inbox.
+  await expect(
+    outcome(page, 'Login pages').getByRole('button', { name: 'Move here' }),
+  ).toHaveCount(0)
+  await expect(
+    main(page).getByRole('button', { name: 'Move Login form to Mono auth', exact: true }),
+  ).toBeVisible()
+  await expect(
+    main(page).getByRole('button', { name: 'Move Login form to Personal', exact: true }),
+  ).toBeVisible()
+
+  await page.keyboard.press('Escape')
+  await expect(main(page).getByRole('button', { name: 'Move here' })).toHaveCount(0)
+  await expect(page.getByRole('status').filter({ hasText: 'Moving' })).toHaveCount(0)
+  await expect(outcome(page, 'Login pages')).toContainText('Login form')
 })
 
 test('a finished epic takes its tasks with it, and reopening brings them back', async ({

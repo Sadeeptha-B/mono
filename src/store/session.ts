@@ -191,7 +191,8 @@ export function phaseForActive(session: SessionState): Phase {
   const { active } = session
   if (!active) return initialPhase
   if (active.kind === 'break') return { name: 'onBreak' }
-  return active.blockKind === 'reflect' ? { name: 'reflecting' } : { name: 'focusing' }
+  // A priorities block from an older log runs out like any other block.
+  return { name: 'focusing' }
 }
 
 export const useSession = create<SessionStore>()(

@@ -30,17 +30,17 @@ test('the calendar editors do not carry a draft into the next day', async ({ pag
   await shapeDay(page)
 
   await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
-  await calendar(page).getByLabel("Today's hours 1 end").fill('22:00')
+  await calendar(page).getByLabel('Hours 1 end', { exact: true }).fill('22:00')
 
   await crossMidnight(page)
 
   // The editor is gone, and yesterday's draft with it.
-  await expect(calendar(page).getByLabel("Today's hours 1 end")).toBeHidden()
+  await expect(calendar(page).getByLabel('Hours 1 end', { exact: true })).toBeHidden()
   await expect(page.getByText(/Working until 6:00 PM/)).toBeVisible()
 
   // Reopening seeds from the new day's own shape, not from what was typed.
   await calendar(page).getByRole('button', { name: 'Hours', exact: true }).click()
-  await expect(calendar(page).getByLabel("Today's hours 1 end")).toHaveValue('18:00')
+  await expect(calendar(page).getByLabel('Hours 1 end', { exact: true })).toHaveValue('18:00')
 })
 
 test("yesterday stays in the journal and off today's axis", async ({ page }) => {
@@ -74,7 +74,7 @@ test('an unanswered day left open overnight reopens on the first question', asyn
   // was not answered in the first place — so this, the case it mattered most
   // for, was exactly the one it missed.
   await openMono(page, LATE)
-  await goToStage(page, "Today's hours")
+  await goToStage(page, 'Hours')
   await expect(
     stage(page).getByRole('heading', { name: 'Are these your hours today?' }),
   ).toBeVisible()
@@ -82,19 +82,19 @@ test('an unanswered day left open overnight reopens on the first question', asyn
   await crossMidnight(page)
 
   await expect(
-    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+    stage(page).getByRole('heading', { name: "What are your commitments for today?" }),
   ).toBeVisible()
 })
 
 test('the opening questions do not carry a draft into the next day', async ({ page }) => {
   await openMono(page, LATE)
-  await goToStage(page, "Today's hours")
-  await stage(page).getByLabel("Today's hours 1 end").fill('22:00')
+  await goToStage(page, 'Hours')
+  await stage(page).getByLabel('Hours 1 end', { exact: true }).fill('22:00')
 
   await crossMidnight(page)
 
-  await goToStage(page, "Today's hours")
-  await expect(stage(page).getByLabel("Today's hours 1 end")).toHaveValue('18:00')
+  await goToStage(page, 'Hours')
+  await expect(stage(page).getByLabel('Hours 1 end', { exact: true })).toHaveValue('18:00')
 
   // And starting the new day leaves it following the recurring shape, rather
   // than overriding it with what was typed yesterday.
@@ -109,17 +109,17 @@ test('an import replaces the opening questions, even one for the same day', asyn
   // never answered moves neither the date nor the answered flag, so there was
   // nothing for the UI to notice. The session generation is the fact itself.
   await openMono(page)
-  await goToStage(page, "Today's hours")
-  await stage(page).getByLabel("Today's hours 1 end").fill('22:00')
+  await goToStage(page, 'Hours')
+  await stage(page).getByLabel('Hours 1 end', { exact: true }).fill('22:00')
 
   await importSession(page, { version: 3, dayKey: '2026-08-20', events: [] })
 
   // Back to the first question, with nothing carried over from before.
   await expect(
-    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+    stage(page).getByRole('heading', { name: "What are your commitments for today?" }),
   ).toBeVisible()
-  await goToStage(page, "Today's hours")
-  await expect(stage(page).getByLabel("Today's hours 1 end")).toHaveValue('18:00')
+  await goToStage(page, 'Hours')
+  await expect(stage(page).getByLabel('Hours 1 end', { exact: true })).toHaveValue('18:00')
 
   await startDay(page)
   await expect(page.getByText(/Working until 6:00 PM/)).toBeVisible()
@@ -132,14 +132,14 @@ test('the hours question follows the recurring shape until it is edited', async 
   // from while the question is open, and the question has to be asking about
   // the new shape — not quietly holding the old one ready to save back over it.
   await openMono(page)
-  await goToStage(page, "Today's hours")
-  await expect(stage(page).getByLabel("Today's hours 1 end")).toHaveValue('18:00')
+  await goToStage(page, 'Hours')
+  await expect(stage(page).getByLabel('Hours 1 end', { exact: true })).toHaveValue('18:00')
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByLabel('Working hours 1 end', { exact: true }).fill('16:00')
   await page.keyboard.press('Escape')
 
-  await expect(stage(page).getByLabel("Today's hours 1 end")).toHaveValue('16:00')
+  await expect(stage(page).getByLabel('Hours 1 end', { exact: true })).toHaveValue('16:00')
 
   // And starting the day leaves it following that shape rather than overriding
   // it with what the panel happened to be showing when it mounted.
@@ -153,14 +153,14 @@ test('an edited hours draft is left alone when the default shape changes', async
   // The other side of it: following the day is for a draft nobody has touched.
   // Clearing what someone is in the middle of typing would be its own bug.
   await openMono(page)
-  await goToStage(page, "Today's hours")
-  await stage(page).getByLabel("Today's hours 1 end").fill('22:00')
+  await goToStage(page, 'Hours')
+  await stage(page).getByLabel('Hours 1 end', { exact: true }).fill('22:00')
 
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   await page.getByLabel('Working hours 1 end', { exact: true }).fill('16:00')
   await page.keyboard.press('Escape')
 
-  await expect(stage(page).getByLabel("Today's hours 1 end")).toHaveValue('22:00')
+  await expect(stage(page).getByLabel('Hours 1 end', { exact: true })).toHaveValue('22:00')
 
   await startDay(page)
   await expect(page.getByText(/Working until 10:00 PM/)).toBeVisible()
@@ -173,7 +173,7 @@ test('a new day opens on the first question, whatever yesterday ended on', async
   // put it back at the day reset, so a tab left open overnight reopened on
   // whichever question was last looked at.
   await openMono(page)
-  await goToStage(page, "Today's hours")
+  await goToStage(page, 'Hours')
   await startDay(page)
   await expect(page.getByRole('button', { name: 'Start deep block' })).toBeVisible()
 
@@ -182,7 +182,7 @@ test('a new day opens on the first question, whatever yesterday ended on', async
   await page.clock.fastForward('00:02')
 
   await expect(
-    stage(page).getByRole('heading', { name: "What's already fixed today?" }),
+    stage(page).getByRole('heading', { name: "What are your commitments for today?" }),
   ).toBeVisible()
 })
 

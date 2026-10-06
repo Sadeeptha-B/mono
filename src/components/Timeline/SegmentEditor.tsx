@@ -248,8 +248,7 @@ export function BreakComposer({
         {clash && (
           <p className="mt-3 text-xs leading-relaxed text-muted">
             That runs into <span className="text-bright">{clash.title}</span>, counting
-            the time either side of it. Rest inside a meeting is rest nobody gets — pick
-            an hour clear of it, or move the commitment.
+            the time either side of it.
           </p>
         )}
 
@@ -278,14 +277,11 @@ export function BreakComposer({
 export function HoursComposer({
   now,
   regions,
-  usingDefaults,
   onSave,
   onCancel,
 }: {
   now: Ms
   regions: readonly WorkRegion[]
-  /** True while the day still follows the shape from settings. */
-  usingDefaults: boolean
   /** Called with `null` when the draft matches the day's current shape. */
   onSave: (regions: WorkRegion[] | null) => void
   onCancel: () => void
@@ -293,11 +289,9 @@ export function HoursComposer({
   const { draft, onDraft } = useHoursDraft(regions)
 
   return (
-    <ComposerShell title="Today's hours">
+    <ComposerShell title="Hours">
       <p className="-mt-1 mb-3 text-xs leading-relaxed text-muted">
-        {usingDefaults
-          ? 'This day follows your usual shape. Editing it changes today only.'
-          : "You've already changed today's hours."}
+        {"Edits apply for today only"}
       </p>
 
       <TodayHoursFields draft={draft} onDraft={onDraft} now={now} hideLegend />

@@ -152,9 +152,9 @@ export const MOODS: Record<MoodName, MoodSpec> = {
     label: 'focusing',
   },
 
-  // One ear folded, eyes off to the side. Looking at anything except you is
-  // the point — you are the one who could not name a purpose, and the cat is
-  // working on it too.
+  // One ear folded, eyes off to the side, while the purpose prompt's deciding
+  // timer runs. Looking at anything except you is the point — you are working
+  // out what matters, and the cat is working on it too.
   reflecting: {
     body: 'curl',
     face: { x: 5, y: 5 },
@@ -236,11 +236,9 @@ export function moodForPhase(phase: Phase): MoodName {
     case 'idle':
       return 'idle'
     case 'definingPurpose':
-      return 'defining'
+      return phase.deciding ? 'reflecting' : 'defining'
     case 'focusing':
       return 'focusing'
-    case 'reflecting':
-      return 'reflecting'
     case 'blockComplete':
       return 'complete'
     // Choosing how long a break should be is already the break, as far as the

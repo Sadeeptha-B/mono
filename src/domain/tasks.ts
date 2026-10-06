@@ -189,7 +189,7 @@ type BacklogIndex = ItemIndex & {
   gone: (itemId: string) => boolean
   activeTasks: () => readonly Item[]
   activeTasksByParent: () => ReadonlyMap<string, readonly Item[]>
-  places: () => readonly Place[]
+  tree: () => readonly TaskTreeNode[]
 }
 
 /**
@@ -262,31 +262,35 @@ function indexBacklog(items: readonly Item[], areas: readonly Area[]): BacklogIn
     return grouped
   }
 
-  let places: readonly Place[] | null = null
-  const placesOnce = () => {
-    if (places) return places
+  let tree: readonly TaskTreeNode[] | null = null
+  const treeOnce = () => {
+    if (tree) return tree
     const open = (parentId: string, kind: 'epic' | 'outcome') =>
       (base.liveChildren.get(parentId) ?? []).filter(
         (i) => i.kind === kind && i.status === 'open' && i.archivedAt === undefined,
       )
-    const found: Place[] = []
-    for (const area of activeAreas(areas)) {
-      found.push({ id: area.id, kind: 'area', label: area.name, depth: 0 })
-      for (const epic of open(area.id, 'epic')) {
-        const epicLabel = `${area.name}${PATH_SEPARATOR}${epic.title}`
-        found.push({ id: epic.id, kind: 'epic', label: epicLabel, depth: 1 })
-        for (const outcome of open(epic.id, 'outcome')) {
-          found.push({
-            id: outcome.id,
-            kind: 'outcome',
-            label: `${epicLabel}${PATH_SEPARATOR}${outcome.title}`,
-            depth: 2,
-          })
-        }
-      }
-    }
-    places = found
-    return found
+    const node = (
+      id: string,
+      kind: TaskTreeNode['kind'],
+      name: string,
+      children: readonly TaskTreeNode[],
+    ): TaskTreeNode => ({ id, kind, name, children, tasks: openTasksUnder(id, items) })
+    tree = activeAreas(areas).map((area) =>
+      node(
+        area.id,
+        'area',
+        area.name,
+        open(area.id, 'epic').map((epic) =>
+          node(
+            epic.id,
+            'epic',
+            epic.title,
+            open(epic.id, 'outcome').map((outcome) => node(outcome.id, 'outcome', outcome.title, [])),
+          ),
+        ),
+      ),
+    )
+    return tree
   }
 
   const index: BacklogIndex = {
@@ -296,7 +300,7 @@ function indexBacklog(items: readonly Item[], areas: readonly Area[]): BacklogIn
     gone,
     activeTasks,
     activeTasksByParent,
-    places: placesOnce,
+    tree: treeOnce,
   }
   if (!built) {
     built = []
@@ -496,17 +500,49 @@ export function pathOf(
 /** How a path reads on one line. */
 export const PATH_SEPARATOR = ' › '
 
-/** Somewhere a task can be put: an area, an epic or an outcome. */
-export type Place = { id: string; kind: ParentKind; label: string; depth: number }
+/**
+ * One level of the backlog as a tree: an area, an open epic or an open outcome,
+ * the places beneath it, and the open tasks that sit directly under it.
+ */
+export type TaskTreeNode = {
+  id: string
+  kind: 'area' | 'epic' | 'outcome'
+  name: string
+  children: readonly TaskTreeNode[]
+  tasks: readonly Item[]
+}
 
 /**
- * Every active place a task can go, in the order the tasks page draws them:
- * each area, then its open epics, each followed by its open outcomes. Labels are
- * full paths, because a select shows one line and "Login pages" alone does not
- * say whose.
+ * Every open task in play, under the area, epic and outcome it sits in, in the
+ * order the tasks page draws them. What a picker of tasks draws: the places
+ * are there as well as the tasks, empty ones included, so a task can be
+ * written straight into any of them.
  */
-export const placesForTasks = (items: readonly Item[], areas: readonly Area[]): readonly Place[] =>
-  indexBacklog(items, areas).places()
+export const taskTree = (items: readonly Item[], areas: readonly Area[]): readonly TaskTreeNode[] =>
+  indexBacklog(items, areas).tree()
+
+/**
+ * Some of the backlog's tasks, under the places they sit in: the backlog tree
+ * with everything else taken out, places left with nothing in them included.
+ *
+ * How the tasks under an intention are shown. Tasks from two areas are under
+ * both areas, so nothing about where they live has to be reduced to one place,
+ * and each place is said once for all the tasks in it rather than once per
+ * task. Only tasks still in play are found, as in the tree it is cut from.
+ */
+export function groupTasks(
+  taskIds: readonly string[],
+  items: readonly Item[],
+  areas: readonly Area[],
+): readonly TaskTreeNode[] {
+  const wanted = new Set(taskIds)
+  const prune = (node: TaskTreeNode): TaskTreeNode | null => {
+    const children = node.children.flatMap((child) => prune(child) ?? [])
+    const tasks = node.tasks.filter((t) => wanted.has(t.id))
+    return children.length > 0 || tasks.length > 0 ? { ...node, children, tasks } : null
+  }
+  return taskTree(items, areas).flatMap((node) => prune(node) ?? [])
+}
 
 /** The open, unarchived epics or outcomes directly under a parent. */
 export const openContainers = (

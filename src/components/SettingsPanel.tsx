@@ -54,7 +54,7 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
       <div className="mt-4 grid grid-cols-2 gap-3">
         <MinutesField
           id="reflect-minutes"
-          label="Priorities timer"
+          label="Purpose timer"
           value={settings.reflectMinutes}
           min={1}
           max={30}
@@ -131,11 +131,16 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
               label="Pop the timer out when a block starts"
             />
             <p className="text-xs leading-relaxed text-muted">
-              The always-on-top window, opened for you at the moment the timer starts
-              rather than left for you to remember. It cannot open itself at any other
-              time — browsers only hand out a window in answer to a click — so turning
-              this off leaves <span className="text-bright">Pop out</span> in the header
-              as the way to it.
+              The always-on-top window, opened for you when the timer starts.
+            </p>
+            <Toggle
+              checked={settings.popOutOnDecide}
+              onChange={(v) => set('popOutOnDecide', v)}
+              label="Pop the timer out when you take time to decide"
+            />
+            <p className="text-xs leading-relaxed text-muted">
+              The same window, when the intentions question or a block's purpose starts
+              its few minutes, so the time to decide stays in view while you think.
             </p>
           </>
         )}

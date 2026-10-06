@@ -10,35 +10,38 @@
  *
  * Two rules shape it, and both are about the boundary rather than the layout.
  *
- * **The day's shape is not answerable here.** Hours and commitments are only
- * answerable with the calendar drawn beside them — the whole reason Mono has no
- * modals — and there is no calendar in a window this size. So an unshaped day
- * gets a signpost back to the tab and nothing else. Picking a block's tasks is
- * declined for a related reason — it is a list of the backlog to browse, and
- * this window has no room for one — so `purpose` keeps its own view but the
- * panel behind it points back to the tab too, keeping only the answers that need
- * no list. See `MiniPickInTab`.
+ * **It follows the stage exactly.** Whichever opening question the stage is
+ * showing, this shows too — before the day is shaped and on every return to
+ * them — so the two windows never disagree about where the day is. It used to
+ * follow `dayShaped` instead and offer the next block while the tab was back
+ * on the hours, on the argument that a question shown here was only a sign
+ * pointing at the tab. That stopped holding once the window had more to show
+ * than a sign: each question comes out with its current answer, and the
+ * intentions question with its timer.
  *
- * **`dayShaped`, not `setupOpen`.** The stage re-opens the opening questions
- * whenever the user goes back to them, and that is where the *user* is looking
- * rather than a fact about the day. Following it out here would turn the mini
- * window into a sign pointing at the window they are already reading, for as
- * long as they read it.
+ * **Answers that need the day or the backlog are written in the tab.** Hours and
+ * commitments are only answerable with the calendar drawn beside them — the
+ * whole reason Mono has no modals — and intentions and a block's tasks are
+ * chosen from the backlog. None of that fits a window this size, so those views
+ * say what the answer is so far and point back to the tab, keeping only what
+ * needs neither: the timers, and not starting a block after all. See
+ * `MiniSetup` and `MiniPickInTab`.
  */
 
-import type { Phase } from '@/domain/machine'
+import type { DecidingTimer, Phase } from '@/domain/machine'
+import type { SetupStageId } from '@/components/stage/stages'
 import type { BlockKind, Ms } from '@/domain/types'
 
 export type MiniView =
-  /** The day has never been shaped. The only case that sends you back. */
-  | { kind: 'unshaped' }
+  /** One of the opening questions is on the stage. */
+  | { kind: 'setup'; stage: SetupStageId; revisiting: boolean }
   /** Nothing running, and now is not time the user offered up. */
   | { kind: 'outsideHours'; nextStart: Ms | null }
   /** Nothing running, inside working hours, nothing more fits. */
   | { kind: 'nothingFits' }
   /** Nothing running, and there is a block to offer. */
   | { kind: 'ready'; blockKind: BlockKind }
-  | { kind: 'purpose'; blockKind: BlockKind; afterReflection: boolean }
+  | { kind: 'purpose'; blockKind: BlockKind; deciding: DecidingTimer | null }
   /** A segment is running. The label and the one control differ by which. */
   | { kind: 'running'; segment: 'block' | 'break' }
   | { kind: 'done'; nextBlockKind: BlockKind | null }
@@ -46,8 +49,11 @@ export type MiniView =
   | { kind: 'away'; blockEndedAt: Ms }
 
 export type MiniFacts = {
-  /** `session.shapedAt !== null` — deliberately not the stage's `setupOpen`. */
-  dayShaped: boolean
+  /**
+   * The opening question the stage is showing, or null when it is showing
+   * none; `revisiting` once the day has been shaped, as the stage words it.
+   */
+  setup: { stage: SetupStageId; revisiting: boolean } | null
   withinHours: boolean
   /** The first planned block on the derived timeline, if there is one. */
   nextBlockKind: BlockKind | null
@@ -58,25 +64,19 @@ export type MiniFacts = {
 export function miniViewFor(phase: Phase, facts: MiniFacts): MiniView {
   switch (phase.name) {
     case 'idle':
-      // The same precedence the stage uses, for the same reasons: a day that
-      // was never given a shape outranks everything, because refusing to plan
-      // until it has one and then not saying so is a closed loop; and after
-      // that, being outside working hours outranks offering a block in time the
-      // user declared unstructured.
-      if (!facts.dayShaped) return { kind: 'unshaped' }
+      // The same precedence the stage uses, for the same reasons: an opening
+      // question on screen outranks everything — a day not yet shaped always
+      // has one — and after that, being outside working hours outranks
+      // offering a block in time the user declared unstructured.
+      if (facts.setup) return { kind: 'setup', ...facts.setup }
       if (!facts.withinHours) return { kind: 'outsideHours', nextStart: facts.nextRegionStart }
       if (facts.nextBlockKind === null) return { kind: 'nothingFits' }
       return { kind: 'ready', blockKind: facts.nextBlockKind }
 
     case 'definingPurpose':
-      return {
-        kind: 'purpose',
-        blockKind: phase.blockKind,
-        afterReflection: phase.afterReflection,
-      }
+      return { kind: 'purpose', blockKind: phase.blockKind, deciding: phase.deciding }
 
     case 'focusing':
-    case 'reflecting':
       return { kind: 'running', segment: 'block' }
 
     case 'onBreak':

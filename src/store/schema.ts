@@ -30,7 +30,6 @@ import {
   type Commitment,
   type CommitmentPatch,
   type Intention,
-  type IntentionLink,
   type IntentionPatch,
   type Ms,
   type PlannedBreak,
@@ -442,6 +441,9 @@ function sanitiseSettingsPatch(value: unknown): Partial<Settings> | null {
   if ('popOutOnStart' in value) {
     if (typeof value.popOutOnStart === 'boolean') patch.popOutOnStart = value.popOutOnStart
   }
+  if ('popOutOnDecide' in value) {
+    if (typeof value.popOutOnDecide === 'boolean') patch.popOutOnDecide = value.popOutOnDecide
+  }
 
   return Object.keys(patch).length === 0 ? null : patch
 }
@@ -564,50 +566,23 @@ function sanitiseDefaultRegions(value: unknown): Settings['defaultRegions'] | nu
 }
 
 /**
- * A link, when one is there.
- *
- * `undefined` for absent, `null` for present and unreadable — the same three
- * answers `sanitiseMarginMinutes` gives, for the same reason.
+ * An intention as the log now holds one: an id and a title. Older logs gave
+ * some a link to one area, epic or outcome; it is left behind rather than read,
+ * since what an intention is about is now its tasks (see `Intention`).
  */
-function sanitiseIntentionLink(value: unknown): IntentionLink | null | undefined {
-  if (value === undefined) return undefined
-  if (!isRecord(value)) return null
-  const id = sanitiseString(value.id)
-  const kind = value.kind
-  if (id === null || (kind !== 'area' && kind !== 'epic' && kind !== 'outcome')) return null
-  return { kind, id }
-}
-
 function sanitiseIntention(value: unknown): Intention | null {
   if (!isRecord(value)) return null
   const id = sanitiseString(value.id)
   const title = sanitiseString(value.title)
-  const link = sanitiseIntentionLink(value.link)
-  if (id === null || title === null || link === null) return null
-  return { id, title, ...(link === undefined ? {} : { link }) }
+  if (id === null || title === null) return null
+  return { id, title }
 }
 
+/** An edit, which can only rename now: one that only moved a link edits nothing. */
 function sanitiseIntentionPatch(value: unknown): IntentionPatch | null {
-  if (!isRecord(value)) return null
-
-  const patch: IntentionPatch = {}
-  if ('title' in value) {
-    const title = sanitiseString(value.title)
-    if (title === null) return null
-    patch.title = title
-  }
-  if ('link' in value) {
-    // `null` is a real instruction here — remove the link — so it is kept.
-    if (value.link === null) {
-      patch.link = null
-    } else {
-      const link = sanitiseIntentionLink(value.link)
-      if (link === null || link === undefined) return null
-      patch.link = link
-    }
-  }
-
-  return Object.keys(patch).length === 0 ? null : patch
+  if (!isRecord(value) || !('title' in value)) return null
+  const title = sanitiseString(value.title)
+  return title === null ? null : { title }
 }
 
 /**

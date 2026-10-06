@@ -76,8 +76,11 @@ opens the timer as an always-on-top window — Chromium's document
 picture-in-picture — that stays above whatever you switched to. It is a
 reduction of the stage rather than a mirror of the app: it shows the phase, the
 timer, the purpose, the cat, and the controls for whatever Mono is currently
-asking. The one question it declines is the day's shape, which needs the
-calendar beside it; that one it hands back to the tab.
+asking, on whichever question the stage is on. What it declines to answer is
+anything that needs the calendar or the backlog beside it — the day's hours and
+commitments, the intentions, a block's tasks — so for those it shows where the
+answer stands and hands it back to the tab, keeping the timers the intentions
+and purpose questions carry.
 
 Click the running timer on the stage or in the pop-out to switch between time
 remaining and time spent in the current block or break. Both views switch
@@ -216,7 +219,7 @@ Ambient sound is off until it is explicitly chosen. Brown noise, pink noise
 and rain are synthesised locally with Web Audio; there are no streamed tracks
 or audio files. The speaker at the top-right of the Room menu switches ambience
 off, or back on to `Room sound` — the current room's own suggestion — with the
-individual choices below it. It fades in only while a focus or priorities block
+individual choices below it. It fades in only while a focus block
 is running and fades away for prompts and breaks. The timer's speaker icon controls a tab-local mute that is separate from the block-end chime. That mute governs automatic block ambience; choosing a sound while idle is an explicit request to hear its six-second preview.
 
 A pixel cat in a small room, in the corner of the stage. It changes with what

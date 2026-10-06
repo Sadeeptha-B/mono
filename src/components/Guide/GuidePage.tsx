@@ -26,14 +26,13 @@
 
 import { useMemo, type ReactNode } from 'react'
 
-import { PixelCat } from '../Companion/PixelCat'
+import { HeaderMark } from '../HeaderMark'
 import { StorageWarning } from '../StorageWarning'
 import { HeaderStatus } from '../HeaderStatus'
-import { EditGlyph, headerControlClass } from '../ui'
+import { EditGlyph, headerControlClass, PageLinks } from '../ui'
 import { PopOutButton } from '@/pip/PopOutButton'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
 import type { TimerMode } from '@/domain/time'
-import { DAY_HASH } from '@/hooks/useRoute'
 import { useSession } from '@/store/session'
 import { RoomMenu } from '@/ambient/RoomMenu'
 import type { ActiveSegment, Ms, Settings } from '@/domain/types'
@@ -82,22 +81,7 @@ export function GuidePage({
           quietly cost you the block you are in. */}
       <header className="sticky top-0 z-20 shrink-0 border-b border-line bg-ink px-4 py-3 sm:px-6 lg:static">
         <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <div className="flex items-center gap-2.5">
-            {/* The live phase, not a fixed idle one. The header already keeps
-                the timer in sight while you read; a cat sitting up politely
-                beside a strip that says "Focusing 12:34" is the same creature
-                telling you something different. */}
-            <PixelCat
-              phase={phase}
-              progress={null}
-              variant="mark"
-              className="h-7 w-11"
-              decorative
-            />
-            <span className="text-sm font-medium tracking-widest text-body uppercase">
-              Mono
-            </span>
-          </div>
+          <HeaderMark phase={phase} home={false} />
 
           <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
             {/* A page invites you to stay, so whatever the timer would be
@@ -106,12 +90,10 @@ export function GuidePage({
             <HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />
             <RoomMenu idPrefix="guide-header" />
             <PopOutButton mini={mini} />
+            <PageLinks current="guide" />
             <button type="button" onClick={onOpenSettings} className={headerControlClass}>
               Settings
             </button>
-            <a href={DAY_HASH} className={headerControlClass}>
-              Back to today
-            </a>
           </div>
         </div>
       </header>
@@ -207,15 +189,6 @@ function Flow() {
         <Arrow />
         <Chip tone="text-rest">Break</Chip>
         <span className="text-muted">or back to</span>
-        <Chip tone="text-bright">One thing</Chip>
-      </div>
-
-      <div className="mt-3 flex flex-wrap items-center gap-x-1.5 gap-y-2 border-t border-line pt-3 text-xs">
-        <span className="text-muted">Stuck for a purpose?</span>
-        <Arrow />
-        <Chip tone="text-reflect">Priorities</Chip>
-        <Arrow />
-        <span className="text-muted">then back to</span>
         <Chip tone="text-bright">One thing</Chip>
       </div>
 
@@ -384,21 +357,31 @@ function sectionsFor(settings: Settings): Section[] {
             <Em>Reset size</Em> in its footer to bring it back to its compact opening size.
           </P>
           <P>
-            The one thing it will not do is the shape of your day. Hours and commitments
-            are questions about the whole day, and the whole day does not fit in a window
-            that size — so it says so and points you back to the tab, where the calendar
-            is drawn beside the answer. That is the same rule as everywhere else here,
-            not an exception to it. Picking a block's tasks goes back to the tab for the
-            same kind of reason: it is a list of your backlog to browse. The window keeps
-            the two answers that need no list — <Em>Not yet</Em>, and{' '}
-            <Em>I can't pick one</Em>.
+            It is always on the same question as the stage, the opening ones included, but
+            some it will not answer. Hours and commitments are questions about the whole
+            day, and the whole day does not fit in a window that size; intentions and a
+            block's tasks are chosen from your backlog, which does not either. For those it
+            shows where the answer stands — what is fixed, which hours, what you have named
+            so far — and points you back to the tab, where the calendar and the backlog are.
+            That is the same rule as everywhere else here, not an exception to it. The
+            window keeps the answers that need neither — <Em>Not yet</Em>, and the few
+            minutes to decide.
+          </P>
+          <P>
+            Both questions that carry a timer show out here with it: what today is for,
+            and what the next block is for. Working out either is the stretch most likely
+            to drift into something else, so you can start the timer from the window and
+            keep it in view while you think.
           </P>
           <P>
             You do not have to remember it. By default the window opens itself the moment
             a block starts running — the click that begins the timer is the last thing you
             do before you go off to the work, so it is the moment worth spending on
-            getting the timer in front of you. <Em>Pop the timer out when a block starts</Em>{' '}
-            in settings turns that off, and the header button still opens one by hand.
+            getting the timer in front of you. It also opens when a question's timer
+            starts: the first time you reach the intentions question, and from the play
+            button by either question. <Em>Pop the timer out when a block starts</Em> and{' '}
+            <Em>Pop the timer out when you take time to decide</Em> in settings turn those
+            off, and the header button still opens one by hand.
           </P>
           <P>
             That start is also the one moment Mono can count on. A browser hands out a
@@ -423,10 +406,10 @@ function sectionsFor(settings: Settings): Section[] {
         <>
           <P>
             Every day opens with three questions on the timer.{' '}
-            <Em>What's already fixed today?</Em> comes first, because what you cannot
+            <Em>What are your commitments for today?</Em> comes first, because what you cannot
             move decides how much of the day is left to spend. Then{' '}
             <Em>are these your hours today?</Em>, pre-filled with your usual shape — a
-            glance on an ordinary morning. Last, <Em>what do you intend today?</Em>, which
+            glance on an ordinary morning. Last, <Em>What are your intentions for the day?</Em>, which
             is only honest once the other two have said how much of the day there is.
           </P>
           <P>
@@ -436,7 +419,7 @@ function sectionsFor(settings: Settings): Section[] {
             usual hours, one intention is the whole of it. The questions stay answerable
             afterwards — between blocks the dots go back to any of them, because a
             meeting that appears at four is no different from one you knew about at
-            nine, and <Em>Back to the day</Em> returns. They never skip ahead, though:
+            nine, and <Em>Focus</Em> returns. They never skip ahead, though:
             naming a block is not something you can click past, and while one is running
             the questions are the calendar's to answer.
           </P>
@@ -444,7 +427,9 @@ function sectionsFor(settings: Settings): Section[] {
             <Em>Intentions</Em> are a few broad strokes — handle the billing ticket, Mono's
             login pages — and the day needs at least one before it starts, the first time
             it is asked. Nothing fixed is an ordinary day; nothing meant is not, and there
-            is always something to write. Each can say which area of life it belongs to.
+            is always something to write. Under <Em>Tasks</Em> each one takes the tasks it
+            is for, chosen from your backlog by area, epic and outcome, or written there
+            and then into any of them, and shows them under the places they live in.
             They last the day: at midnight they go with the rest of its answers, and the
             tasks gathered under them stay in your backlog.
           </P>
@@ -453,7 +438,8 @@ function sectionsFor(settings: Settings): Section[] {
             see it, and keeps counting while you look at the other two. At zero it chimes
             if sound is on and simply stops, offering another round — it never starts the
             day for you, and nothing about it is recorded. Coming back to your intentions
-            later in the day starts no timer unless you ask for one.
+            later in the day starts no timer unless you ask for one, with the play button
+            beside the question.
           </P>
           <P>
             <Em>Working hours</Em> are the only time Mono is allowed to plan in.
@@ -479,7 +465,7 @@ function sectionsFor(settings: Settings): Section[] {
             school run. After the opening question, use <Em>+ Commitment</Em> on the
             calendar. Mono fills the runway up to one and resumes afterwards. Once the
             day has something in it the question shows that rather than an empty form —{' '}
-            <Em>+ Another commitment</Em> opens one when you want it, and a day with
+            <Em>Add commitment</Em> opens one when you want it, and a day with
             nothing fixed yet skips straight to the fields. The
             opening question lists the ones you have named in the order they happen
             rather than the order you remembered them in, and every row carries the two
@@ -608,7 +594,7 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="One thing"
-              asks="Which tasks is this block for, and what is it for? Tick at least one — from today's intentions, from elsewhere in your backlog, or written there and then and filed wherever it belongs. Tick a whole outcome to take every open task in it. The purpose starts as their titles, or the outcome's name when you took all of it, and is yours to rewrite: one sentence about this stretch, not a list. Naming it is the point — you are deciding what the next stretch is worth."
+              asks="What is this block for, and which tasks come under it? The purpose goes at the top and the tasks below it: one dropdown selects tasks for this block from your whole backlog, and can search it or write a new task into any area, epic or outcome. Below it the tasks under each of today's intentions are listed under that intention, ready to tick, and anything chosen from outside them comes first. Tick at least one. An outcome's heading ticks every task of it in that list. The purpose starts as their titles, or the outcome's name when you took all of it, and is yours to rewrite: one sentence about this stretch, not a list. Naming it is the point — you are deciding what the next stretch is worth."
               choices={[
                 [
                   'Start',
@@ -616,8 +602,12 @@ function sectionsFor(settings: Settings): Section[] {
                 ],
                 ['Not yet', 'Backs out. Nothing is recorded.'],
                 [
-                  "I can't pick one",
-                  `Gives you ${reflect} minutes to work out what actually matters. It is recorded like any other block — not being able to name a purpose is itself worth knowing — and afterwards you land back on this question with a deep block suggested.`,
+                  'Play, by the question',
+                  `Stuck? Gives the question ${reflect} minutes to work out what matters, and chimes when they are up. Nothing is recorded and no plan time goes: the block starts only when you name it.`,
+                ],
+                [
+                  '✎ beside an intention',
+                  'Edits that intention where it is listed — its title and its tasks — without leaving the question.',
                 ],
               ]}
             />
@@ -685,8 +675,10 @@ function sectionsFor(settings: Settings): Section[] {
             When an area holds several separate obligations, give each an{' '}
             <Em>epic</Em> — Mono's login work, a house move — and break an epic into{' '}
             <Em>outcomes</Em>, the pieces that each need finishing: the login pages, the
-            password reset. Tasks can sit at any of those levels. Every task row says
-            where it lives and can be moved anywhere else by its path.
+            password reset. Tasks can sit at any of those levels, and move between them
+            by being dragged to another column. Without a mouse, pick one up with the
+            dots at the start of its row and choose <Em>Move here</Em> where it should
+            go; <Em>Escape</Em> puts it back.
           </P>
           <P>
             Each area is drawn as a board. Its epics run down the left, and beside each
@@ -712,10 +704,11 @@ function sectionsFor(settings: Settings): Section[] {
             mistake. Both done and dropped tasks can be reopened.
           </P>
           <P>
-            Under <Em>Today</Em> the page shows your intentions with the tasks gathered
-            under each. Put a task under one from its row, or take it out with{' '}
-            <Em>Not today</Em>. An intention can also say what it is part of — an area,
-            an epic or an outcome — which is a note for you rather than a filter. A task belongs to one intention a day at most, and to
+            Under <Em>My intentions for today</Em> the page shows your intentions, each
+            with its tasks under the areas, epics and outcomes they live in, and you can
+            add, edit and delete them there as on the opening question. Put a task under
+            one from its row's <Em>Intention</Em> too, and take it out with the{' '}
+            <Em>×</Em> beside it. A task belongs to one intention a day at most, and to
             none quite happily: a small thing from outside today's intentions is a fine
             way to use the end of a block.
           </P>
@@ -813,8 +806,9 @@ function sectionsFor(settings: Settings): Section[] {
             The two block lengths, currently {deep} and {short} minutes. Everything the
             planner does follows from these two numbers.
           </Setting>
-          <Setting name="Priorities timer">
-            How long "I can't pick one" gives you. Currently {reflect} minutes.
+          <Setting name="Purpose timer">
+            How long the play button on the purpose prompt gives you to decide. Currently{' '}
+            {reflect} minutes.
           </Setting>
           <Setting name="Intentions timer">
             How long the day's intentions question runs before it stops and offers to go
@@ -834,7 +828,7 @@ function sectionsFor(settings: Settings): Section[] {
             {ROOMS[settings.roomId].label}. Changing it never turns sound on by itself.
           </Setting>
           <Setting name="Room menu: Ambient sound">
-            Plays only during a focus or priorities block and fades away at its edges.
+            Plays only during a focus block and fades away at its edges.
             Currently{' '}
             {settings.ambience === 'off'
               ? 'off'
@@ -852,6 +846,13 @@ function sectionsFor(settings: Settings): Section[] {
             Opens the always-on-top window for you as a block begins, rather than leaving
             it to the header button. On unless you turn it off. It can only happen at that
             moment — a window is only ever granted in answer to a click.
+          </Setting>
+          <Setting name="Pop the timer out when you take time to decide">
+            Opens the same window when a question's timer starts — the intentions
+            question's, and the few minutes a block's purpose can take — so the time stays
+            in view while you think. On unless you turn it off, and bound to a click in the
+            same way: the intentions timer starts by itself when you first open that
+            question, so the click that took you there is the one that brings the window.
           </Setting>
           <Setting name="Chime when a block ends">
             A short two-tone chime. Browsers only allow sound after you have interacted

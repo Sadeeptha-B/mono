@@ -8,15 +8,18 @@
  */
 
 import {
+  useEffect,
   useRef,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type MouseEvent,
   type PointerEvent,
+  type ReactNode,
   type Ref,
 } from 'react'
 
 import { coerceBoundedMinutes } from './minutes'
+import { GUIDE_HASH, TASKS_HASH, type Route } from '@/hooks/useRoute'
 
 export const fieldClass =
   'min-w-0 w-full max-w-full rounded-lg border border-muted/70 bg-ink px-3.5 py-2.5 text-bright placeholder:text-muted/90 focus:border-deep focus:outline-none'
@@ -25,14 +28,46 @@ export const labelClass =
   'mb-1.5 block text-xs font-medium tracking-wide text-muted uppercase'
 
 /**
- * The controls in the top-right of a view: Guide, Settings, Back to today.
+ * The controls in the top-right of a view: Tasks, Guide, Settings, Back to
+ * today.
  *
- * Shared because there are two headers — the day and the guide — and they carry
- * some of the same controls. Two copies of this string drifted apart once
- * already.
+ * Shared because there are three headers — the day, the tasks page and the
+ * guide — and they carry the same controls. Two copies of this string drifted
+ * apart once already.
  */
 export const headerControlClass =
   'rounded-lg border border-muted/70 px-3 py-1.5 text-xs text-body transition hover:bg-surface-raised hover:text-bright'
+
+/**
+ * Tasks and Guide, the same pair in every header.
+ *
+ * Each page used to leave out its own link, which made the header change shape
+ * from one page to the next and left no way from the guide to the tasks without
+ * going back to the day first. The page you are on keeps its link, marked as
+ * the current page rather than removed, so the row reads the same everywhere.
+ * Real links, so either can be opened in its own tab and survives a reload like
+ * the document it is.
+ */
+export function PageLinks({ current }: { current: Route }) {
+  const link = (route: Route, href: string, name: string) => {
+    const here = route === current
+    return (
+      <a
+        href={href}
+        {...(here ? { 'aria-current': 'page' as const } : {})}
+        className={`${headerControlClass} ${here ? 'border-bright/60 text-bright' : ''}`}
+      >
+        {name}
+      </a>
+    )
+  }
+  return (
+    <>
+      {link('tasks', TASKS_HASH, 'Tasks')}
+      {link('guide', GUIDE_HASH, 'Guide')}
+    </>
+  )
+}
 
 /**
  * The pencil on an editable block, pointing left.
@@ -148,22 +183,148 @@ export function TimeInput({
   )
 }
 
-/** The heading above an inline decision on the stage. */
+/**
+ * A field for adding something, folded behind its own heading until asked for:
+ * `Add intention`, `Add task`, `Add outcome`.
+ *
+ * One shape on the stage and the tasks page alike. The heading is a caret that
+ * opens it and stays above it once open, so what is being added is said where
+ * it is being written rather than only on a button that has gone; the × level
+ * with it cancels, and so does the caret, folding it again. Either throws away
+ * what was typed, as Escape does in the field — that is what cancelling means.
+ * Whoever uses it owns the field and its `Done`, which keeps what was typed
+ * and folds; Enter keeps it and leaves the field open for the next one,
+ * because things are written down in runs.
+ *
+ * Focus is its business, not theirs. When it folds with focus inside it —
+ * `Done`, the ×, Escape — the focused control goes with the fold, and focus
+ * comes back to the heading rather than being dropped on the page. When focus
+ * has already gone somewhere else — another field opened, the stage moved to
+ * another question — it is left where it went.
+ *
+ * `canFold` false draws the heading without a caret or a ×: the intentions
+ * question with nothing named yet, where the field is the whole question and
+ * there is nothing to fold it back to.
+ */
+export function AddFold({
+  title,
+  label,
+  open,
+  onOpen,
+  onCancel,
+  cancelLabel,
+  canFold = true,
+  className = '',
+  children,
+}: {
+  /** What is being added, as the heading says it. */
+  title: string
+  /** The heading's accessible name, when the title alone does not say where. */
+  label?: string
+  open: boolean
+  onOpen: () => void
+  onCancel: () => void
+  cancelLabel: string
+  canFold?: boolean
+  /** The heading's own type: size and colour differ by where it sits. */
+  className?: string
+  children: ReactNode
+}) {
+  const toggle = useRef<HTMLButtonElement>(null)
+  const wasOpen = useRef(open)
+  // After the fold has rendered, so the heading it hands focus to is the one
+  // now on screen. Focus lost with the fold rests on the document's body.
+  useEffect(() => {
+    const folded = wasOpen.current && !open
+    wasOpen.current = open
+    const doc = toggle.current?.ownerDocument
+    if (folded && doc && (doc.activeElement === null || doc.activeElement === doc.body)) {
+      toggle.current?.focus()
+    }
+  }, [open])
+
+  return (
+    <div className="min-w-0">
+      <div className="flex min-w-0 items-center gap-2">
+        {canFold ? (
+          <button
+            ref={toggle}
+            type="button"
+            onClick={open ? onCancel : onOpen}
+            aria-expanded={open}
+            {...(label ? { 'aria-label': label } : {})}
+            className={`flex min-w-0 items-center gap-1.5 text-left transition hover:text-bright ${className}`}
+          >
+            <Caret open={open} />
+            <span className="min-w-0 truncate">{title}</span>
+          </button>
+        ) : (
+          <span className={`flex min-w-0 items-center gap-1.5 ${className}`}>
+            <Caret open />
+            <span className="min-w-0 truncate">{title}</span>
+          </span>
+        )}
+        {open && canFold && (
+          <button
+            type="button"
+            onClick={onCancel}
+            aria-label={cancelLabel}
+            className="ml-auto shrink-0 px-1 text-muted transition hover:text-bright"
+          >
+            ×
+          </button>
+        )}
+      </div>
+      {open && <div className="mt-2">{children}</div>}
+    </div>
+  )
+}
+
+/** A chevron pointing at what it would show: right while folded, down while open. */
+function Caret({ open }: { open: boolean }) {
+  return (
+    <svg
+      aria-hidden="true"
+      viewBox="0 0 6 10"
+      width="6"
+      height="10"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={`shrink-0 transition ${open ? 'rotate-90' : ''}`}
+    >
+      <path d="M1 1l4 4-4 4" />
+    </svg>
+  )
+}
+
+/**
+ * The heading above an inline decision on the stage, with room level with the
+ * title for one small control that belongs to the question as a whole rather
+ * than to any answer to it — the intentions question's own timer.
+ */
 export function StagePrompt({
   eyebrow,
   title,
   detail,
+  aside,
 }: {
   eyebrow: string
   title: string
   detail?: string
+  aside?: ReactNode
 }) {
   return (
     <div className="mb-4">
       <div className="text-xs font-medium tracking-widest text-muted uppercase">
         {eyebrow}
       </div>
-      <h2 className="mt-1.5 text-2xl leading-tight font-light text-bright">{title}</h2>
+      <div className="mt-1.5 flex items-start justify-between gap-3">
+        <h2 className="min-w-0 text-2xl leading-tight font-light text-bright">{title}</h2>
+        {aside && <div className="shrink-0">{aside}</div>}
+      </div>
       {detail && <p className="mt-1.5 text-sm leading-relaxed text-muted">{detail}</p>}
     </div>
   )
@@ -232,13 +393,14 @@ export function MinutesInput({
 }
 
 /**
- * A native select with a short word in front of it: "In", "Today", "Part of".
+ * A native select with a short word in front of it, such as "Intention:".
  *
- * Native because it is the right control for a list of a few to a few dozen
- * named places in a dense row — the platform's own picker on a phone, type to
- * jump on a desktop — and because a custom one would be a component to keep
- * accessible for no gain. Shared by the tasks page, the purpose prompt and the
- * intentions question, which all ask "where does this go?".
+ * Native because it is the right control for a short flat list in a dense row
+ * — the platform's own picker on a phone, type to jump on a desktop — and
+ * because a custom one would be a component to keep accessible for no gain.
+ * The tasks page uses it to put a task under one of today's intentions. A
+ * choice among tasks in the backlog is not flat, and has `TaskTreePicker`,
+ * which draws it as the tree it is.
  */
 export function InlineSelect({
   label,

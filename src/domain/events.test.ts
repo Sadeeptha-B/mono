@@ -321,7 +321,7 @@ describe('taking a break', () => {
 })
 
 describe("the day's intentions", () => {
-  const auth = { id: 'auth', title: 'Mono auth', link: { kind: 'epic', id: 'epic-1' } } as const
+  const auth = { id: 'auth', title: 'Mono auth' }
   const billing = { id: 'billing', title: 'Billing ticket' }
   const named: MonoEvent[] = [
     { type: 'intention/added', at: at(8), intention: auth },
@@ -336,10 +336,10 @@ describe("the day's intentions", () => {
     expect(state.intentions.map((i) => i.title)).toEqual(['Mono auth', 'Billing ticket'])
   })
 
-  it('patches a title and removes a link with null', () => {
+  it('patches a title', () => {
     const state = replay([
       ...named,
-      { type: 'intention/updated', at: at(9), id: 'auth', patch: { title: 'Auth', link: null } },
+      { type: 'intention/updated', at: at(9), id: 'auth', patch: { title: 'Auth' } },
     ])
     expect(state.intentions[0]).toEqual({ id: 'auth', title: 'Auth' })
   })

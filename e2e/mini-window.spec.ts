@@ -4,6 +4,8 @@ import { expect, test, type Page } from '@playwright/test'
 import { PALETTES } from '../src/ambient/palette.ts'
 import {
   addBlockTask,
+  addIntention,
+  goToStage,
   openMono,
   rgb,
   stage,
@@ -96,6 +98,19 @@ async function stubMiniWindow(page: Page) {
   })
 }
 
+/**
+ * Shape the day, and put away the window that came out with it.
+ *
+ * The intentions question's timer brings the pop-out by default, so a day
+ * shaped with the stub installed ends with a window open. The tests that use
+ * this are about what happens after that, and start from no window.
+ */
+async function shapeDayInTab(page: Page) {
+  await shapeDay(page)
+  await page.getByRole('button', { name: 'Close pop-out' }).click()
+  await expect(page.locator(MINI)).toHaveCount(0)
+}
+
 test('a browser without the API is not offered the pop-out at all', async ({ page }) => {
   // Hidden rather than deleted: the property lives on `Window.prototype`, so
   // shadowing it with `undefined` on the instance is what "this browser does
@@ -122,7 +137,7 @@ test('a browser without the API is not offered the pop-out at all', async ({ pag
 test('the pop-out carries the running block, and answers for it', async ({ page }) => {
   await stubMiniWindow(page)
   await openMono(page)
-  await shapeDay(page)
+  await shapeDayInTab(page)
   // Already open by the time the block is running: `popOutOnStart` defaults on,
   // so starting a block is what opens it. The header offers to close it rather
   // than to open one, and the test that turns the setting off covers the other
@@ -161,7 +176,7 @@ test('the pop-out carries the running block, and answers for it', async ({ page 
 test('the stage and pop-out switch the same timer between remaining and elapsed time', async ({ page }) => {
   await stubMiniWindow(page)
   await openMono(page)
-  await shapeDay(page)
+  await shapeDayInTab(page)
   await startBlock(page, 'Write the migration')
 
   const mini = page.frameLocator(MINI)
@@ -200,30 +215,47 @@ test('the stage and pop-out switch the same timer between remaining and elapsed 
   await expect(mini.getByRole('button', { name: /Show elapsed time$/ })).toHaveText('35:00')
 })
 
-test('the pop-out asks the day to be shaped rather than asking for it', async ({
+test('the pop-out follows the opening questions, with their answers so far', async ({
   page,
 }) => {
   await stubMiniWindow(page)
   await openMono(page)
 
-  // Popped out before the day has been given a shape. Hours and commitments
-  // need the calendar beside them, and there is no calendar in a window this
-  // size, so this is the one question it declines and hands back.
+  // Popped out on the first question. It is answered beside the calendar, so
+  // the window says where the answer stands and hands the answering back.
   await page.getByRole('button', { name: 'Pop out' }).click()
-
   const mini = page.frameLocator(MINI)
-  await expect(mini.getByText('Give the day a shape')).toBeVisible()
+  await expect(
+    mini.getByRole('heading', { name: 'What are your commitments for today?' }),
+  ).toBeVisible()
+  await expect(mini.getByText('Nothing fixed yet')).toBeVisible()
   await expect(mini.getByRole('textbox')).toHaveCount(0)
 
-  // Answer it in the tab, and the window follows the day into being ready.
-  await shapeDay(page)
+  await goToStage(page, 'Hours')
+  await expect(mini.getByRole('heading', { name: 'Are these your hours today?' })).toBeVisible()
+  await expect(mini.getByText('9:00 AM–6:00 PM')).toBeVisible()
+
+  await goToStage(page, 'Intentions')
+  await expect(mini.getByRole('heading', { name: 'Decide what today is for' })).toBeVisible()
+  await addIntention(page, 'Ship the planner')
+  await expect(mini.getByText('Named so far: Ship the planner.')).toBeVisible()
+
+  // Answered, the window follows the day into being ready…
+  await stage(page).getByRole('button', { name: 'Start the day' }).click()
+  await expect(mini.getByText('Ready for 45 minutes')).toBeVisible()
+
+  // …and back to whichever question the stage goes back to.
+  await goToStage(page, 'Hours')
+  await expect(mini.getByRole('heading', { name: 'Are these your hours today?' })).toBeVisible()
+  await expect(mini.getByText('Changing today')).toBeVisible()
+  await stage(page).getByRole('button', { name: 'Focus', exact: true }).click()
   await expect(mini.getByText('Ready for 45 minutes')).toBeVisible()
 })
 
 test('a pop-out closed from its own window is noticed', async ({ page }) => {
   await stubMiniWindow(page)
   await openMono(page)
-  await shapeDay(page)
+  await shapeDayInTab(page)
 
   await page.getByRole('button', { name: 'Pop out' }).click()
   await expect(page.getByRole('button', { name: 'Close pop-out' })).toBeVisible()
@@ -245,7 +277,7 @@ test('a pop-out closed from its own window is noticed', async ({ page }) => {
 test('an awkwardly sized pop-out offers to return to its opening size', async ({ page }) => {
   await stubMiniWindow(page)
   await openMono(page)
-  await shapeDay(page)
+  await shapeDayInTab(page)
   await startBlock(page, 'Write the migration')
 
   const frame = page.locator(MINI)
@@ -313,7 +345,7 @@ test('an awkwardly sized pop-out offers to return to its opening size', async ({
 test('a block starting brings the pop-out with it, by default', async ({ page }) => {
   await stubMiniWindow(page)
   await openMono(page)
-  await shapeDay(page)
+  await shapeDayInTab(page)
 
   // Nothing popped out yet: naming the block is still happening in the tab, and
   // a window arriving now would take the focus off the field being typed in.
@@ -331,15 +363,23 @@ test('a block starting brings the pop-out with it, by default', async ({ page })
 test('the pop-out stays put when the setting is off', async ({ page }) => {
   await stubMiniWindow(page)
   await openMono(page)
-  await shapeDay(page)
+  await shapeDayInTab(page)
 
   await page.getByRole('button', { name: 'Settings' }).click()
   await page
     .getByRole('checkbox', { name: 'Pop the timer out when a block starts' })
     .uncheck()
+  await page
+    .getByRole('checkbox', { name: 'Pop the timer out when you take time to decide' })
+    .uncheck()
   await page.keyboard.press('Escape')
 
-  await startBlock(page, 'Write the migration')
+  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+  await stage(page).getByRole('button', { name: 'Take 5 mins to decide' }).click()
+  await expect(page.locator(MINI)).toHaveCount(0)
+  await addBlockTask(page)
+  await page.getByLabel('Purpose for this block', { exact: true }).fill('Write the migration')
+  await page.getByRole('button', { name: 'Start', exact: true }).click()
   await expect(page.locator(MINI)).toHaveCount(0)
 
   // And the header still gets you there by hand.
@@ -347,25 +387,10 @@ test('the pop-out stays put when the setting is off', async ({ page }) => {
   await expect(page.frameLocator(MINI).getByText('Write the migration')).toBeVisible()
 })
 
-test('the priorities timer brings the pop-out with it too', async ({ page }) => {
-  await stubMiniWindow(page)
-  await openMono(page)
-  await shapeDay(page)
-
-  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
-
-  // The other way into a running segment, and a separate handler from the one
-  // that submits a purpose — so it needs its own coverage or half the feature
-  // is only working by accident.
-  await page.getByRole('button', { name: "I can't pick one" }).click()
-
-  await expect(page.frameLocator(MINI).getByText('Priorities')).toBeVisible()
-})
-
 test("picking a block's tasks is handed back to the tab", async ({ page }) => {
   await stubMiniWindow(page)
   await openMono(page)
-  await shapeDay(page)
+  await shapeDayInTab(page)
 
   await page.getByRole('button', { name: 'Pop out' }).click()
   const mini = page.frameLocator(MINI)
@@ -373,16 +398,53 @@ test("picking a block's tasks is handed back to the tab", async ({ page }) => {
 
   // The list to pick from is the tab's; this window says so, and keeps only
   // the answers that need no list.
+  await expect(
+    mini.getByRole('heading', { name: /^Decide what the next \d+ minutes are for$/ }),
+  ).toBeVisible()
   await expect(mini.getByText("Pick this block's tasks in the tab")).toBeVisible()
   await expect(mini.getByRole('textbox')).toHaveCount(0)
-  await mini.getByRole('button', { name: "I can't pick one" }).click()
-  await expect(mini.getByText('Priorities')).toBeVisible()
+  await expect(mini.getByRole('button', { name: 'Not yet' })).toBeVisible()
+
+  // One of which is a few minutes to decide in, on the same clock as the tab's.
+  await mini.getByRole('button', { name: 'Take 5 mins to decide' }).click()
+  await expect(mini.getByLabel('Time left to decide')).toHaveText('5:00')
+  await expect(stage(page).getByLabel('Time left to decide')).toHaveText('5:00')
+  await page.clock.fastForward('02:00')
+  await expect(mini.getByLabel('Time left to decide')).toHaveText('3:00')
+})
+
+test("a question's timer brings the pop-out with it, by default", async ({ page }) => {
+  await stubMiniWindow(page)
+  await openMono(page)
+  await expect(page.locator(MINI)).toHaveCount(0)
+
+  // The intentions timer starts by itself on the first visit, so the click that
+  // shows the question is the one that brings the window, with the clock in it.
+  await goToStage(page, 'Intentions')
+  const mini = page.frameLocator(MINI)
+  await expect(mini.getByRole('heading', { name: 'Decide what today is for' })).toBeVisible()
+  await expect(mini.getByLabel('Time left for intentions')).toHaveText('5:00')
+  await page.clock.fastForward('05:00')
+  await expect(mini.getByText("Time's up")).toBeVisible()
+
+  // Another round from out here runs on the stage too.
+  await mini.getByRole('button', { name: 'Take another 5 mins' }).click()
+  await expect(stage(page).getByLabel('Time left for intentions')).toHaveText('5:00')
+
+  // The purpose prompt's few minutes bring it the same way.
+  await addIntention(page, 'Ship the planner')
+  await stage(page).getByRole('button', { name: 'Start the day' }).click()
+  await page.getByRole('button', { name: 'Close pop-out' }).click()
+  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+  await expect(page.locator(MINI)).toHaveCount(0)
+  await stage(page).getByRole('button', { name: 'Take 5 mins to decide' }).click()
+  await expect(mini.getByLabel('Time left to decide')).toHaveText('5:00')
 })
 
 test('Open Mono brings the tab back to the day, wherever it was', async ({ page }) => {
   await stubMiniWindow(page)
   await openMono(page)
-  await shapeDay(page)
+  await shapeDayInTab(page)
 
   // Popped out from the tasks page, which has no stage on it.
   await page.getByRole('link', { name: 'Tasks', exact: true }).click()
@@ -392,7 +454,7 @@ test('Open Mono brings the tab back to the day, wherever it was', async ({ page 
   await mini.getByRole('button', { name: 'Open Mono' }).click()
 
   // The picker the window promised is now on screen.
-  await expect(stage(page).getByRole('heading', { name: 'One thing' })).toBeVisible()
+  await expect(stage(page).getByRole('heading', { name: 'Your purpose for this block' })).toBeVisible()
   expect(new URL(page.url()).hash).toBe('#/')
 })
 
@@ -418,7 +480,7 @@ test('a focus room persists and dresses the pop-out document', async ({ page }) 
 test('ambience is silent by default and the mini control shares its mute', async ({ page }) => {
   await stubMiniWindow(page)
   await openMono(page)
-  await shapeDay(page)
+  await shapeDayInTab(page)
 
   await page.getByRole('button', { name: /^Room/ }).click()
   const roomMenu = page.getByRole('dialog', { name: 'Room and ambient sound' })

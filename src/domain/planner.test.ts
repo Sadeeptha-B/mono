@@ -597,6 +597,7 @@ describe('derivePlan invariants', () => {
     ambience: fc.constantFrom('off', 'room', 'brown', 'pink', 'rain'),
     ambienceVolume: fc.double({ min: 0, max: 1, noNaN: true }),
     popOutOnStart: fc.boolean(),
+    popOutOnDecide: fc.boolean(),
   })
 
   const arbCommitments: fc.Arbitrary<Commitment[]> = fc.array(

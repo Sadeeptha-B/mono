@@ -4,8 +4,9 @@
  * A reduction of the stage, not a mirror of the app. The stage answers every
  * question Mono asks with the day drawn next to it, because a decision about
  * the day is unanswerable with the day covered up. This window has no day next
- * to it at all — so it takes the questions that do not need one, and hands the
- * one that does back to the tab.
+ * to it at all — so it takes the questions that do not need one, and shows the
+ * ones that do as far as they have been answered, handing the answering back to
+ * the tab. It is on whichever question the stage is on; see `miniViewFor`.
  *
  * The layout is a single column that survives being made much smaller than it
  * opens: the question on the left, the cat tucked into the corner beside it,
@@ -29,8 +30,8 @@ import {
   MiniOutsideHours,
   MiniPickInTab,
   MiniReady,
+  MiniSetup,
   MiniTimer,
-  MiniUnshaped,
 } from './MiniPanels'
 import { miniViewFor, type MiniFacts } from './view'
 import { MINI_WINDOW_SIZE, outsideMiniWindowRange } from './size'
@@ -45,9 +46,12 @@ import type { AmbienceControls } from '@/ambient/useAmbience'
 import type {
   ActiveSegment,
   BlockKind,
+  Commitment,
   CompletedSegment,
+  Intention,
   Ms,
   Settings,
+  WorkRegion,
 } from '@/domain/types'
 
 type Props = {
@@ -64,8 +68,15 @@ type Props = {
   /** Blocks and minutes still ahead of you today — the stage's own footer. */
   planned: { blocks: number; minutes: number }
   costOf: (minutes: number) => { blocksLost: number; focusMinutesLost: number }
+  /** What the opening questions have been answered with so far. */
+  commitments: readonly Commitment[]
+  regions: readonly WorkRegion[]
+  intentions: readonly Intention[]
+  /** The intentions question's timer, which `App` holds rather than the phase. */
+  intentionTimer: { endsAt: Ms } | null
+  onStartIntentionTimer: () => void
+  onStartDeciding: () => void
   onStartBlock: (kind: BlockKind) => void
-  onCannotDecide: () => void
   onAbandon: () => void
   onTakeBreak: () => void
   onSkipBreak: (kind: BlockKind) => void
@@ -163,8 +174,8 @@ export function MiniWindow(props: Props) {
 }
 
 /**
- * Bring the tab forward on the day, where both questions this window hands back
- * are answered.
+ * Bring the tab forward on the day, where every question this window hands back
+ * is answered.
  *
  * Focusing alone was not enough. The tab may be on the tasks page or the guide,
  * and a block started from this window opens its purpose prompt on the stage,
@@ -184,13 +195,26 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
   const { now, active, settings } = props
 
   switch (view.kind) {
-    case 'unshaped':
+    case 'setup':
       // `window` here is the opener — the portal's children are the opener's
       // code, whichever document they draw into. Chromium may ignore a focus
       // request for a tab it did not open, which is why this is a nudge rather
       // than the only way back; the window's own title bar carries a
       // back-to-tab button that always works.
-      return <MiniUnshaped onOpenTab={openDayInTab} />
+      return (
+        <MiniSetup
+          stage={view.stage}
+          revisiting={view.revisiting}
+          now={now}
+          commitments={props.commitments}
+          regions={props.regions}
+          intentions={props.intentions}
+          timer={props.intentionTimer}
+          timerMinutes={settings.intentionMinutes}
+          onStartTimer={props.onStartIntentionTimer}
+          onOpenTab={openDayInTab}
+        />
+      )
 
     case 'outsideHours':
       return (
@@ -215,16 +239,19 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
 
     case 'purpose':
       // Picking a block's tasks happens in the tab, which has the backlog and
-      // today's intentions to pick from. Not being able to pick is still
-      // answerable here, and so is not starting at all.
+      // today's intentions to pick from. Not starting at all is still
+      // answerable here, and so is taking a few minutes to decide.
       return (
         <MiniPickInTab
+          now={now}
           blockKind={view.blockKind}
           minutes={
             view.blockKind === 'short' ? settings.shortMinutes : settings.deepMinutes
           }
+          deciding={view.deciding}
+          decidingMinutes={settings.reflectMinutes}
+          onStartDeciding={props.onStartDeciding}
           onOpenTab={openDayInTab}
-          onCannotDecide={props.onCannotDecide}
           onCancel={props.onAbandon}
         />
       )

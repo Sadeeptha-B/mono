@@ -25,7 +25,6 @@ import { AmbienceButton } from '@/ambient/AmbienceButton'
 
 import type { SetupStageId } from './stages'
 import type { IntentionTimer } from './IntentionsPanel'
-import type { Place } from '@/domain/tasks'
 import type { Phase } from '@/domain/machine'
 import type {
   ActiveSegment,
@@ -81,19 +80,18 @@ type Props = {
   taskIntentions: Readonly<Record<string, string>>
   onLinkTask: (taskId: string, intentionId: string | null) => void
   /** Areas, epics and outcomes an intention can point at, from the backlog. */
-  places: readonly Place[]
   /** What the plan can still hold. */
   planned: { blocks: number; minutes: number }
   intentionTimer: IntentionTimer | null
   onStartIntentionTimer: () => void
-  onAddIntention: (input: Omit<Intention, 'id'>) => void
+  onAddIntention: (input: Omit<Intention, 'id'>) => string
   onUpdateIntention: (id: string, patch: IntentionPatch) => void
   onRemoveIntention: (id: string) => void
   onDayShaped: () => void
   onEditHours: () => void
   onStartBlock: (kind: BlockKind) => void
   onSetPurpose: (purpose: string, taskIds: string[]) => void
-  onCannotDecide: () => void
+  onStartDeciding: () => void
   onAbandon: () => void
   onTakeBreak: () => void
   onSkipBreak: (kind: BlockKind) => void
@@ -134,7 +132,8 @@ export function Stage(props: Props) {
             onUpdateCommitment={props.onUpdateCommitment}
             onRemoveCommitment={props.onRemoveCommitment}
             intentions={props.intentions}
-            places={props.places}
+            taskIntentions={props.taskIntentions}
+            onLinkTask={props.onLinkTask}
             planned={props.planned}
             intentionTimer={props.intentionTimer}
             intentionMinutes={settings.intentionMinutes}
@@ -174,23 +173,22 @@ export function Stage(props: Props) {
     case 'definingPurpose':
       return (
         <PurposePanel
+          now={now}
           blockKind={phase.blockKind}
-          afterReflection={phase.afterReflection}
+          deciding={phase.deciding}
+          onStartDeciding={props.onStartDeciding}
           minutes={
             phase.blockKind === 'short' ? settings.shortMinutes : settings.deepMinutes
           }
           reflectMinutes={settings.reflectMinutes}
           intentions={props.intentions}
           taskIntentions={props.taskIntentions}
-          onLinkTask={props.onLinkTask}
           onSubmit={props.onSetPurpose}
-          onCannotDecide={props.onCannotDecide}
           onCancel={props.onAbandon}
         />
       )
 
     case 'focusing':
-    case 'reflecting':
       return (
         <div>
           <FocusTimer

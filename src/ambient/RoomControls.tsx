@@ -64,10 +64,7 @@ export function RoomControls({ idPrefix }: { idPrefix: string }) {
           ? ROOMS[settings.roomId].suggestedAmbience
           : choice
     set('ambience', choice)
-    if (
-      active?.kind === 'block' &&
-      (phase.name === 'focusing' || phase.name === 'reflecting')
-    ) {
+    if (active?.kind === 'block' && phase.name === 'focusing') {
       void unlockAudio()
     } else {
       void previewAmbience(resolved, volume)

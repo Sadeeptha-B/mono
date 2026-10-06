@@ -114,6 +114,18 @@ export type Settings = {
    * without the API ignore it entirely.
    */
   popOutOnStart: boolean
+  /**
+   * Open the same window when a question's own timer starts: the intentions
+   * question's, and the purpose prompt's few minutes to decide.
+   *
+   * Its own setting rather than a second reading of `popOutOnStart`, because
+   * the two moments differ. A block starting is the last click before the user
+   * leaves; a question's timer starts while they are still answering it in the
+   * tab, where a window arriving can take the focus off the field. Deciding is
+   * also the stretch most likely to drift, which is the argument for having it
+   * on, and the same reason the default is on. Gesture-bound in the same way.
+   */
+  popOutOnDecide: boolean
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -129,6 +141,7 @@ export const DEFAULT_SETTINGS: Settings = {
   ambience: 'off',
   ambienceVolume: 0.35,
   popOutOnStart: true,
+  popOutOnDecide: true,
 }
 
 // -----------------------------------------------------------------------------
@@ -189,23 +202,22 @@ export type PlannedBreakPatch = Partial<Omit<PlannedBreak, 'id'>>
  * log with the rest of the day's decisions and is cleared at midnight, while
  * the tasks it gathers live on in the backlog.
  *
- * The link is optional and is a pointer, not a container: "work on the auth
- * epic today" is an intention about that epic, but plenty of intentions belong
- * to nothing in the backlog at all.
+ * What it is about is its tasks, put under it by `intention/taskLinked`, and
+ * shown under the places they live in. It once also pointed at one area, epic
+ * or outcome; that was a second answer to where its tasks live, which went
+ * stale whenever a task was moved or linked from elsewhere, and the log reader
+ * leaves it behind in older logs.
  */
 export type Intention = {
   id: string
   title: string
-  link?: IntentionLink
 }
 
-export type IntentionLink = { kind: 'area' | 'epic' | 'outcome'; id: string }
-
 /**
- * Fields an edit may change. `link: null` removes the link: a patch is merged,
- * and with `exactOptionalPropertyTypes` an absent field can only mean "leave it".
+ * Fields an edit may change. A patch is merged, and with
+ * `exactOptionalPropertyTypes` an absent field can only mean "leave it".
  */
-export type IntentionPatch = { title?: string; link?: IntentionLink | null }
+export type IntentionPatch = { title?: string }
 
 // -----------------------------------------------------------------------------
 // Session history and active work
