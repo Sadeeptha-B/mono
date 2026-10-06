@@ -27,13 +27,13 @@ describe('dayDoneFor', () => {
 describe('the opening questions', () => {
   it('are asked commitments, then hours, then intentions', () => {
     expect(nextSetupStage('commitments')).toBe('hours')
-    expect(nextSetupStage('hours')).toBe('intentions')
-    expect(nextSetupStage('intentions')).toBeNull()
-    expect(previousSetupStage('intentions')).toBe('hours')
+    expect(nextSetupStage('hours')).toBe('today')
+    expect(nextSetupStage('today')).toBeNull()
+    expect(previousSetupStage('today')).toBe('hours')
     expect(previousSetupStage('commitments')).toBeNull()
   })
 
   it('name each question the way its dot does', () => {
-    expect(setupStageName('intentions')).toBe('Intentions')
+    expect(setupStageName('today')).toBe('Today')
   })
 })

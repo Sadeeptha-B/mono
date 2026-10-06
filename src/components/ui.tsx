@@ -242,8 +242,8 @@ export function TimeInput({
  * has already gone somewhere else — another field opened, the stage moved to
  * another question — it is left where it went.
  *
- * `canFold` false draws the heading without a caret or a ×: the intentions
- * question with nothing named yet, where the field is the whole question and
+ * `canFold` false draws the heading without a caret or a ×: the commitments
+ * question with nothing fixed yet, where the form is the whole question and
  * there is nothing to fold it back to.
  */
 export function AddFold({
@@ -321,7 +321,7 @@ export function AddFold({
 }
 
 /** A chevron pointing at what it would show: right while folded, down while open. */
-function Caret({ open }: { open: boolean }) {
+export function Caret({ open }: { open: boolean }) {
   return (
     <svg
       aria-hidden="true"
@@ -343,7 +343,7 @@ function Caret({ open }: { open: boolean }) {
 /**
  * The heading above an inline decision on the stage, with room level with the
  * title for one small control that belongs to the question as a whole rather
- * than to any answer to it — the intentions question's own timer.
+ * than to any answer to it — today's question's own timer.
  */
 export function StagePrompt({
   eyebrow,
@@ -433,14 +433,14 @@ export function MinutesInput({
 }
 
 /**
- * A native select with a short word in front of it, such as "Intention:".
+ * A native select with a short word in front of it, such as "in Work".
  *
  * Native because it is the right control for a short flat list in a dense row
  * — the platform's own picker on a phone, type to jump on a desktop — and
  * because a custom one would be a component to keep accessible for no gain.
- * The tasks page uses it to put a task under one of today's intentions. A
- * choice among tasks in the backlog is not flat, and has `TaskTreePicker`,
- * which draws it as the tree it is.
+ * Today's field for a new task uses it to choose the area. A choice among
+ * tasks in the backlog is not flat, and has `TaskBrowser`, which draws it as
+ * the tree it is.
  */
 export function InlineSelect({
   label,

@@ -68,9 +68,14 @@ export type MonoEvent =
   | { type: 'intention/removed'; at: Ms; id: string }
   /**
    * Put a task under one of today's intentions, or take it out with `null`.
-   * Linking moves: a task belongs to at most one intention a day.
+   * Linking moves: a task belongs to at most one intention a day. Linking a
+   * task not yet chosen for today chooses it; unlinking leaves it chosen.
    */
   | { type: 'intention/taskLinked'; at: Ms; taskId: string; intentionId: string | null }
+  /** Choose a task for today. Choosing one already chosen changes nothing. */
+  | { type: 'today/taskAdded'; at: Ms; taskId: string }
+  /** Put a task back out of today, and out of whichever intention held it. */
+  | { type: 'today/taskRemoved'; at: Ms; taskId: string }
 
 export type SessionState = {
   settings: Settings
@@ -98,17 +103,38 @@ export type SessionState = {
    * could never get past the question.
    */
   shapedAt: Ms | null
-  /** What today is for, in the order they were named. Cleared at midnight. */
+  /**
+   * The groups today's tasks are gathered into, in the order they were named.
+   * Optional: a day is answered by its tasks, and an intention is a name given
+   * to some of them. Cleared at midnight.
+   */
   intentions: Intention[]
   /**
-   * Which of today's intentions each task belongs to, by task id.
+   * The tasks chosen for today, by task id, each with the intention it is
+   * under or `null` for none.
    *
-   * A map rather than a list on each intention because the rule it keeps is
-   * about the task — one intention a day — and a map cannot hold two answers
-   * for the same key. Tasks are backlog records and know nothing about days;
-   * the day knows about them.
+   * One map for both answers, so whether a task is today's and which intention
+   * holds it can never disagree: a task under an intention is today's by
+   * construction. A map rather than a list on each intention because the rule
+   * it keeps is about the task — one intention a day — and a map cannot hold
+   * two answers for the same key. Tasks are backlog records and know nothing
+   * about days; the day knows about them, which is why this is here rather
+   * than a date on the task. A date on a long-lived record would be a stored
+   * schedule that someone has to clear.
    */
-  taskIntentions: Record<string, string>
+  today: Record<string, string | null>
+  /**
+   * The tasks chosen on the last day that chose any, for the next day to
+   * offer again. Kept by the fold rather than stored anywhere, and replaced at
+   * the next reset after a day that chose something, so a suggestion nobody
+   * took expires on its own once another working day has been and gone. A day
+   * that chose nothing leaves it alone: a tab left open over a weekend turns
+   * over at every midnight, and Saturday's empty day must not throw away
+   * Friday's unfinished work before Monday asks. Which of them are still worth
+   * offering — open, in play, not chosen again — is the backlog's question,
+   * asked where they are shown (`carriedOver`).
+   */
+  lastDay: string[]
 }
 
 export const initialState: SessionState = {
@@ -120,7 +146,8 @@ export const initialState: SessionState = {
   regionOverrides: null,
   shapedAt: null,
   intentions: [],
-  taskIntentions: {},
+  today: {},
+  lastDay: [],
 }
 
 export function reduce(state: SessionState, event: MonoEvent): SessionState {
@@ -233,6 +260,10 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
           endsAt: event.endsAt,
           taskIds: event.taskIds ?? [],
         },
+        // A task a block was for is part of today, whether or not it was
+        // chosen this morning: the block is the day doing it. Here rather than
+        // in the prompt, so a replayed log draws the same today the screen did.
+        today: chooseAll(state.today, event.taskIds ?? []),
       }
 
     case 'block/purposeSet':
@@ -309,10 +340,12 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
         // And the new day gets asked its opening questions again. Yesterday's
         // answers were about yesterday.
         shapedAt: null,
-        // Intentions are one of those answers. The tasks they gathered stay in
-        // the backlog; only today's grouping of them goes.
+        // Today's tasks and their intentions are among those answers. The
+        // tasks stay in the backlog; only today's choice of them goes, and is
+        // kept aside for the new day to offer again.
         intentions: [],
-        taskIntentions: {},
+        today: {},
+        lastDay: Object.keys(state.today).length > 0 ? Object.keys(state.today) : state.lastDay,
       }
 
     case 'day/shaped':
@@ -338,21 +371,39 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
       return {
         ...state,
         intentions: state.intentions.filter((i) => i.id !== event.id),
-        // Its tasks go back to belonging to no intention, rather than pointing
-        // at one that no longer exists.
-        taskIntentions: Object.fromEntries(
-          Object.entries(state.taskIntentions).filter(([, id]) => id !== event.id),
+        // Its tasks stay today's and go back to belonging to no intention,
+        // rather than pointing at one that no longer exists. Removing a name
+        // is not deciding against the work it named.
+        today: Object.fromEntries(
+          Object.entries(state.today).map(([taskId, id]) => [
+            taskId,
+            id === event.id ? null : id,
+          ]),
         ),
       }
 
-    case 'intention/taskLinked': {
-      const { [event.taskId]: previous, ...others } = state.taskIntentions
-      void previous
-      if (event.intentionId === null) return { ...state, taskIntentions: others }
+    case 'intention/taskLinked':
+      // Taking a task out of its intention leaves it today's, and taking one
+      // out that was never today's does not make it so.
+      if (event.intentionId === null && !Object.hasOwn(state.today, event.taskId)) return state
       // Linking to an intention that is not there is refused rather than
       // recorded, so the map can only ever point at something real.
-      if (!state.intentions.some((i) => i.id === event.intentionId)) return state
-      return { ...state, taskIntentions: { ...others, [event.taskId]: event.intentionId } }
+      if (
+        event.intentionId !== null &&
+        !state.intentions.some((i) => i.id === event.intentionId)
+      ) {
+        return state
+      }
+      return { ...state, today: { ...state.today, [event.taskId]: event.intentionId } }
+
+    case 'today/taskAdded':
+      return { ...state, today: chooseAll(state.today, [event.taskId]) }
+
+    case 'today/taskRemoved': {
+      if (!Object.hasOwn(state.today, event.taskId)) return state
+      const { [event.taskId]: removed, ...rest } = state.today
+      void removed
+      return { ...state, today: rest }
     }
 
     default: {
@@ -474,6 +525,20 @@ export function completeBlock(
     result,
     taskIds: active.taskIds,
   }
+}
+
+/**
+ * Today with these tasks chosen. One already chosen keeps its intention, and
+ * nothing changes at all when every one of them was there, so a block on
+ * today's own tasks hands back the same map.
+ */
+function chooseAll(
+  today: Readonly<Record<string, string | null>>,
+  taskIds: readonly string[],
+): Record<string, string | null> {
+  const fresh = taskIds.filter((id) => !Object.hasOwn(today, id))
+  if (fresh.length === 0) return today
+  return { ...today, ...Object.fromEntries(fresh.map((id) => [id, null])) }
 }
 
 /** Merge an edit into an intention. */

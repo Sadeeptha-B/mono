@@ -78,9 +78,9 @@ reduction of the stage rather than a mirror of the app: it shows the phase, the
 timer, the purpose, the cat, and the controls for whatever Mono is currently
 asking, on whichever question the stage is on. What it declines to answer is
 anything that needs the calendar or the backlog beside it — the day's hours and
-commitments, the intentions, a block's tasks — so for those it shows where the
-answer stands and hands it back to the tab, keeping the timers the intentions
-and purpose questions carry.
+commitments, today's tasks, a block's tasks — so for those it shows where the
+answer stands and hands it back to the tab, keeping the timers today's and the
+purpose questions carry.
 
 Click the running timer on the stage or in the pop-out to switch between time
 remaining and time spent in the current block or break. Both views switch
@@ -122,19 +122,20 @@ rest of the day, so it never gets covered up.
 The **tasks page** at `#/tasks` is a page for the guide's reason: you go there
 and stay a while. It holds the backlog — areas of life, each with an inbox of
 the tasks that sit directly under it, then its epics, each epic's outcomes, and
-tasks at any of those levels — and today's intentions with the tasks gathered
-under each. Each area is a band split by a rule: epics and the inbox down the
-left, and level with each, its outcomes as columns of tasks. Epics and outcomes
-are finished by hand; finishing or archiving one hides everything inside without
-changing it, and deleting one, or an area, deletes its subtree. The stage only
-ever sees intentions and the tasks a block
-is for; filing and tidying happens on the page, away from the timer.
+tasks at any of those levels — and today's tasks, grouped under the intentions
+some of them are given. Each area is a band split by a rule: epics and the inbox
+down the left, and level with each, its outcomes as columns of tasks. Epics and
+outcomes are finished by hand; finishing or archiving one hides everything
+inside without changing it, and deleting one, or an area, deletes its subtree.
+The stage sees today's tasks and the tasks a block is for, and lets you write
+or find one there; filing and tidying happens on the page, away from the timer.
 
 Session state is a fold over an append-only event log
 ([src/domain/events.ts](src/domain/events.ts)). The log is persisted and the
 rest of the session is rebuilt from it on load. It is also the raw material for
-history — completed blocks, the purpose and tasks each one was given, the day's
-intentions, and what the companion knows about how the day has gone.
+history — completed blocks, the purpose and tasks each one was given, the tasks
+each day chose and how it grouped them, and what the companion knows about how
+the day has gone.
 
 The backlog is the one thing that is not in the log. Tasks are long-lived
 records edited in place, so they live in IndexedDB as current state
@@ -174,16 +175,23 @@ shaped around:
   day still adds up.
 - **The plan resets at midnight**, but never mid-block, and history is kept.
 - **The day opens with three questions** on the stage: what is already fixed,
-  today's hours, then what today is for. Commitments come first because they are
-  the part of the day you cannot move, so they decide how much is left to
-  declare, and intentions come last because they depend on the other two. None
-  gates another, all stay reachable between blocks, and the calendar follows the
-  hours question as it is typed. Starting the day needs one intention; the
+  today's hours, then what you are working on today. Commitments come first
+  because they are the part of the day you cannot move, so they decide how much
+  is left to declare, and today's tasks come last because they depend on the
+  other two. None gates another, all stay reachable between blocks, and the
+  calendar follows the hours question as it is typed.
+- **A day is answered with tasks; intentions are optional names for some of
+  them.** Starting the day needs one task chosen for it, ticked or written in
+  All Tasks, the whole backlog drawn on the stage and kept from there. Tasks can
+  then be dragged into intentions, which may be narrower than an outcome or
+  wider than an epic. The
+  next day offers what was left unfinished, and adds nothing by itself. The
   question carries its own timer, which stops at zero and records nothing.
-- **Every focus block is for at least one task**, picked from today's
-  intentions, found in the backlog or written on the spot, plus a purpose of its
-  own that starts as the tasks' titles. Ticking a task done belongs to the
-  backlog and finishing a block to the block; neither writes the other.
+- **Every focus block is for at least one task**, picked from today's tasks,
+  found in the backlog or written on the spot — a task from outside today joins
+  it when the block starts — plus a purpose of its own that starts as the
+  tasks' titles. Ticking a task done belongs to the backlog and finishing a
+  block to the block; neither writes the other.
 - **Outside working hours Mono says so** and names the next stretch, rather than
   offering a block in time you declared unstructured. The way to work anyway is
   to change the hours.

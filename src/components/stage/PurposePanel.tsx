@@ -5,76 +5,69 @@
  * an interruption to it, and a modal would blank out the very timeline that
  * tells you what the rest of the day looks like.
  *
- * Two answers, purpose first: what this block is for, and which tasks come
- * under it. They are different questions. The purpose is the block's own
- * sentence about these forty-five minutes, and it stays one sentence: it is
- * what the blocked-site page shows you, and what the timer carries all block.
- * Tasks are the backlog's — "login form", "CSRF token" — and a block takes at
- * least one.
+ * Two answers: which tasks this block is for, and what it is for. They are
+ * different questions. Tasks are the backlog's — "login form", "CSRF token" —
+ * and a block takes at least one. The purpose is the block's own sentence
+ * about these forty-five minutes, and it stays one sentence and stays
+ * required: it is what the blocked-site page shows you, and what the timer
+ * carries all block.
  *
- * The purpose field comes first because it is the point of the prompt, and
- * under the lists it read as an afterthought to ticking boxes. It still starts
- * as the tasks' titles, filling in above as they are ticked below, and stops
- * following them the moment it is edited. A list of titles joined with commas
- * is the least interesting thing this block could be called and the prompt's
- * whole job is to ask for something better, but nothing stops you accepting
- * it.
+ * The purpose field comes first because it is the point of the prompt: under
+ * the lists it read as an afterthought to ticking boxes. It was moved below
+ * them for a while, on the argument that a sentence written before the work is
+ * chosen comes out as a category, and moved back: the tasks are already
+ * chosen for the day by the time a block is named, so the sentence is about
+ * them rather than ahead of them. It starts as the tasks' titles, filling in
+ * above as they are ticked below, and stops following them the moment it is
+ * edited. One well-scoped task is a good purpose for a block as it stands;
+ * several joined with commas is a starting point the prompt asks you to
+ * improve on, though nothing stops you accepting it.
  *
- * The tasks come from one dropdown (`TaskTreePicker`) over the whole backlog,
- * where a task can also be written there and then, and below it one list, each
- * task with a checkbox for this block. Tasks under today's intentions are
- * listed under them, whether ticked yet or not, because those are the ones the
- * day was planned around; the rest of the list is what this prompt has chosen
- * from outside them, first, with no heading. Every task sits under the places
- * it lives in (`GroupedTasks`), each place said once. Something small from
- * outside today's intentions is a perfectly good use of the end of a block, and
- * a prompt that offered only the intentions would make them a fence.
+ * The tasks come from today first, in today's own order: the tasks under no
+ * intention, then each intention with its tasks in a fine border, every task under the places it lives in (`GroupedTasks`),
+ * each place said once, with a checkbox for this block. Tasks finished today
+ * are there too, crossed out and not choosable, because the list is also the
+ * day's progress. Below that, folded, the rest of the backlog under All Tasks
+ * (`TaskBrowser`), where a task can be written there and then, marked done,
+ * reopened, renamed or deleted. Something from outside today is a perfectly
+ * good use of a block, and a prompt that offered only today's choices would
+ * make them a fence; such a task joins today when the block starts, because
+ * the block is the day doing it (`block/started`).
  *
- * Choosing here only ticks. Which intention a task belongs to is the day's
- * business, settled on the intentions question or the tasks page; a prompt
- * that also linked would be a second place to answer it, one block at a time.
- * A task chosen from outside the intentions stays listed once chosen, ticked or
- * not, until the prompt closes: a row that vanished when its box was unticked
- * could not be ticked again, and an outcome there could never show as partly
- * ticked.
- *
- * An intention can be put right where it is listed: its ✎ opens the same
- * fields the intentions question and the tasks page write it with
- * (`IntentionFields`), in its place, and saving closes them again. Leaving for
- * the intentions question would cost the ticks and the purpose already
- * written here; a dropdown per intention would keep a form on screen that is
- * wanted once in a while. The ring in front of it marks it done, by hand,
- * the same ring as on the intentions question and the tasks page.
+ * Choosing here only ticks. Which intention a task is grouped under is the
+ * day's business, settled on today's question or the tasks page; a prompt
+ * that also grouped would be a second place to answer it, one block at a time.
+ * The ring in front of an intention still marks it done, by hand, the same
+ * ring as everywhere it is listed. A task chosen from outside today stays
+ * listed once chosen, ticked or not, until the prompt closes: a row that
+ * vanished when its box was unticked could not be ticked again with the
+ * backlog folded, and an outcome there could never show as partly ticked.
  *
  * Not knowing what this block is for is answered on the question too: the
  * play button by the title gives the prompt a few minutes to decide in
- * (`QuestionClock`), as the intentions question has. It is part of the phase,
- * not the log — nothing is recorded, no plan time goes and no site is blocked,
- * and the block itself starts when it is named. It replaced the priorities
- * block, which recorded not knowing as a block of its own.
+ * (`QuestionClock`), as today's question has. It is part of the phase, not the
+ * log — nothing is recorded, no plan time goes and no site is blocked, and the
+ * block itself starts when it is named. It replaced the priorities block,
+ * which recorded not knowing as a block of its own.
  *
- * A whole outcome can be ticked from its heading: every task of it in that
- * list at once, shown as partly ticked when only some are. The purpose names
- * the outcome when all its open tasks are picked (`purposeParts`). It is a
- * shortcut for picking tasks, not a new thing a block can be for — the block
+ * A whole outcome can be ticked from its heading: every open task of it in
+ * that list at once, shown as partly ticked when only some are. The purpose
+ * names the outcome when all its open tasks are picked (`purposeParts`). It is
+ * a shortcut for picking tasks, not a new thing a block can be for — the block
  * still records task ids, so nothing downstream of this prompt learns that
  * outcomes exist.
  */
 
-import { useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 
 import { unlockAudio } from '@/ambient/audio'
 import { GroupedTasks } from '../GroupedTasks'
-import {
-  IntentionDoneToggle,
-  IntentionFields,
-  useIntentionBacklog,
-  useSaveIntention,
-} from '../IntentionFields'
+import { CheckIcon } from '../icons'
 import { QuestionClock } from '../QuestionClock'
-import { TaskTreePicker } from '../TaskTreePicker'
-import { AddFold, EditGlyph, fieldClass, GhostButton, PrimaryButton, StagePrompt } from '../ui'
-import type { IntentionDraft } from '@/domain/intentions'
+import { TaskBrowser } from '../TaskBrowser'
+import { IntentionDoneToggle } from '../TodayList'
+import { useTodayBacklog } from '../useTodayBacklog'
+import { fieldClass, GhostButton, PrimaryButton, StagePrompt } from '../ui'
 import type { DecidingTimer } from '@/domain/machine'
 import {
   defaultPurpose,
@@ -82,6 +75,7 @@ import {
   PURPOSE_MAX_LENGTH,
   type TaskTreeNode,
 } from '@/domain/tasks'
+import { isToday, tasksOfIntention, ungroupedToday, type Today } from '@/domain/today'
 import { useSession } from '@/store/session'
 import { useTasks } from '@/store/tasks'
 import type { BlockKind, Intention, Ms } from '@/domain/types'
@@ -96,8 +90,8 @@ type Props = {
   deciding: DecidingTimer | null
   onStartDeciding: () => void
   intentions: readonly Intention[]
-  /** Which of today's intentions each task belongs to. */
-  taskIntentions: Readonly<Record<string, string>>
+  /** Today's tasks, each with its intention or none. */
+  today: Today
   onSubmit: (purpose: string, taskIds: string[]) => void
   onCancel: () => void
 }
@@ -110,7 +104,7 @@ export function PurposePanel({
   deciding,
   onStartDeciding,
   intentions,
-  taskIntentions,
+  today,
   onSubmit,
   onCancel,
 }: Props) {
@@ -119,26 +113,20 @@ export function PurposePanel({
   const addItem = useTasks((s) => s.addItem)
   const renameItem = useTasks((s) => s.renameItem)
   const deleteItem = useTasks((s) => s.deleteItem)
+  const completeItem = useTasks((s) => s.completeItem)
+  const reopenItem = useTasks((s) => s.reopenItem)
+  const updateIntention = useSession((s) => s.updateIntention)
   // Only tasks whose epic, outcome and area are all still in play, per backlog
   // snapshot rather than per tick — this panel renders every second.
-  const backlog = useIntentionBacklog(taskIntentions)
+  const backlog = useTodayBacklog(today)
 
   // What the user ticked. Not what the block is for: see `selected` below.
   const [ticked, setTicked] = useState<string[]>([])
   // `null` while the purpose is still following the tasks; text once edited.
   const [ownPurpose, setOwnPurpose] = useState<string | null>(null)
-  // Everything chosen from outside the intentions on this prompt, which stays
-  // listed whether or not it is still ticked — see the header.
+  // Everything chosen from outside today on this prompt, which stays listed
+  // whether or not it is still ticked — see the header.
   const [kept, setKept] = useState<string[]>([])
-  // The intention being put right in place, if any — see the header.
-  const [editing, setEditing] = useState<IntentionDraft | null>(null)
-  const updateIntention = useSession((s) => s.updateIntention)
-  const save = useSaveIntention({
-    taskIntentions,
-    onAdd: useSession((s) => s.addIntention),
-    onUpdate: updateIntention,
-    onLinkTask: useSession((s) => s.linkTask),
-  })
 
   // The ticks that still name a task in play. A task can leave from under a
   // tick — deleted or finished in another tab, its epic archived — and its
@@ -160,17 +148,54 @@ export function PurposePanel({
         : current.filter((id) => !ids.includes(id)),
     )
 
-  /** The intention a task is under today, said beside it in the dropdown. */
-  const under = (taskId: string) => {
-    const id = taskIntentions[taskId]
-    return id === undefined ? null : (intentions.find((i) => i.id === id)?.title ?? null)
-  }
-
-  // The head of the list: what was chosen here or ticked from outside every
-  // intention, still in play and still outside them.
-  const outside = [...new Set([...kept, ...selected])].filter(
-    (id) => taskIntentions[id] === undefined && backlog.offered.includes(id),
+  // The backlog's handlers, stable across the tick so the browser passes it by.
+  // A task ticked there is kept listed above, under `Also for this block`.
+  const tickOne = useCallback((taskId: string, on: boolean) => {
+    setTicked((current) =>
+      on
+        ? current.includes(taskId)
+          ? current
+          : [...current, taskId]
+        : current.filter((id) => id !== taskId),
+    )
+    if (on) setKept((current) => (current.includes(taskId) ? current : [...current, taskId]))
+  }, [])
+  const write = useCallback(
+    (parentId: string, title: string) => addItem({ kind: 'task', title, parentId }),
+    [addItem],
   )
+  const under = useCallback(
+    (taskId: string) => {
+      const id = today[taskId]
+      return typeof id === 'string' ? (intentions.find((i) => i.id === id)?.title ?? null) : null
+    },
+    [today, intentions],
+  )
+
+  // Today, grouped per change to the day or the backlog rather than per tick.
+  const group = backlog.group
+  const todayGroups = useMemo(
+    () => ({
+      byIntention: intentions.map((i) => ({
+        intention: i,
+        groups: group(tasksOfIntention(i.id, today)),
+      })),
+      none: group(ungroupedToday(today)),
+    }),
+    [intentions, today, group],
+  )
+
+  // What was chosen here from outside today, still in play and still outside,
+  // grouped per change rather than per tick: grouping walks the tree.
+  const offered = backlog.offered
+  const outsideGroups = useMemo(() => {
+    const live = new Set(offered)
+    const ids = [...new Set([...kept, ...selected])].filter(
+      (id) => !isToday(today, id) && live.has(id),
+    )
+    return group(ids)
+  }, [kept, selected, today, offered, group])
+  const nothingToday = backlog.chosen.length === 0
 
   return (
     <form
@@ -215,69 +240,63 @@ export function PurposePanel({
         <p className="text-sm text-muted">Loading your tasks…</p>
       ) : (
         <div className="flex flex-col gap-4">
-          <div className="text-xs">
-            <TaskTreePicker
+          {nothingToday ? (
+            <p className="text-sm text-muted">
+              Nothing is chosen for today yet. Find this block&apos;s tasks in the backlog below.
+            </p>
+          ) : (
+            <Section title="Today's tasks">
+              {/* In today's own order: the tasks under no intention first, with
+                  no heading of their own because they are simply today, then
+                  each intention. */}
+              {todayGroups.none.length > 0 && (
+                <TaskList
+                  label={intentions.length > 0 ? 'Not grouped' : 'Chosen today'}
+                  groups={todayGroups.none}
+                  isPicked={isPicked}
+                  onTick={tick}
+                />
+              )}
+              {todayGroups.byIntention.map(({ intention, groups }) => (
+                <IntentionTasks
+                  key={intention.id}
+                  intention={intention}
+                  groups={groups}
+                  isPicked={isPicked}
+                  onTick={tick}
+                  onToggleDone={() =>
+                    updateIntention(intention.id, { done: intention.done !== true })
+                  }
+                />
+              ))}
+            </Section>
+          )}
+
+          {outsideGroups.length > 0 && (
+            <Section title="Also for this block">
+              <TaskList
+                label="Also for this block"
+                groups={outsideGroups}
+                isPicked={isPicked}
+                onTick={tick}
+              />
+            </Section>
+          )}
+
+          <BacklogFold openAtFirst={nothingToday}>
+            <TaskBrowser
               label="Tasks for this block"
-              prefix="Select tasks for this block"
               tree={backlog.pickerTree}
               selected={selected}
-              onChange={(next) => {
-                setTicked(next)
-                setKept((current) => [...current, ...next.filter((id) => !current.includes(id))])
-              }}
-              onAdd={(parentId, title) => addItem({ kind: 'task', title, parentId })}
+              onToggle={tickOne}
+              onAdd={write}
               onRename={renameItem}
               onDelete={deleteItem}
+              onComplete={completeItem}
+              onReopen={reopenItem}
               elsewhere={under}
             />
-          </div>
-
-          {outside.length > 0 && (
-            <TaskList
-              label="Tasks outside today's intentions"
-              groups={backlog.group(outside)}
-              isPicked={isPicked}
-              onTick={tick}
-            />
-          )}
-
-          {intentions.length > 0 && (
-            <MyIntentions>
-              {intentions.map((intention) =>
-                editing?.editing === intention.id ? (
-                  <IntentionEditor
-                    key={intention.id}
-                    draft={editing}
-                    onDraft={setEditing}
-                    intentions={intentions}
-                    taskIntentions={taskIntentions}
-                    onSave={() => {
-                      if (save(editing) !== null) setEditing(null)
-                    }}
-                    onCancel={() => setEditing(null)}
-                  />
-                ) : (
-                  <IntentionTasks
-                    key={intention.id}
-                    intention={intention}
-                    groups={backlog.group(backlog.tasksUnder(intention.id))}
-                    isPicked={isPicked}
-                    onTick={tick}
-                    onToggleDone={() =>
-                      updateIntention(intention.id, { done: intention.done !== true })
-                    }
-                    onEdit={() =>
-                      setEditing({
-                        title: intention.title,
-                        taskIds: backlog.tasksUnder(intention.id),
-                        editing: intention.id,
-                      })
-                    }
-                  />
-                ),
-              )}
-            </MyIntentions>
-          )}
+          </BacklogFold>
         </div>
       )}
 
@@ -301,20 +320,36 @@ export function PurposePanel({
 const headingClass = 'mb-1.5 text-xs font-medium tracking-wide text-muted uppercase'
 
 /**
- * Today's intentions under one heading, so the list says what it is: the
- * tasks above it were chosen from outside them, the ones below are theirs.
- * The heading carries a faint rule: both halves are the same rows in the same
- * grouping, and a small caps label alone was easy to read past.
+ * A part of the prompt under its own heading, with a faint rule under it, so
+ * the list says what it is: today's tasks, or what this block takes from
+ * outside them.
  */
-function MyIntentions({ children }: { children: ReactNode }) {
+function Section({ title, children }: { title: string; children: ReactNode }) {
   const headingId = useId()
   return (
     <section aria-labelledby={headingId} className="flex min-w-0 flex-col gap-3">
       <h3 id={headingId} className={`${headingClass} mb-0 border-b border-muted/40 pb-1.5`}>
-        My intentions
+        {title}
       </h3>
       {children}
     </section>
+  )
+}
+
+/**
+ * The rest of the backlog, folded under All Tasks: a block usually comes from
+ * today, and the whole tree drawn under it every time would make the prompt as
+ * long as the backlog. Open from the start when today has nothing in it, since
+ * then it is the only place to choose from. The browser is drawn only while
+ * open.
+ */
+function BacklogFold({ openAtFirst, children }: { openAtFirst: boolean; children: ReactNode }) {
+  const [open, setOpen] = useState(openAtFirst)
+  return (
+    <details open={open} onToggle={(e) => setOpen(e.currentTarget.open)} className="min-w-0">
+      <summary className={`${headingClass} cursor-pointer hover:text-body`}>All Tasks</summary>
+      {open && <div className="mt-2 text-xs">{children}</div>}
+    </details>
   )
 }
 
@@ -331,22 +366,24 @@ function IntentionTasks({
   isPicked,
   onTick,
   onToggleDone,
-  onEdit,
 }: {
   intention: Intention
   groups: readonly TaskTreeNode[]
   isPicked: (taskId: string) => boolean
   onTick: (taskIds: readonly string[], on: boolean) => void
   onToggleDone: () => void
-  onEdit: () => void
 }) {
   const headingId = useId()
   const { title } = intention
   const done = intention.done === true
   return (
-    <div role="group" aria-labelledby={headingId} className={`min-w-0 ${done ? 'opacity-70' : ''}`}>
-      {/* On the title's baseline and at its size: the pencil is a character,
-          and left to inherit it sat larger and off the line. */}
+    // The fine border today's question marks an intention with, so the two
+    // read alike.
+    <div
+      role="group"
+      aria-labelledby={headingId}
+      className={`min-w-0 rounded-md border border-line px-2 py-1.5 ${done ? 'opacity-70' : ''}`}
+    >
       <div className="mb-1 flex items-baseline gap-2 text-sm">
         <IntentionDoneToggle intention={intention} onToggle={onToggleDone} />
         <span
@@ -355,14 +392,6 @@ function IntentionTasks({
         >
           {title}
         </span>
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label={`Edit intention ${title}`}
-          className="shrink-0 leading-none text-muted transition hover:text-bright"
-        >
-          <EditGlyph />
-        </button>
       </div>
       {groups.length === 0 ? (
         <p className="text-xs text-muted">No tasks under it yet.</p>
@@ -374,71 +403,9 @@ function IntentionTasks({
 }
 
 /**
- * An intention put right in place: the fields it is always written with, under
- * an `Edit intention` heading whose × leaves it as it was.
- *
- * Not a form of its own — it sits inside the prompt's, and HTML has no nested
- * forms — so Enter in the title is caught here and saves, rather than reaching
- * the prompt and starting the block.
- */
-function IntentionEditor({
-  draft,
-  onDraft,
-  intentions,
-  taskIntentions,
-  onSave,
-  onCancel,
-}: {
-  draft: IntentionDraft
-  onDraft: (draft: IntentionDraft) => void
-  intentions: readonly Intention[]
-  taskIntentions: Readonly<Record<string, string>>
-  onSave: () => void
-  onCancel: () => void
-}) {
-  const title = useRef<HTMLInputElement>(null)
-  return (
-    <AddFold
-      title="Edit intention"
-      open
-      onOpen={() => undefined}
-      onCancel={onCancel}
-      cancelLabel={`Cancel editing ${draft.title || 'this intention'}`}
-      className="text-sm text-body"
-    >
-      <div
-        onKeyDown={(e) => {
-          if (e.key !== 'Enter' || e.target !== title.current) return
-          e.preventDefault()
-          onSave()
-        }}
-      >
-        <IntentionFields
-          draft={draft}
-          onDraft={onDraft}
-          intentions={intentions}
-          taskIntentions={taskIntentions}
-          fieldRef={title}
-          // Opened by a click asking for exactly this.
-          autoFocus
-          onEscape={onCancel}
-        />
-        <GhostButton
-          type="button"
-          disabled={draft.title.trim() === ''}
-          onClick={onSave}
-          className="mt-3 px-3 py-1.5 text-xs"
-        >
-          Done
-        </GhostButton>
-      </div>
-    </AddFold>
-  )
-}
-
-/**
- * Tasks under their places, each with a checkbox for this block. An outcome of
- * more than one task can be taken whole from its heading.
+ * Tasks under their places, each with a checkbox for this block, and today's
+ * finished ones crossed out. An outcome of more than one open task can be
+ * taken whole from its heading.
  */
 function TaskList({
   label,
@@ -455,19 +422,28 @@ function TaskList({
     <GroupedTasks
       label={label}
       groups={groups}
-      renderTask={(task) => (
-        <label className="flex cursor-pointer items-baseline gap-2 text-sm text-body hover:text-bright">
-          <input
-            type="checkbox"
-            checked={isPicked(task.id)}
-            onChange={() => onTick([task.id], !isPicked(task.id))}
-            className="translate-y-0.5 accent-[var(--color-deep)]"
-          />
-          <span className="min-w-0 truncate">{task.title}</span>
-        </label>
-      )}
+      renderTask={(task) =>
+        task.status === 'done' ? (
+          // Finished today: the day's progress, not a choice.
+          <span className="flex items-baseline gap-2 text-sm text-muted">
+            <CheckIcon className="w-[13px] translate-y-0.5 text-deep/80" />
+            <span className="min-w-0 truncate line-through">{task.title}</span>
+            <span className="sr-only">, done today</span>
+          </span>
+        ) : (
+          <label className="flex cursor-pointer items-baseline gap-2 text-sm text-body hover:text-bright">
+            <input
+              type="checkbox"
+              checked={isPicked(task.id)}
+              onChange={() => onTick([task.id], !isPicked(task.id))}
+              className="translate-y-0.5 accent-[var(--color-deep)]"
+            />
+            <span className="min-w-0 truncate">{task.title}</span>
+          </label>
+        )
+      }
       renderPlace={(node, line) => {
-        const ids = node.tasks.map((t) => t.id)
+        const ids = node.tasks.filter((t) => t.status === 'open').map((t) => t.id)
         if (node.kind !== 'outcome' || ids.length < 2) return line
         const picked = ids.filter(isPicked).length
         return (

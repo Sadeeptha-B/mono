@@ -17,7 +17,7 @@
  * on the hours, on the argument that a question shown here was only a sign
  * pointing at the tab. That stopped holding once the window had more to show
  * than a sign: each question comes out with its current answer, and the
- * intentions question with its timer.
+ * today's question with its timer.
  *
  * **Answers that need the day or the backlog are written in the tab.** Hours and
  * commitments are only answerable with the calendar drawn beside them — the

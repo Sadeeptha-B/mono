@@ -24,7 +24,7 @@ import { GhostButton } from '../ui'
 import { AmbienceButton } from '@/ambient/AmbienceButton'
 
 import type { SetupStageId } from './stages'
-import type { IntentionTimer } from './IntentionsPanel'
+import type { TodayTimer } from './TodayPanel'
 import type { Phase } from '@/domain/machine'
 import type {
   ActiveSegment,
@@ -33,12 +33,12 @@ import type {
   CommitmentPatch,
   DefaultRegion,
   Intention,
-  IntentionPatch,
   Ms,
   Settings,
   WorkRegion,
 } from '@/domain/types'
 import type { DayProgress } from '@/domain/dayProgress'
+import type { Today } from '@/domain/today'
 import type { AmbienceControls } from '@/ambient/useAmbience'
 import type { TimerMode } from '@/domain/time'
 
@@ -76,17 +76,12 @@ type Props = {
   onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onRemoveCommitment: (id: string) => void
   intentions: readonly Intention[]
-  /** Which of today's intentions each task belongs to. */
-  taskIntentions: Readonly<Record<string, string>>
-  onLinkTask: (taskId: string, intentionId: string | null) => void
-  /** Areas, epics and outcomes an intention can point at, from the backlog. */
+  /** Today's tasks, each with its intention or none. */
+  today: Today
   /** What the plan can still hold. */
   planned: { blocks: number; minutes: number }
-  intentionTimer: IntentionTimer | null
-  onStartIntentionTimer: () => void
-  onAddIntention: (input: Omit<Intention, 'id'>) => string
-  onUpdateIntention: (id: string, patch: IntentionPatch) => void
-  onRemoveIntention: (id: string) => void
+  todayTimer: TodayTimer | null
+  onStartTodayTimer: () => void
   onDayShaped: () => void
   onEditHours: () => void
   onStartBlock: (kind: BlockKind) => void
@@ -132,15 +127,11 @@ export function Stage(props: Props) {
             onUpdateCommitment={props.onUpdateCommitment}
             onRemoveCommitment={props.onRemoveCommitment}
             intentions={props.intentions}
-            taskIntentions={props.taskIntentions}
-            onLinkTask={props.onLinkTask}
+            today={props.today}
             planned={props.planned}
-            intentionTimer={props.intentionTimer}
+            todayTimer={props.todayTimer}
             intentionMinutes={settings.intentionMinutes}
-            onStartIntentionTimer={props.onStartIntentionTimer}
-            onAddIntention={props.onAddIntention}
-            onUpdateIntention={props.onUpdateIntention}
-            onRemoveIntention={props.onRemoveIntention}
+            onStartTodayTimer={props.onStartTodayTimer}
             onDone={props.onDayShaped}
           />
         )
@@ -182,7 +173,7 @@ export function Stage(props: Props) {
           }
           reflectMinutes={settings.reflectMinutes}
           intentions={props.intentions}
-          taskIntentions={props.taskIntentions}
+          today={props.today}
           onSubmit={props.onSetPurpose}
           onCancel={props.onAbandon}
         />

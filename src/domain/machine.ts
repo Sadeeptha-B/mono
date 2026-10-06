@@ -34,7 +34,7 @@
  * `focusing` also accepts `abandonBlock` — there is no pause, deliberately;
  * see `docs/decisions.md`. `startDeciding` gives the purpose prompt a few
  * minutes to work out what matters, and is the one transition that stays in
- * the same phase: it is a timer on the question, like the intentions
+ * the same phase: it is a timer on the question, like today's
  * question's, and records nothing. It replaced the priorities block, a real
  * block that took plan time and armed site blocking for not knowing yet.
  */

@@ -94,14 +94,33 @@ export async function goToStage(page: Page, name: string) {
   await carousel(page).getByRole('button', { name, exact: true }).click()
 }
 
-/** The intentions already named today, on the third opening question. */
-export const intentionList = (page: Page) =>
-  stage(page).getByRole('list', { name: 'Intended today' })
+/** Today's list on the third opening question: the tasks chosen, under their intentions. */
+export const todayList = (page: Page) =>
+  stage(page).getByRole('region', { name: 'Today', exact: true })
 
-/** Name one thing today is for, on the intentions question. */
+/** The backlog drawn in place on today's question, where a tick chooses a task for today. */
+export const todayBrowser = (page: Page) =>
+  stage(page).getByRole('group', { name: 'Tasks for today', exact: true })
+
+/**
+ * Write a task into an area's inbox from All Tasks on the opening question,
+ * which chooses it for today as it is written.
+ */
+export async function addTodayTask(page: Page, title: string, area = 'Work') {
+  const browser = todayBrowser(page)
+  const field = browser.getByLabel(`New task in ${area}`, { exact: true })
+  if (!(await field.isVisible())) {
+    await browser.getByRole('button', { name: `Add a task to ${area}`, exact: true }).click()
+  }
+  await field.fill(title)
+  await field.press('Enter')
+  await browser.getByRole('button', { name: `Cancel the new task in ${area}`, exact: true }).click()
+}
+
+/** Name an intention to group today's tasks under, on the opening question. */
 export async function addIntention(page: Page, title: string) {
-  const field = stage(page).getByLabel('Next intention', { exact: true })
-  // Folded behind `+ Add intention` once something is named.
+  const field = stage(page).getByLabel('New intention', { exact: true })
+  // Folded behind `Add intention` until asked for, and open for a run after.
   if (!(await field.isVisible())) {
     await stage(page).getByRole('button', { name: 'Add intention', exact: true }).click()
   }
@@ -113,13 +132,15 @@ export async function addIntention(page: Page, title: string) {
  * Finish the opening questions.
  *
  * An empty day is a complete answer to the first two, but the first ask needs
- * one intention, so this names one on the way out when none has been named.
- * Going to the third question first changes nothing the others recorded: the
- * drafts outlive the switch, which is a rule the setup specs hold separately.
+ * one task chosen for today, so this writes one on the way out when none has
+ * been. Going to the third question first changes nothing the others recorded:
+ * the drafts outlive the switch, which is a rule the setup specs hold
+ * separately.
  */
 export async function startDay(page: Page) {
-  await goToStage(page, 'Intentions')
-  if ((await intentionList(page).count()) === 0) await addIntention(page, 'Ship the planner')
+  await goToStage(page, 'Today')
+  const chosen = todayList(page).getByRole('button', { name: / out of today$/ })
+  if ((await chosen.count()) === 0) await addTodayTask(page, 'Ship the planner')
   await stage(page).getByRole('button', { name: 'Start the day' }).click()
 }
 
@@ -144,26 +165,32 @@ export async function shapeDay(page: Page) {
 
 /**
  * Write a task down on the purpose prompt and tick it for this block: written
- * into an area's inbox from the block's own dropdown, which links it to no
- * intention.
+ * into an area's inbox from All Tasks, folded under today's tasks, outside
+ * today until the block starts.
  *
  * The default title is deliberately unlike any purpose a spec types, so a
  * text query for the purpose never also finds the task listed under the timer.
  */
 export async function addBlockTask(page: Page, title = 'The task at hand', area = 'Work') {
-  const picker = blockPicker(page)
-  await picker.click()
-  const panel = stage(page).getByRole('group', { name: 'Tasks for this block', exact: true })
-  await panel.getByRole('button', { name: `Add a task to ${area}`, exact: true }).click()
-  const field = panel.getByLabel(`New task in ${area}`, { exact: true })
+  const browser = await openBlockBacklog(page)
+  await browser.getByRole('button', { name: `Add a task to ${area}`, exact: true }).click()
+  const field = browser.getByLabel(`New task in ${area}`, { exact: true })
   await field.fill(title)
   await field.press('Enter')
-  await picker.click()
+  await browser.getByRole('button', { name: `Cancel the new task in ${area}`, exact: true }).click()
 }
 
-/** The purpose prompt's dropdown of tasks for this block alone. */
-export const blockPicker = (page: Page) =>
-  stage(page).getByRole('button', { name: 'Tasks for this block', exact: true })
+/** The purpose prompt's backlog, where a tick is for this block alone. */
+export const blockBacklog = (page: Page) =>
+  stage(page).getByRole('group', { name: 'Tasks for this block', exact: true })
+
+/** Unfold the purpose prompt's backlog if it is folded, and hand it back. */
+export async function openBlockBacklog(page: Page) {
+  const browser = blockBacklog(page)
+  if (!(await browser.isVisible())) await stage(page).getByText('All Tasks', { exact: true }).click()
+  await expect(browser).toBeVisible()
+  return browser
+}
 
 /**
  * Start a block with a purpose. Every focus block carries a task, so this

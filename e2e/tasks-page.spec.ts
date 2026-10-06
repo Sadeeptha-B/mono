@@ -2,15 +2,17 @@
 
 import { expect, test, type Page } from '@playwright/test'
 import {
-  addIntention,
   addOnTasksPage,
+  addTodayTask,
   goToStage,
   importSession,
   openMono,
   stage,
   startBlock,
+  startDay,
   storedItems,
   storedRecord,
+  todayList,
 } from './support/mono'
 
 const main = (page: Page) => page.getByRole('main')
@@ -147,91 +149,89 @@ test('a task can be renamed, moved, dropped, reopened and deleted', async ({ pag
   await expect(main(page).getByText('Buy a USB-C cable')).toHaveCount(0)
 })
 
-test("a task can be put under one of today's intentions and taken out again", async ({
+test('a task is chosen for today with the sun on its row, and taken out again', async ({
   page,
 }) => {
   await openMono(page)
-  await goToStage(page, 'Intentions')
-  await addIntention(page, 'Mono auth')
-  await stage(page).getByRole('button', { name: 'Start the day' }).click()
+  await startDay(page)
 
   await openTasks(page)
-  await expect(
-    main(page).getByRole('heading', { name: 'My intentions for today' }),
-  ).toBeVisible()
+  const today = main(page).getByRole('region', { name: 'Today', exact: true })
   await addTo(page, 'Work', 'Login form')
-  await main(page)
-    .getByLabel("Today's intention for Login form")
-    .selectOption({ label: 'Mono auth' })
-
-  const today = main(page).getByRole('list', { name: 'Today: Mono auth' })
+  const sun = main(page).getByRole('button', { name: 'Login form for today', exact: true })
+  await expect(sun).toHaveAttribute('aria-pressed', 'false')
+  await sun.click()
   await expect(today).toContainText('Login form')
+  await expect(sun).toHaveAttribute('aria-pressed', 'true')
 
-  // And the purpose prompt offers it under that intention.
+  // And the purpose prompt offers it among today's tasks.
   await page.getByRole('link', { name: 'Back to today' }).click()
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
-  await expect(
-    stage(page).getByRole('group', { name: 'Mono auth' }).getByRole('checkbox', { name: 'Login form' }),
-  ).toBeVisible()
+  await expect(stage(page).getByRole('checkbox', { name: 'Login form' })).toBeVisible()
   await stage(page).getByRole('button', { name: 'Not yet' }).click()
 
+  // Taken out from today's own list, it stays in the backlog.
   await openTasks(page)
-  await today.getByRole('button', { name: 'Take Login form out of Mono auth' }).click()
-  await expect(today).toHaveCount(0)
+  await today.getByRole('button', { name: 'Take Login form out of today' }).click()
+  await expect(today).not.toContainText('Login form')
+  await expect(inbox(page, 'Work')).toContainText('Login form')
+  await expect(sun).toHaveAttribute('aria-pressed', 'false')
 })
 
-test("today's intentions can be written, edited and deleted from the tasks page", async ({
+test("today's tasks are grouped from the tasks page as on the opening question", async ({
   page,
 }) => {
   await openMono(page)
   await openTasks(page)
   await buildAuthEpic(page)
+  await main(page).getByRole('button', { name: 'Login form for today', exact: true }).click()
+  await main(page).getByRole('button', { name: 'CSRF token for today', exact: true }).click()
 
-  // Written with its tasks, as on the opening question. Opening it folds the
-  // empty add field the backlog was left with, as opening any add field does.
-  const section = main(page).getByRole('region', { name: 'My intentions for today' })
+  // Opening the intention field folds the empty add field the backlog was left
+  // with, as opening any add field does.
+  const section = main(page).getByRole('region', { name: 'Today', exact: true })
   await expect(main(page).getByLabel('New task in Mono auth', { exact: true })).toBeVisible()
   await section.getByRole('button', { name: 'Add intention', exact: true }).click()
   await expect(main(page).getByLabel('New task in Mono auth', { exact: true })).toHaveCount(0)
-  await section.getByLabel('Next intention', { exact: true }).fill('Ship it')
-  await section.getByRole('button', { name: 'Tasks for this intention' }).click()
-  await section
-    .getByRole('group', { name: 'Tasks for this intention' })
-    .getByRole('checkbox', { name: 'Login form' })
-    .check()
-  await section.getByRole('button', { name: 'Done', exact: true }).click()
+  await section.getByLabel('New intention', { exact: true }).fill('Ship it')
+  await section.getByLabel('New intention', { exact: true }).press('Enter')
 
-  // Its tasks under their places, each said once.
-  const today = section.getByRole('list', { name: 'Today: Ship it' })
-  await expect(today).toContainText('Work › Mono auth › Login pages')
-  await expect(today).toContainText('Login form')
+  // Carried in by its grip, and shown under its places, each said once.
+  const group = section.getByRole('region', { name: 'Intention: Ship it' })
+  await section.getByRole('button', { name: 'Move Login form', exact: true }).click()
+  await section.getByRole('button', { name: 'Move Login form to Ship it', exact: true }).click()
+  await expect(group).toContainText('Work › Mono auth › Login pages')
+  await expect(group).toContainText('Login form')
 
-  await section.getByRole('button', { name: 'Edit intention Ship it' }).click()
-  await section.getByLabel('This intention', { exact: true }).fill('Ship the login pages')
-  await section.getByRole('button', { name: 'Done', exact: true }).click()
-  await expect(section.getByRole('list', { name: 'Today: Ship the login pages' })).toContainText(
+  await group.getByRole('button', { name: 'Rename intention Ship it' }).click()
+  const rename = section.getByLabel('Rename intention Ship it', { exact: true })
+  await rename.fill('Ship the login pages')
+  await rename.press('Enter')
+  await expect(section.getByRole('region', { name: 'Intention: Ship the login pages' })).toContainText(
     'Login form',
   )
 
-  // Deleting it leaves its tasks in the backlog.
+  // Deleting it leaves its tasks today, and in the backlog.
   await section.getByRole('button', { name: 'Delete intention Ship the login pages' }).click()
-  await expect(main(page).getByRole('heading', { name: 'Ship the login pages' })).toHaveCount(0)
+  await expect(section.getByRole('region', { name: /^Intention:/ })).toHaveCount(0)
+  await expect(section).toContainText('Login form')
   await expect(outcome(page, 'Login pages')).toContainText('Login form')
 
   // And the opening question sees what the page did.
   await page.getByRole('link', { name: 'Back to today' }).click()
-  await goToStage(page, 'Intentions')
-  await expect(stage(page).getByRole('list', { name: 'Intended today' })).toHaveCount(0)
+  await goToStage(page, 'Today')
+  await expect(todayList(page)).toContainText('Login form')
+  await expect(todayList(page)).toContainText('CSRF token')
 })
 
-test('an intention being edited here does not outlive the session it was about', async ({
+test('an intention being renamed here does not outlive the session it was about', async ({
   page,
 }) => {
   // Regression: the editor kept its draft across an import. Saved afterwards,
   // an edit to an intention the import brought back under the same id wrote
   // its pre-import title over the imported one.
   const day = (title: string) => ({
-    version: 4,
+    version: 5,
     dayKey: '2026-08-20',
     events: [
       {
@@ -245,14 +245,14 @@ test('an intention being edited here does not outlive the session it was about',
   await importSession(page, day('Ship it'))
   await openTasks(page)
 
-  const section = main(page).getByRole('region', { name: 'My intentions for today' })
-  await section.getByRole('button', { name: 'Edit intention Ship it' }).click()
-  await section.getByLabel('This intention', { exact: true }).fill('Stale edit')
+  const section = main(page).getByRole('region', { name: 'Today', exact: true })
+  await section.getByRole('button', { name: 'Rename intention Ship it' }).click()
+  await section.getByLabel('Rename intention Ship it', { exact: true }).fill('Stale edit')
 
   await importSession(page, day('Ship the login pages'))
-  await expect(section.getByLabel('This intention', { exact: true })).toHaveCount(0)
+  await expect(section.getByLabel('Rename intention Ship it', { exact: true })).toHaveCount(0)
   await expect(
-    section.getByRole('button', { name: 'Edit intention Ship the login pages' }),
+    section.getByRole('button', { name: 'Rename intention Ship the login pages' }),
   ).toBeVisible()
 })
 
@@ -287,8 +287,8 @@ test('areas can be added, renamed, archived and restored', async ({ page }) => {
 
 test('a block keeps running while the tasks page is open', async ({ page }) => {
   await openMono(page)
-  await goToStage(page, 'Intentions')
-  await addIntention(page, 'Mono auth')
+  await goToStage(page, 'Today')
+  await addTodayTask(page, 'Mono auth')
   await stage(page).getByRole('button', { name: 'Start the day' }).click()
   await startBlock(page, 'Write the planner')
 
@@ -436,7 +436,7 @@ test('a finished outcome is put away with its tasks nested under it, each as it 
   ).not.toContainText('Login form')
 })
 
-test('a task ticked today stays in the task picker, crossed out rather than offered', async ({
+test("a task ticked today stays in today's backlog, crossed out rather than offered", async ({
   page,
 }) => {
   await openMono(page)
@@ -445,10 +445,9 @@ test('a task ticked today stays in the task picker, crossed out rather than offe
   // Clicked rather than checked: the row leaves the column as it is ticked.
   await main(page).getByRole('checkbox', { name: 'Login form done' }).click()
 
-  const section = main(page).getByRole('region', { name: 'My intentions for today' })
-  await section.getByRole('button', { name: 'Add intention', exact: true }).click()
-  await section.getByRole('button', { name: 'Tasks for this intention' }).click()
-  const tree = section.getByRole('group', { name: 'Tasks for this intention' })
+  await page.getByRole('link', { name: 'Back to today' }).click()
+  await goToStage(page, 'Today')
+  const tree = stage(page).getByRole('group', { name: 'Tasks for today', exact: true })
   await expect(tree.getByRole('checkbox', { name: 'CSRF token' })).toBeVisible()
   await expect(tree.getByText('Login form', { exact: true })).toHaveCSS(
     'text-decoration-line',

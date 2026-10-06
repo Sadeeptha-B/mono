@@ -1,31 +1,34 @@
 /** Every focus block is for at least one task, and ticking them is the backlog's business. */
 
-import { expect, test } from '@playwright/test'
+import { expect, test, type Locator } from '@playwright/test'
 import {
   addBlockTask,
   addIntention,
   addOnTasksPage,
-  blockPicker,
+  addTodayTask,
+  blockBacklog,
   goToStage,
+  openBlockBacklog,
   openMono,
   stage,
   storedRecord,
+  todayList,
 } from './support/mono'
 
-const startButton = (page: Parameters<typeof stage>[0]) =>
-  stage(page).getByRole('button', { name: 'Start', exact: true })
-const purposeField = (page: Parameters<typeof stage>[0]) =>
-  stage(page).getByLabel('Purpose for this block', { exact: true })
-const blockTasks = (page: Parameters<typeof stage>[0]) =>
-  stage(page).getByRole('list', { name: 'Tasks in this block' })
-const blockPanel = (page: Parameters<typeof stage>[0]) =>
-  stage(page).getByRole('group', { name: 'Tasks for this block', exact: true })
+type Page = Parameters<typeof stage>[0]
 
-/** Shape the day with one intention, and open the purpose prompt. */
-async function toPurposePrompt(page: Parameters<typeof stage>[0], intention = 'Mono auth') {
+const startButton = (page: Page) => stage(page).getByRole('button', { name: 'Start', exact: true })
+const purposeField = (page: Page) =>
+  stage(page).getByLabel('Purpose for this block', { exact: true })
+const blockTasks = (page: Page) => stage(page).getByRole('list', { name: 'Tasks in this block' })
+/** What this prompt has taken from outside today. */
+const alsoList = (page: Page) => stage(page).getByRole('list', { name: 'Also for this block' })
+
+/** Shape the day with one task chosen for it, and open the purpose prompt. */
+async function toPurposePrompt(page: Page, task = 'Ship the planner') {
   await openMono(page)
-  await goToStage(page, 'Intentions')
-  await addIntention(page, intention)
+  await goToStage(page, 'Today')
+  await addTodayTask(page, task)
   await stage(page).getByRole('button', { name: 'Start the day' }).click()
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
 }
@@ -44,7 +47,7 @@ test('a block cannot start without a task, and its purpose starts as their title
 
   // Once edited, the purpose is the user's and stops following the ticks.
   await purposeField(page).fill('Get the login form submitting')
-  await stage(page).getByRole('checkbox', { name: 'CSRF token' }).uncheck()
+  await alsoList(page).getByRole('checkbox', { name: 'CSRF token' }).uncheck()
   await expect(purposeField(page)).toHaveValue('Get the login form submitting')
 
   await startButton(page).click()
@@ -52,81 +55,69 @@ test('a block cannot start without a task, and its purpose starts as their title
   await expect(blockTasks(page)).not.toContainText('CSRF token')
 })
 
-test("one dropdown ticks tasks, listed under their intentions and the rest above them", async ({
+test("the purpose heads the prompt, then today's tasks, then All Tasks folded below", async ({
   page,
 }) => {
-  await toPurposePrompt(page)
-  await stage(page).getByRole('button', { name: 'Not yet' }).click()
-
-  // A task put under the intention for the day, on the tasks page.
-  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
-  await addOnTasksPage(page, 'task', 'Work', 'Login form')
-  await page
-    .getByRole('main')
-    .getByLabel("Today's intention for Login form")
-    .selectOption({ label: 'Mono auth' })
-  await page.getByRole('link', { name: 'Back to today' }).click()
+  await openMono(page)
+  await goToStage(page, 'Today')
+  await addTodayTask(page, 'Login form')
+  await addTodayTask(page, 'Session cookie')
+  await addIntention(page, 'Mono auth')
+  await todayList(page).getByRole('button', { name: 'Move Login form', exact: true }).click()
+  await todayList(page)
+    .getByRole('button', { name: 'Move Login form to Mono auth', exact: true })
+    .click()
+  await stage(page).getByRole('button', { name: 'Start the day' }).click()
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
 
-  // Offered under its intention before anything is ticked.
-  const section = stage(page).getByRole('group', { name: 'Mono auth', exact: true })
-  await expect(section.getByRole('checkbox', { name: 'Login form' })).not.toBeChecked()
+  // Today's tasks are offered under their intention, then the rest of today,
+  // and nothing is ticked yet. The backlog is folded.
+  const mono = stage(page).getByRole('group', { name: 'Mono auth', exact: true })
+  await expect(mono.getByRole('checkbox', { name: 'Login form' })).not.toBeChecked()
+  const rest = stage(page).getByRole('list', { name: 'Not grouped', exact: true })
+  await expect(rest.getByRole('checkbox', { name: 'Session cookie' })).toBeVisible()
+  await expect(blockBacklog(page)).toHaveCount(0)
 
-  // One dropdown for every task, which ticks and links nothing.
-  await blockPicker(page).click()
-  await blockPanel(page).getByRole('checkbox', { name: 'Login form' }).check()
-  await blockPanel(page).getByRole('button', { name: 'Add a task to Personal', exact: true }).click()
-  await blockPanel(page).getByLabel('New task in Personal', { exact: true }).fill('Fix the gate')
-  await blockPanel(page).getByLabel('New task in Personal', { exact: true }).press('Enter')
-  await blockPicker(page).click()
-  await expect(section.getByRole('checkbox', { name: 'Login form' })).toBeChecked()
+  await mono.getByRole('checkbox', { name: 'Login form' }).check()
+  await expect(purposeField(page)).toHaveValue('Login form')
 
-  // What is not under an intention comes first, under its own places.
-  const outside = stage(page).getByRole('list', { name: "Tasks outside today's intentions" })
-  await expect(outside).toContainText('Personal')
-  await expect(outside.getByRole('checkbox', { name: 'Fix the gate' })).toBeChecked()
-  expect((await outside.boundingBox())!.y).toBeLessThan((await section.boundingBox())!.y)
+  // Something from outside today, written from All Tasks, is listed apart.
+  await addBlockTask(page, 'Fix the gate', 'Personal')
+  await expect(alsoList(page)).toContainText('Personal')
+  await expect(alsoList(page).getByRole('checkbox', { name: 'Fix the gate' })).toBeChecked()
 
-  // Nothing was linked by choosing it here.
+  // In that order down the prompt, with the purpose over all of it.
+  const y = async (locator: Locator) => (await locator.boundingBox())!.y
+  expect(await y(purposeField(page))).toBeLessThan(await y(mono))
+  expect(await y(mono)).toBeLessThan(await y(alsoList(page)))
+  expect(await y(alsoList(page))).toBeLessThan(await y(blockBacklog(page)))
+
+  // Starting it makes the outside task today's, under no intention, and
+  // groups nothing.
   await startButton(page).click()
   await page.getByRole('link', { name: 'Tasks', exact: true }).click()
-  const today = page.getByRole('main').getByRole('list', { name: 'Today: Mono auth' })
-  await expect(today).toContainText('Login form')
-  await expect(today).not.toContainText('Fix the gate')
+  const today = page.getByRole('main').getByRole('region', { name: 'Today', exact: true })
+  await expect(today.getByRole('region', { name: 'Intention: Mono auth' })).toContainText(
+    'Login form',
+  )
+  await expect(today.getByRole('region', { name: 'Not grouped' })).toContainText('Fix the gate')
 })
 
-test('an intention is put right where it is listed, keeping what was ticked', async ({ page }) => {
-  await toPurposePrompt(page)
-  await addBlockTask(page, 'Login form')
-  await purposeField(page).fill('Get the login form submitting')
-
-  const mine = stage(page).getByRole('region', { name: 'My intentions' })
-  await expect(mine.getByRole('group', { name: 'Mono auth', exact: true })).toBeVisible()
-
-  await mine.getByRole('button', { name: 'Edit intention Mono auth' }).click()
-  await stage(page).getByLabel('This intention', { exact: true }).fill('Mono login')
-  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
-
-  // Still the same prompt: renamed in place, nothing ticked or written lost.
-  await expect(mine.getByRole('group', { name: 'Mono login', exact: true })).toBeVisible()
-  await expect(purposeField(page)).toHaveValue('Get the login form submitting')
-  await expect(stage(page).getByRole('checkbox', { name: 'Login form' })).toBeChecked()
-})
-
-test('a small task from outside the intentions can join a block', async ({ page }) => {
+test('a small task from outside today can join a block', async ({ page }) => {
   await toPurposePrompt(page)
 
-  // Written with no intention, so it lives in the backlog only.
+  // Written from the prompt, and the block never started, so it lives in the
+  // backlog only.
   await addBlockTask(page, 'Reply to Priya')
   await stage(page).getByRole('button', { name: 'Not yet' }).click()
 
-  // Found again with the dropdown's search, and ticked from there.
+  // Found again with the backlog's search, and ticked from there.
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
-  await blockPicker(page).click()
-  await blockPanel(page).getByLabel('Find a task', { exact: true }).fill('priya')
-  await expect(blockPanel(page).getByRole('checkbox')).toHaveCount(1)
-  await blockPanel(page).getByRole('checkbox', { name: 'Reply to Priya' }).check()
-  await blockPicker(page).click()
+  await expect(alsoList(page)).toHaveCount(0)
+  const browser = await openBlockBacklog(page)
+  await browser.getByLabel('Find a task in Tasks for this block', { exact: true }).fill('priya')
+  await expect(browser.getByRole('checkbox')).toHaveCount(1)
+  await browser.getByRole('checkbox', { name: 'Reply to Priya' }).check()
   await startButton(page).click()
   await expect(blockTasks(page)).toContainText('Reply to Priya')
 })
@@ -150,68 +141,56 @@ test('a task ticked during a block stays done, and is not offered again', async 
   // Ending the block is one click, because the tick already happened.
   await stage(page).getByRole('button', { name: 'End early' }).click()
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
-  await blockPicker(page).click()
-  await expect(blockPanel(page).getByRole('checkbox', { name: 'CSRF token' })).toBeVisible()
-  await expect(blockPanel(page).getByRole('checkbox', { name: 'Login form' })).toHaveCount(0)
+  // Both joined today when the block started: one still to do, one crossed out.
+  await expect(stage(page).getByRole('checkbox', { name: 'CSRF token' })).toBeVisible()
+  await expect(stage(page).getByRole('checkbox', { name: 'Login form' })).toHaveCount(0)
+  await expect(stage(page).getByText('Login form', { exact: true })).toHaveCSS(
+    'text-decoration-line',
+    'line-through',
+  )
 })
 
-test('the task dropdown stays on a phone screen, while it is open too', async ({ page }) => {
-  // Regression, twice over. The panel hung from the button's left edge with a
-  // width that only knew the viewport, so on a phone, where the button starts
-  // halfway across, it ran off the right edge and took its controls with it.
-  // Then its placement was measured only as it opened, so a button grown by
-  // the task just chosen, or a phone turned upright, left it off the edge
-  // again.
-  const panel = blockPanel(page)
-  /** The panel's edges and the page's width, against the window as it is now. */
+test('the backlog keeps to a phone screen, as long titles are written into it', async ({
+  page,
+}) => {
+  // Drawn in place, it is as wide as the stage and no wider: nothing in it may
+  // push the page sideways, however long what is written there.
   const overhang = async () => {
     const width = page.viewportSize()!.width
-    const box = (await panel.boundingBox())!
+    const box = (await blockBacklog(page).boundingBox())!
     const scrolled = await page.evaluate(() => document.documentElement.scrollWidth)
     return Math.max(0, -box.x, box.x + box.width - width, scrolled - width)
   }
-  const rightHand = panel.getByRole('button', { name: 'Add a task to Personal', exact: true })
 
   await page.setViewportSize({ width: 375, height: 740 })
   await toPurposePrompt(page)
-  await blockPicker(page).click()
+  const browser = await openBlockBacklog(page)
   expect(await overhang()).toBe(0)
-  await expect(rightHand).toBeInViewport()
 
-  // Choosing a task grows the button's summary; the panel stays open for the
-  // next and keeps to the screen.
-  await panel.getByRole('button', { name: 'Add a task to Work', exact: true }).click()
-  const field = panel.getByLabel('New task in Work', { exact: true })
-  await field.fill('A lengthy task title that makes the picker button grow')
+  await browser.getByRole('button', { name: 'Add a task to Work', exact: true }).click()
+  const field = browser.getByLabel('New task in Work', { exact: true })
+  await field.fill('A lengthy task title that would once have made the picker button grow')
   await field.press('Enter')
-  await expect(blockPicker(page)).toContainText('A lengthy task title')
+  await expect(alsoList(page)).toContainText('A lengthy task title')
   await expect.poll(overhang).toBe(0)
-  await expect(rightHand).toBeInViewport()
 
-  // Opened on its side, then turned upright with the panel still open.
-  await blockPicker(page).click()
+  // Turned on its side and back.
   await page.setViewportSize({ width: 740, height: 375 })
-  await blockPicker(page).click()
-  expect(await overhang()).toBe(0)
+  await expect.poll(overhang).toBe(0)
   await page.setViewportSize({ width: 375, height: 740 })
   await expect.poll(overhang).toBe(0)
-  await expect(rightHand).toBeInViewport()
 })
 
-test('the keyboard stays in the task dropdown as its fields come and go', async ({
-  page,
-}) => {
+test('the keyboard stays in the backlog as its fields come and go', async ({ page }) => {
   // Regression: cancelling a field, keeping a rename or deleting a task took
-  // away the control that had focus and left focus on the page, where the
-  // panel's Escape no longer reached it and nothing could close it.
+  // away the control that had focus and left focus on the page, at the top of
+  // the document, far from where the keyboard was working.
   await toPurposePrompt(page)
-  await blockPicker(page).click()
-  const panel = blockPanel(page)
+  const panel = await openBlockBacklog(page)
   const addToWork = panel.getByRole('button', { name: 'Add a task to Work', exact: true })
   const newTask = panel.getByLabel('New task in Work', { exact: true })
 
-  // A new task's field put away with Escape: back to the + Task that opened
-  // it, with the panel still open.
+  // A new task's field put away with Escape: back to the + Task that opened it.
   await addToWork.press('Enter')
   await expect(newTask).toBeFocused()
   await page.keyboard.press('Escape')
@@ -233,11 +212,6 @@ test('the keyboard stays in the task dropdown as its fields come and go', async 
   await panel.getByRole('button', { name: 'Delete task Final', exact: true }).press('Enter')
   await expect(panel.getByRole('checkbox', { name: 'Final' })).toHaveCount(0)
   await expect(addToWork).toBeFocused()
-
-  // So Escape still reaches the panel, and closes it onto its button.
-  await page.keyboard.press('Escape')
-  await expect(panel).toHaveCount(0)
-  await expect(blockPicker(page)).toBeFocused()
 })
 
 test('the end of a block asks what got done', async ({ page }) => {
@@ -255,12 +229,12 @@ test('the end of a block asks what got done', async ({ page }) => {
 
 /**
  * Work › Mono auth › Login pages holding two tasks, built on the tasks page,
- * then back to a day with one intention and the purpose prompt open.
+ * then back to a day with one other task chosen and the purpose prompt open.
  */
-async function withAuthEpic(page: Parameters<typeof stage>[0]) {
+async function withAuthEpic(page: Page) {
   await openMono(page)
-  await goToStage(page, 'Intentions')
-  await addIntention(page, 'Billing ticket')
+  await goToStage(page, 'Today')
+  await addTodayTask(page, 'Billing ticket')
   await stage(page).getByRole('button', { name: 'Start the day' }).click()
 
   await page.getByRole('link', { name: 'Tasks', exact: true }).click()
@@ -281,13 +255,12 @@ test('ticking a whole outcome picks its tasks, and names the purpose after it', 
 }) => {
   await withAuthEpic(page)
 
-  await blockPicker(page).click()
-  await blockPanel(page).getByRole('checkbox', { name: 'Login form' }).check()
-  await blockPanel(page).getByRole('checkbox', { name: 'Session cookie' }).check()
-  await blockPicker(page).click()
+  const browser = await openBlockBacklog(page)
+  await browser.getByRole('checkbox', { name: 'Login form' }).check()
+  await browser.getByRole('checkbox', { name: 'Session cookie' }).check()
 
   // Its tasks are listed under it, each said once, with its heading a box of its own.
-  const other = stage(page).getByRole('list', { name: "Tasks outside today's intentions" })
+  const other = alsoList(page)
   await expect(other).toContainText('Work › Mono auth › Login pages')
   const whole = other.getByRole('checkbox', { name: 'All of Login pages' })
   await expect(whole).toBeChecked()
@@ -308,11 +281,10 @@ test('ticking a whole outcome picks its tasks, and names the purpose after it', 
 test('a task written on the prompt can be filed straight into an outcome', async ({ page }) => {
   await withAuthEpic(page)
 
-  await blockPicker(page).click()
-  await blockPanel(page).getByRole('button', { name: 'Add a task to Login pages', exact: true }).click()
-  await blockPanel(page).getByLabel('New task in Login pages', { exact: true }).fill('Remember me')
-  await blockPanel(page).getByLabel('New task in Login pages', { exact: true }).press('Enter')
-  await blockPicker(page).click()
+  const browser = await openBlockBacklog(page)
+  await browser.getByRole('button', { name: 'Add a task to Login pages', exact: true }).click()
+  await browser.getByLabel('New task in Login pages', { exact: true }).fill('Remember me')
+  await browser.getByLabel('New task in Login pages', { exact: true }).press('Enter')
   await startButton(page).click()
 
   await page.getByRole('link', { name: 'Tasks', exact: true }).click()
@@ -338,7 +310,7 @@ test('a ticked task deleted in another tab cannot start the block', async ({ pag
   await expect(purposeField(page)).toHaveValue('')
 })
 
-test('a rename in the dropdown closes when its task goes, and does not come back with it', async ({
+test('a rename in the backlog closes when its task goes, and does not come back with it', async ({
   page,
   context,
 }) => {
@@ -347,9 +319,8 @@ test('a rename in the dropdown closes when its task goes, and does not come back
   // back with it and took focus from wherever the user had gone since.
   await withAuthEpic(page)
   await expect.poll(() => storedRecord(page, 'Session cookie')).not.toBeNull()
-  await blockPicker(page).click()
-  const panel = blockPanel(page)
-  const find = panel.getByLabel('Find a task', { exact: true })
+  const panel = await openBlockBacklog(page)
+  const find = panel.getByLabel('Find a task in Tasks for this block', { exact: true })
   const editor = panel.getByLabel('Rename Login form', { exact: true })
 
   await panel.getByRole('button', { name: 'Edit task Login form', exact: true }).press('Enter')
@@ -390,12 +361,11 @@ test('a rename changed under it by another tab keeps the keyboard where it belon
   // task moved from one place to another, drawn again under the new place,
   // mounted its rename there and took focus from the search. And a task
   // deleted while its rename had focus took the field with nobody here asking,
-  // leaving focus on the page where Escape could not close the panel.
+  // leaving focus at the top of the page.
   await withAuthEpic(page)
   await expect.poll(() => storedRecord(page, 'Session cookie')).not.toBeNull()
-  await blockPicker(page).click()
-  const panel = blockPanel(page)
-  const find = panel.getByLabel('Find a task', { exact: true })
+  const panel = await openBlockBacklog(page)
+  const find = panel.getByLabel('Find a task in Tasks for this block', { exact: true })
   const editor = panel.getByLabel('Rename Login form', { exact: true })
   // Which place's list the rename is drawn in: the signal this tab has heard
   // the move, before anything is asserted about focus.
@@ -432,22 +402,18 @@ test('a rename changed under it by another tab keeps the keyboard where it belon
   await expect(editor).toHaveValue('Unfinished rename')
 
   // Deleted while its rename has focus: focus goes to the + Task of the place
-  // it was in, so Escape still reaches the panel and closes it.
+  // it was in.
   await elsewhere.getByRole('button', { name: 'Delete Login form' }).click()
   await expect(editor).toHaveCount(0)
   await expect(
     panel.getByRole('button', { name: 'Add a task to Login pages', exact: true }),
   ).toBeFocused()
-  await page.keyboard.press('Escape')
-  await expect(panel).toHaveCount(0)
-  await expect(blockPicker(page)).toBeFocused()
 })
 
 test('an archived epic takes its tasks out of the prompt', async ({ page }) => {
   await withAuthEpic(page)
-  await blockPicker(page).click()
-  await expect(blockPanel(page).getByRole('checkbox', { name: 'Login form' })).toBeVisible()
-  await blockPicker(page).click()
+  const browser = await openBlockBacklog(page)
+  await expect(browser.getByRole('checkbox', { name: 'Login form' })).toBeVisible()
   await stage(page).getByRole('button', { name: 'Not yet' }).click()
 
   await page.getByRole('link', { name: 'Tasks', exact: true }).click()
@@ -455,7 +421,7 @@ test('an archived epic takes its tasks out of the prompt', async ({ page }) => {
   await page.getByRole('link', { name: 'Back to today' }).click()
 
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
-  await blockPicker(page).click()
-  await expect(blockPanel(page).getByRole('checkbox', { name: 'Login form' })).toHaveCount(0)
-  await expect(blockPanel(page)).not.toContainText('Login pages')
+  await openBlockBacklog(page)
+  await expect(blockBacklog(page).getByRole('checkbox', { name: 'Login form' })).toHaveCount(0)
+  await expect(blockBacklog(page)).not.toContainText('Login pages')
 })

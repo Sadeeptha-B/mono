@@ -69,8 +69,15 @@ export type ExportedShape = PersistedShape & { version: number; tasks?: Exported
  * that predates it reads the intention and drops only the mark, and an edit
  * that only marked it is dropped whole — the day is still the day, with one
  * fewer tick on it. That is not the silent loss a bump exists to refuse.
+ *
+ * v5 added the `today/` events: a day is now answered by the tasks chosen for
+ * it, and an intention only groups some of them. A v4 build would drop those
+ * events and read a v5 day as having chosen nothing, which is the silent loss
+ * again, so it is a bump. No existing event changed shape. A v4 log reads as
+ * it was written, its linked tasks becoming today's because linking now
+ * implies choosing.
  */
-export const SCHEMA_VERSION = 4
+export const SCHEMA_VERSION = 5
 
 /**
  * Read an export. Throws only when the file is not a Mono export, or comes
@@ -126,10 +133,10 @@ export type ImportedFile = ReturnType<typeof readImport>
  * through into this one.
  */
 export function migratePersisted(persisted: unknown, from: number): PersistedShape {
-  // v3 -> v4 only added things, so a v3 log is read exactly as a current one.
-  // This branch is the whole migration, and without it the fall-through below
-  // would throw every existing log away on upgrade.
-  if ((from === SCHEMA_VERSION || from === 3) && isPersisted(persisted)) {
+  // v3 -> v4 and v4 -> v5 only added things, so either log is read exactly as
+  // a current one. This branch is the whole migration, and without it the
+  // fall-through below would throw every existing log away on upgrade.
+  if ((from === SCHEMA_VERSION || from === 4 || from === 3) && isPersisted(persisted)) {
     return {
       events: persisted.events
         .filter(isEventShaped)
@@ -334,6 +341,12 @@ function sanitiseImportedEvent(event: MonoEvent): MonoEvent | null {
       return taskId === null || intentionId === undefined
         ? null
         : { type: event.type, at: event.at, taskId, intentionId }
+    }
+
+    case 'today/taskAdded':
+    case 'today/taskRemoved': {
+      const taskId = sanitiseString(raw.taskId)
+      return taskId === null ? null : { type: event.type, at: event.at, taskId }
     }
   }
 

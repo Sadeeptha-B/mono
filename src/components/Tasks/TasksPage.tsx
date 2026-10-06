@@ -3,15 +3,14 @@
  *
  * A page rather than a panel on the day, for the guide's reason: this is
  * somewhere you go and stay a while, and the stage is for one question at a
- * time. The day only ever sees today's intentions and the tasks a block is for;
+ * time. The day only ever sees today's tasks and the tasks a block is for;
  * filing, renaming and tidying the backlog happens here, away from the timer.
  * `App` swaps the view without unmounting anything, so a block keeps running
  * while you are here, and the header says what the timer would be saying.
  *
- * Two parts, in the order a morning uses them. **My intentions for today** is
- * the day's intentions, each with its tasks under the places they live in —
- * written, edited and deleted here as on the opening question, through the
- * same fields and the same save (`IntentionFields`), and kept in the event
+ * Two parts, in the order a morning uses them. **Today** is the tasks chosen
+ * for the day, gathered under the intentions some of them are carried into —
+ * the same list as on the opening question (`TodayList`), kept in the event
  * log like everything else about the day. **Areas** are the backlog itself, one band
  * each, drawn as a board rather than as a general-purpose tree, because three
  * levels is the whole depth the model allows. A rule splits every band in two.
@@ -32,28 +31,22 @@
  * subtree too, the same way and for good (`isGone`), so it asks first, naming
  * how much will go with it.
  *
- * A task moves by being carried: dragged by its row to any other column, or,
- * from the keyboard or a touch screen, picked up with the grip on its row and
- * put down with the `Move here` that every other column then offers. One
- * piece of state, `Carry`, holds the task in hand either way, so the two
- * cannot disagree about which columns will take it. The drag is the browser's
- * own rather than Motion's: Motion's drag moves an element under the pointer
- * but knows nothing about what it is over, so the columns, the hit-testing and
- * the scrolling at the page's edge would all have been written here, and its
- * drag features would have been one more chunk to load for one page. The
- * native drag brings drop targets and edge scrolling with it, and what it does
- * badly — touch, and anyone not using a pointer — is what the pick-up path is
- * for. Only open tasks are carried, and every column on the page takes one,
- * because every column is a place a task can live.
+ * A task moves by being carried (`carry.tsx`): dragged by its row to any other
+ * column, or, from the keyboard or a touch screen, picked up with the grip on
+ * its row and put down with the `Move here` that every other column then
+ * offers. Only open tasks are carried, and every column on the page takes one,
+ * because every column is a place a task can live. Today's list carries its
+ * own tasks between intentions the same way, with its own hand: a task on the
+ * board is not dragged into Today, it is chosen with the sun on its row.
  *
  * Every edit here is a backlog edit — the task store writes the one record it
- * changed — except linking a task to an intention, or marking one done, which
- * are facts about today and go to the log like the intentions themselves. A
- * task that is dropped or done keeps its link for the day, and the page simply
- * stops listing it as open.
+ * changed — except choosing a task for today, grouping it under an intention,
+ * or marking one done, which are facts about today and go to the log like the
+ * intentions themselves. A task that is dropped or done stays today's, and
+ * today's list shows it crossed out or stops drawing it.
  *
- * Actions are icons (`IconButton`): rename, done, drop, archive, reopen,
- * restore, delete. A column is narrow, and as words they took more of a row
+ * Actions are icons (`IconButton`): today, rename, done, drop, archive,
+ * reopen, restore, delete. A column is narrow, and as words they took more of a row
  * than the title they acted on. Each says in its accessible name what it acts
  * on and shows its verb on hover. The words left are answers to a question —
  * a delete asking about what is inside — and the fields' own `Done` and `Save`,
@@ -62,26 +55,20 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useId,
   useMemo,
   useRef,
   useState,
-  type DragEvent,
   type ReactNode,
-  type RefObject,
 } from 'react'
 
 import { HeaderMark } from '../HeaderMark'
-import { GroupedTasks } from '../GroupedTasks'
 import { HeaderStatus } from '../HeaderStatus'
-import {
-  IntentionDoneToggle,
-  IntentionFields,
-  useIntentionBacklog,
-  useSaveIntention,
-} from '../IntentionFields'
+import { Carry, CarryGrip, CarryStatus, DropZone, MoveHere, useCarriedRow, useCarryState } from '../carry'
+import { TodayCarry, TodayList } from '../TodayList'
 import {
   ArchiveIcon,
   CheckIcon,
@@ -90,6 +77,7 @@ import {
   DropIcon,
   ReopenIcon,
   RestoreIcon,
+  TodayIcon,
 } from '../icons'
 import { StorageWarning } from '../StorageWarning'
 import {
@@ -99,7 +87,6 @@ import {
   GhostButton,
   headerControlClass,
   IconButton,
-  InlineSelect,
   PageLinks,
 } from '../ui'
 import { PopOutButton } from '@/pip/PopOutButton'
@@ -116,9 +103,8 @@ import {
   openTasksUnder,
   type Area,
   type Item,
-  type TaskTreeNode,
 } from '@/domain/tasks'
-import { emptyIntentionDraft, type IntentionDraft } from '@/domain/intentions'
+import { isToday, type Today } from '@/domain/today'
 import type { TimerMode } from '@/domain/time'
 import type { ActiveSegment, Intention, Ms } from '@/domain/types'
 
@@ -137,8 +123,7 @@ export function TasksPage({
 }) {
   const phase = useSession((s) => s.phase)
   const intentions = useSession((s) => s.session.intentions)
-  const taskIntentions = useSession((s) => s.session.taskIntentions)
-  const linkTask = useSession((s) => s.linkTask)
+  const today = useSession((s) => s.session.today)
   const generation = useSession((s) => s.generation)
 
   const hydrated = useTasks((s) => s.hydrated)
@@ -159,58 +144,14 @@ export function TasksPage({
   // fold check for a tick.
   const addFields = useMemo(() => ({ current: addField, claim: setAddField }), [addField])
 
-  const [carrying, setCarrying] = useState<{ id: string; by: CarryMode } | null>(null)
-  const [over, setOver] = useState<string | null>(null)
-  const landed = useRef<string | null>(null)
-  // The task is read back from the backlog rather than kept, so a task in hand
-  // is always where the backlog says it is. One that leaves play while held —
-  // ticked here or in another tab, deleted, its epic finished — is put down,
-  // and for good: hiding it only while it was out of play would hand the old
-  // move back the moment it was reopened, with nobody having picked it up.
-  // Adjusted during render rather than in an effect, as `App` adjusts its own
-  // state, so the stale move is never painted.
-  const heldTask = carrying ? inPlayById.get(carrying.id) : undefined
-  if (carrying && !heldTask) {
-    setCarrying(null)
-    setOver(null)
-  }
-  const carry = useMemo<CarryContext>(() => {
-    const putDown = () => {
-      setCarrying(null)
-      setOver(null)
-    }
-    const held = heldTask && carrying ? { task: heldTask, by: carrying.by } : null
-    return {
-      held,
-      over,
-      hover: setOver,
-      pickUp: (task, by) => {
-        setCarrying({ id: task.id, by })
-        setOver(null)
-      },
-      putDown,
-      moveTo: (parentId) => {
-        if (!held) return
-        moveItem(held.task.id, parentId)
-        // From the keyboard, focus goes with the task to its new column.
-        if (held.by === 'pick') landed.current = held.task.id
-        putDown()
-      },
-      landed,
-    }
-  }, [heldTask, carrying, over, moveItem])
-
-  // Escape puts a picked-up task back down. A drag has its own Escape.
-  const picked = carry.held?.by === 'pick' ? carry.held.task : null
-  const putDown = carry.putDown
-  useEffect(() => {
-    if (!picked) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') putDown()
-    }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [picked, putDown])
+  // The board's hand: a task goes to any column but its own.
+  const find = useCallback((taskId: string) => inPlayById.get(taskId), [inPlayById])
+  const takes = useCallback((task: Item, parentId: string) => task.parentId !== parentId, [])
+  const move = useCallback(
+    (task: Item, parentId: string) => moveItem(task.id, parentId),
+    [moveItem],
+  )
+  const carry = useCarryState({ find, takes, move })
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink lg:h-dvh">
@@ -248,19 +189,14 @@ export function TasksPage({
           ) : (
             <>
               <AddFields.Provider value={addFields}>
-                <Section title="My intentions for today">
-                  {/* Keyed by the session's generation, as the stage is: an
-                      intention being written belongs to one particular day,
+                <Section title="Today">
+                  {/* Keyed by the session's generation, as the stage is: what
+                      is being typed about today belongs to one particular day,
                       and the midnight reset or an import must not carry it into
-                      the next — least of all an edit, which would otherwise be
-                      saved over the intention the import brought in under the
-                      same id. Only this; the backlog's own add fields describe
+                      the next, nor a task half carried between intentions.
+                      Only this; the backlog's own add fields describe
                       long-lived records and keep what is typed in them. */}
-                  <IntentionsToday
-                    key={generation}
-                    intentions={intentions}
-                    taskIntentions={taskIntentions}
-                  />
+                  <TodaySection key={generation} today={today} intentions={intentions} />
                 </Section>
 
                 <Carry.Provider value={carry}>
@@ -269,14 +205,7 @@ export function TasksPage({
                         the control that adds another. */}
                     <div className="mt-8 border-t border-line">
                       {areas.map((area) => (
-                        <AreaBand
-                          key={area.id}
-                          area={area}
-                          items={items}
-                          intentions={intentions}
-                          taskIntentions={taskIntentions}
-                          onLink={linkTask}
-                        />
+                        <AreaBand key={area.id} area={area} items={items} today={today} />
                       ))}
                     </div>
 
@@ -313,6 +242,7 @@ export function TasksPage({
                         </details>
                       )}
                     </div>
+                    <CarryStatus />
                 </Carry.Provider>
               </AddFields.Provider>
             </>
@@ -320,23 +250,6 @@ export function TasksPage({
         </main>
       </div>
 
-      {/* What a pick-up is waiting for, and the way out of it, kept where a
-          thumb can reach it: the column it is looking for may be a long way
-          down the page from the row it left. */}
-      {picked && (
-        <div
-          role="status"
-          className="fixed inset-x-4 bottom-4 z-30 mx-auto flex max-w-md items-center gap-3 rounded-xl border border-muted/70 bg-surface-raised px-4 py-3 text-sm shadow-lg"
-        >
-          <span className="min-w-0 flex-1 text-body">
-            Moving <span className="text-bright">{picked.title}</span>. Choose{' '}
-            <span className="text-deep">Move here</span> where it goes.
-          </span>
-          <TextButton onClick={putDown} label={`Cancel moving ${picked.title}`}>
-            Cancel
-          </TextButton>
-        </div>
-      )}
     </div>
   )
 }
@@ -355,227 +268,45 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 }
 
 /**
- * Today's intentions, each with its tasks, and the form that writes one.
+ * Today on this page: today's list with its intentions (`TodayList`). Tasks
+ * are chosen with the sun on their rows below; carrying between intentions
+ * has its own hand here, apart from the board's.
  *
- * At most one intention form is open at a time — a new one, or an edit drawn
- * in place of the intention it changes — so the draft is one piece of state
- * saying which. A draft aimed at an intention that has since gone (removed on
- * the opening question, say) is no draft at all, and a replaced session drops
- * every draft by remounting this (see where it is drawn). It keeps
- * the page's rule for add fields: opening it folds any other that is empty,
- * and opening another folds it while nothing has been written in it.
+ * The intention field keeps the page's rule for add fields: opening it folds
+ * any other that is empty, and opening another folds it while nothing has been
+ * written in it.
  */
-function IntentionsToday({
-  intentions,
-  taskIntentions,
-}: {
-  intentions: readonly Intention[]
-  taskIntentions: Readonly<Record<string, string>>
-}) {
-  const linkTask = useSession((s) => s.linkTask)
-  const addIntention = useSession((s) => s.addIntention)
-  const updateIntention = useSession((s) => s.updateIntention)
-  const removeIntention = useSession((s) => s.removeIntention)
-  const backlog = useIntentionBacklog(taskIntentions)
-  const save = useSaveIntention({
-    taskIntentions,
-    onAdd: addIntention,
-    onUpdate: updateIntention,
-    onLinkTask: linkTask,
-  })
-
-  const [stored, setDraft] = useState<IntentionDraft | null>(null)
+function TodaySection({ today, intentions }: { today: Today; intentions: readonly Intention[] }) {
+  const [intention, setIntention] = useState<string | null>(null)
   const formId = useId()
   const { current, claim } = useContext(AddFields)
-  // Another field was opened: close this form if nothing has been written in it.
+  // Another field was opened: fold this one if nothing has been written in it.
   useEffect(() => {
-    if (current === null || current === formId) return
-    setDraft((d) => (d && d.editing === null && d.title === '' && d.taskIds.length === 0 ? null : d))
+    if (current !== null && current !== formId) setIntention((t) => (t === '' ? null : t))
   }, [current, formId])
-  const open = (next: IntentionDraft) => {
-    setDraft(next)
-    claim(formId)
-  }
-  const draft =
-    stored && (stored.editing === null || intentions.some((i) => i.id === stored.editing))
-      ? stored
-      : null
-  const adding = draft !== null && draft.editing === null
 
-  const close = () => {
-    setDraft(null)
-    if (current === formId) claim(null)
-  }
-
-  /** Enter keeps a new one and stays open for the next; `Done` keeps it and closes. */
-  const submit = (then: 'next' | 'done') => {
-    if (draft === null || save(draft) === null) return
-    if (then === 'next' && draft.editing === null) setDraft(emptyIntentionDraft)
-    else close()
-  }
-
-  const form = (current: IntentionDraft) => (
-    <form
-      onSubmit={(e) => {
-        e.preventDefault()
-        submit('next')
-      }}
-    >
-      <IntentionFields
-        draft={current}
-        onDraft={setDraft}
+  return (
+    <TodayCarry today={today}>
+      <TodayList
+        today={today}
         intentions={intentions}
-        taskIntentions={taskIntentions}
-        // Opened by a click asking for exactly this form.
-        autoFocus
-        onEscape={close}
+        newIntention={intention}
+        onNewIntention={(next) => {
+          if (intention === null && next !== null) claim(formId)
+          if (next === null && current === formId) claim(null)
+          setIntention(next)
+        }}
+        empty="Nothing chosen for today yet. Choose a task with the sun on its row below."
       />
-      {/* With nothing typed it only closes. */}
-      <GhostButton
-        type="button"
-        onClick={() => (current.title.trim() ? submit('done') : close())}
-        className="mt-3 px-3 py-1.5 text-xs"
-      >
-        Done
-      </GhostButton>
-    </form>
-  )
-
-  return (
-    <div className="flex flex-col gap-5">
-      {intentions.length === 0 && (
-        <p className="text-sm text-muted">
-          No intentions yet. Add one here, or answer the day's third opening question.
-        </p>
-      )}
-      {intentions.map((intention) =>
-        draft?.editing === intention.id ? (
-          <AddFold
-            key={intention.id}
-            title="Edit intention"
-            open
-            onOpen={() => undefined}
-            onCancel={close}
-            cancelLabel={`Cancel editing ${intention.title}`}
-            className="text-sm text-body"
-          >
-            {form(draft)}
-          </AddFold>
-        ) : (
-          <TodayGroup
-            key={intention.id}
-            intention={intention}
-            groups={backlog.group(backlog.tasksUnder(intention.id))}
-            onEdit={() =>
-              open({
-                title: intention.title,
-                taskIds: backlog.tasksUnder(intention.id),
-                editing: intention.id,
-              })
-            }
-            onToggleDone={() => updateIntention(intention.id, { done: intention.done !== true })}
-            onDelete={() => removeIntention(intention.id)}
-            onUnlink={(taskId) => linkTask(taskId, null)}
-          />
-        ),
-      )}
-      <AddFold
-        title="Add intention"
-        open={adding}
-        onOpen={() => open(emptyIntentionDraft)}
-        onCancel={close}
-        cancelLabel="Cancel new intention"
-        className="text-sm text-body"
-      >
-        {adding && form(draft)}
-      </AddFold>
-    </div>
-  )
-}
-
-/**
- * One intention: its title and what can be done to it, and its tasks under the
- * places they live in, each place said once rather than on every task. Marked
- * done, it stays where it is, crossed out, with its tasks still under it.
- */
-function TodayGroup({
-  intention,
-  groups,
-  onToggleDone,
-  onEdit,
-  onDelete,
-  onUnlink,
-}: {
-  intention: Intention
-  groups: readonly TaskTreeNode[]
-  onToggleDone: () => void
-  onEdit: () => void
-  onDelete: () => void
-  onUnlink: (taskId: string) => void
-}) {
-  const done = intention.done === true
-  return (
-    <div className={done ? 'opacity-70' : ''}>
-      <div className="flex items-baseline gap-2">
-        <IntentionDoneToggle intention={intention} onToggle={onToggleDone} />
-        <h3
-          className={`min-w-0 flex-1 text-sm wrap-break-word ${
-            done ? 'text-muted line-through' : 'text-bright'
-          }`}
-        >
-          {intention.title}
-        </h3>
-        <IconButton onClick={onEdit} label={`Edit intention ${intention.title}`} hint="Edit">
-          <EditGlyph />
-        </IconButton>
-        {/* At once, as on the opening question: its tasks stay in the backlog,
-            only their place under it goes. */}
-        <IconButton
-          danger
-          onClick={onDelete}
-          label={`Delete intention ${intention.title}`}
-          hint="Delete"
-        >
-          <DeleteIcon />
-        </IconButton>
-      </div>
-      {groups.length === 0 ? (
-        <p className="mt-1 text-xs text-muted">
-          Nothing open under this one. Edit it to choose tasks, or put one here from its row below.
-        </p>
-      ) : (
-        <GroupedTasks
-          label={`Today: ${intention.title}`}
-          groups={groups}
-          className="mt-1.5"
-          renderTask={(task) => (
-            <div className="flex items-center justify-between gap-3 text-sm">
-              <span className="min-w-0 truncate text-body">{task.title}</span>
-              {/* Out of the intention, not out of the backlog: the task stays
-                  in its column below. */}
-              <button
-                type="button"
-                onClick={() => onUnlink(task.id)}
-                aria-label={`Take ${task.title} out of ${intention.title}`}
-                title="Not today"
-                className="shrink-0 px-1 text-muted transition hover:text-bright"
-              >
-                ×
-              </button>
-            </div>
-          )}
-        />
-      )}
-    </div>
+    </TodayCarry>
   )
 }
 
 /** Shared down the tree: everything a task row or a card needs to act. */
 type TreeProps = {
   items: readonly Item[]
-  intentions: readonly Intention[]
-  taskIntentions: Readonly<Record<string, string>>
-  onLink: (taskId: string, intentionId: string | null) => void
+  /** Today's tasks, for the sun on each row. */
+  today: Today
 }
 
 /**
@@ -659,7 +390,7 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
 
       <Row side={<h3 className="text-sm text-body md:pt-2">Inbox</h3>}>
         <Board>
-          <DropZone parent={area.id} className="min-w-0">
+          <DropZone target={area.id} className="min-w-0">
             <TaskList
               parent={area.id}
               name={area.name}
@@ -747,7 +478,7 @@ function EpicRow({ epic, ...tree }: TreeProps & { epic: Item }) {
             }
           />
         </div>
-        <DropZone parent={epic.id} className="min-w-0">
+        <DropZone target={epic.id} className="min-w-0">
           <TaskList
             parent={epic.id}
             name={epic.title}
@@ -774,7 +505,7 @@ function EpicRow({ epic, ...tree }: TreeProps & { epic: Item }) {
 function OutcomeColumn({ outcome, ...tree }: TreeProps & { outcome: Item }) {
   return (
     <section aria-label={`Outcome: ${outcome.title}`} className="min-w-0">
-      <DropZone parent={outcome.id} className="flex flex-col gap-2">
+      <DropZone target={outcome.id} className="flex flex-col gap-2">
         <ContainerCard item={outcome} allItems={tree.items} />
         <TaskList
           parent={outcome.id}
@@ -870,19 +601,13 @@ function TaskList({
 
   return (
     <>
-      <MoveHere parent={parent} name={name} />
+      <MoveHere target={parent} name={name} />
       {open.length === 0 ? (
         <p className="text-sm text-muted">{empty}</p>
       ) : (
         <ul aria-label={listLabel} className="flex flex-col gap-2">
           {open.map((task) => (
-            <TaskRow
-              key={task.id}
-              task={task}
-              intentions={tree.intentions}
-              intentionId={tree.taskIntentions[task.id] ?? null}
-              onLink={(id) => tree.onLink(task.id, id)}
-            />
+            <TaskRow key={task.id} task={task} chosen={isToday(tree.today, task.id)} />
           ))}
         </ul>
       )}
@@ -1038,187 +763,41 @@ function AddForm({
   )
 }
 
-/** How a task is being carried: under the pointer, or picked up to be put down. */
-type CarryMode = 'drag' | 'pick'
-
 /**
- * The task in hand, page-wide, and the verbs that carry it.
- *
- * A drag and a pick-up are the same move begun two ways, so they share this
- * state: whichever started it, the columns that will take the task are the
- * same ones, and putting it down is the same write.
- */
-type CarryContext = {
-  held: { task: Item; by: CarryMode } | null
-  /** The column a drag is over, so only that one lights up. */
-  over: string | null
-  hover: (parentId: string | null | ((current: string | null) => string | null)) => void
-  pickUp: (task: Item, by: CarryMode) => void
-  putDown: () => void
-  /** Put the task in hand under `parentId`, and let go of it. */
-  moveTo: (parentId: string) => void
-  /** The task a pick-up just put down, which takes focus when it lands. */
-  landed: RefObject<string | null>
-}
-
-const Carry = createContext<CarryContext>({
-  held: null,
-  over: null,
-  hover: () => undefined,
-  pickUp: () => undefined,
-  putDown: () => undefined,
-  moveTo: () => undefined,
-  landed: { current: null },
-})
-
-/** Whether the task in hand can go under `parent`: anywhere but where it is. */
-const takes = (held: CarryContext['held'], parent: string): held is NonNullable<CarryContext['held']> =>
-  held !== null && held.task.parentId !== parent
-
-/**
- * A column that takes a carried task, drawn as one while there is one to take:
- * outlined while a task is in hand, lit while a drag is over it.
- *
- * The outline is an outline rather than a border so that showing it moves
- * nothing. The drag begins with this state changing, and a column that grew a
- * border would shift the page under the pointer mid-gesture. A drag from
- * outside the page carries no task, so no column answers it.
- */
-function DropZone({
-  parent,
-  className = '',
-  children,
-}: {
-  parent: string
-  className?: string
-  children: ReactNode
-}) {
-  const { held, over, hover, moveTo } = useContext(Carry)
-  const open = takes(held, parent)
-  const lit = open && over === parent
-
-  const accept = (e: DragEvent) => {
-    if (!open || held.by !== 'drag') return
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-    if (over !== parent) hover(parent)
-  }
-
-  return (
-    <div
-      onDragEnter={accept}
-      onDragOver={accept}
-      onDragLeave={(e) => {
-        // Leaving for one of its own children is not leaving.
-        if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
-        hover((current) => (current === parent ? null : current))
-      }}
-      onDrop={(e) => {
-        if (!open) return
-        e.preventDefault()
-        moveTo(parent)
-      }}
-      className={`rounded-xl outline-offset-4 ${
-        lit
-          ? 'bg-surface/60 outline-2 outline-deep'
-          : open
-            ? 'outline-1 outline-muted/70 outline-dashed'
-            : ''
-      } ${className}`}
-    >
-      {children}
-    </div>
-  )
-}
-
-/**
- * Where a picked-up task can be put down: a button at the head of every column
- * that would take it. Only for a pick-up — a drag has the column itself.
- */
-function MoveHere({ parent, name }: { parent: string; name: string }) {
-  const { held, moveTo } = useContext(Carry)
-  if (!takes(held, parent) || held.by !== 'pick') return null
-  return (
-    <button
-      type="button"
-      onClick={() => moveTo(parent)}
-      aria-label={`Move ${held.task.title} to ${name}`}
-      className="mb-2 w-full rounded-lg border border-dashed border-deep/70 px-3 py-2 text-left text-xs text-deep transition hover:bg-surface-raised"
-    >
-      Move here
-    </button>
-  )
-}
-
-/**
- * One open task: tick it, rename it, put it under one of today's intentions,
- * carry it to any other column, drop it, or delete it.
+ * One open task: tick it, rename it, choose it for today, carry it to any
+ * other column, drop it, or delete it.
  *
  * The whole row drags, which is what a card on a board invites; the grip is
  * where it says so, and the button that picks it up without a pointer. A row
  * being renamed does not drag, so that selecting its text selects text.
  *
+ * The sun chooses it for today and takes it out again. Which intention it is
+ * under is today's list's business, not the row's: grouping is done where the
+ * groups are.
+ *
  * Drop and delete are different on purpose. Dropping is deciding not to do
  * it, and it stays in the finished list as a decision; deleting is a mistake
  * being taken back, and leaves only a tombstone the page never shows.
  */
-function TaskRow({
-  task,
-  intentions,
-  intentionId,
-  onLink,
-}: {
-  task: Item
-  intentions: readonly Intention[]
-  intentionId: string | null
-  onLink: (intentionId: string | null) => void
-}) {
+function TaskRow({ task, chosen }: { task: Item; chosen: boolean }) {
   const completeItem = useTasks((s) => s.completeItem)
   const renameItem = useTasks((s) => s.renameItem)
   const dropItem = useTasks((s) => s.dropItem)
   const deleteItem = useTasks((s) => s.deleteItem)
+  const addToToday = useSession((s) => s.addToToday)
+  const removeFromToday = useSession((s) => s.removeFromToday)
   const [renaming, setRenaming] = useState<string | null>(null)
-  const { held, pickUp, putDown, landed } = useContext(Carry)
-  const picked = held?.task.id === task.id && held.by === 'pick'
-
-  // A row mounts afresh in the column it was moved to; the one a pick-up just
-  // put down takes focus there, so the keyboard ends where the task did.
-  const grip = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (landed.current !== task.id) return
-    landed.current = null
-    grip.current?.focus()
-  }, [landed, task.id])
+  const { picked, dragProps } = useCarriedRow(task, renaming === null)
 
   return (
     <li
-      draggable={renaming === null}
-      onDragStart={(e) => {
-        e.dataTransfer.effectAllowed = 'move'
-        // Firefox starts no drag without data, and a title is what a drag
-        // carried out of the page would sensibly drop as.
-        e.dataTransfer.setData('text/plain', task.title)
-        pickUp(task, 'drag')
-      }}
-      onDragEnd={putDown}
+      {...dragProps}
       className={`rounded-lg border px-3 py-2 ${
         picked ? 'border-dashed border-deep/70 bg-surface/60' : 'border-muted/70'
       }`}
     >
       <div className="flex items-start gap-2">
-        <button
-          ref={grip}
-          type="button"
-          onClick={() => (picked ? putDown() : pickUp(task, 'pick'))}
-          aria-label={`Move ${task.title}`}
-          aria-pressed={picked}
-          title="Drag to move, or click to pick up"
-          className={`-ml-1.5 mt-0.5 shrink-0 cursor-grab rounded px-0.5 py-0.5 transition hover:text-bright active:cursor-grabbing ${
-            picked ? 'text-deep' : 'text-muted'
-          }`}
-        >
-          <GripGlyph />
-        </button>
+        <CarryGrip task={task} className="-ml-1.5 mt-0.5" />
         {/* Level with the first line of the title, which now wraps: a column
             is too narrow to cut a title short and still say which task it is. */}
         <input
@@ -1256,18 +835,23 @@ function TaskRow({
       </div>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-9 text-xs">
-        {intentions.length > 0 && (
-          <InlineSelect
-            label={`Today's intention for ${task.title}`}
-            prefix="Intention:"
-            value={intentionId ?? ''}
-            onChange={(value) => onLink(value === '' ? null : value)}
-            options={[
-              { value: '', name: '—' },
-              ...intentions.map((i) => ({ value: i.id, name: i.title })),
-            ]}
-          />
-        )}
+        <span className="-my-1 -ml-1.5 flex">
+          <button
+            type="button"
+            onClick={() => (chosen ? removeFromToday(task.id) : addToToday(task.id))}
+            // A toggle keeps one name and says its state by being pressed;
+            // `Take … out of today` is the × in today's own list.
+            aria-label={`${task.title} for today`}
+            aria-pressed={chosen}
+            title={chosen ? 'Today — take it out' : 'Add to today'}
+            className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1 transition hover:bg-surface-raised hover:text-bright ${
+              chosen ? 'text-deep' : 'text-muted'
+            }`}
+          >
+            <TodayIcon chosen={chosen} />
+            {chosen && <span>Today</span>}
+          </button>
+        </span>
         <span className="-my-1 -mr-1.5 ml-auto flex">
           <IconButton onClick={() => dropItem(task.id)} label={`Drop ${task.title}`} hint="Drop">
             <DropIcon />
@@ -1278,24 +862,6 @@ function TaskRow({
         </span>
       </div>
     </li>
-  )
-}
-
-/**
- * Six dots in two columns: the mark that says a row can be picked up. Drawn
- * rather than typed, because the braille character that looks like it is read
- * aloud as braille.
- */
-function GripGlyph() {
-  return (
-    <svg aria-hidden="true" viewBox="0 0 8 12" width="8" height="12" fill="currentColor">
-      {[2, 6, 10].map((y) => (
-        <g key={y}>
-          <circle cx="2" cy={y} r="1" />
-          <circle cx="6" cy={y} r="1" />
-        </g>
-      ))}
-    </svg>
   )
 }
 

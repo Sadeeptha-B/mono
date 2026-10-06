@@ -32,9 +32,11 @@ import {
 } from '@/components/breakCost'
 import { BlockTasks } from '@/components/BlockTasks'
 import { QuestionClock } from '@/components/QuestionClock'
+import { useTodayBacklog } from '@/components/useTodayBacklog'
 import { GhostButton, PrimaryButton } from '@/components/ui'
 import { timerFace } from '@/components/timerFace'
 import { formatClock, formatDuration, type TimerMode } from '@/domain/time'
+import type { Today } from '@/domain/today'
 import type {
   ActiveSegment,
   BlockKind,
@@ -207,8 +209,8 @@ export function MiniNothingFits() {
 /**
  * "One thing", out here — as far as it can be answered out here.
  *
- * Naming a block now starts with picking its tasks, from today's intentions and
- * the backlog, or writing one down. That is a list to browse and a form to
+ * Naming a block now starts with picking its tasks, from today's and the
+ * backlog's, or writing one down. That is a list to browse and a form to
  * fill, and it needs the room the tab has; squeezed into this window it would be
  * the one panel you had to scroll to answer. So this says where the question is
  * and keeps the one answer that needs no list: not starting after all.
@@ -251,7 +253,7 @@ export function MiniPickInTab({
       <MiniPrompt
         eyebrow={blockKind === 'deep' ? 'Deep block' : 'Short block'}
         title={`Decide what the next ${minutes} minutes are for`}
-        detail="Pick this block's tasks in the tab, where your intentions are."
+        detail="Pick this block's tasks in the tab, where today's tasks are."
         aside={
           <QuestionClock
             now={now}
@@ -279,18 +281,18 @@ export function MiniPickInTab({
  * The opening questions, out here as the stage is asking them.
  *
  * None of them is answered here. Hours and commitments need the calendar drawn
- * beside them, and intentions are written with tasks chosen from the backlog,
- * and this window has room for neither. What it can do is say where the answer
- * stands — what is fixed, which hours, what is named so far — so a glance at it
- * agrees with the tab, and offer the way back to the tab to change it.
+ * beside them, and today's tasks are chosen from the backlog, and this window
+ * has room for neither. What it can do is say where the answer stands — what
+ * is fixed, which hours, how much is chosen so far — so a glance at it agrees
+ * with the tab, and offer the way back to the tab to change it.
  *
- * The intentions question also brings its timer, which is the part worth
- * keeping in view: deciding what a day is for is evaluative work, and the way
- * it goes wrong is quietly turning into something else.
+ * Today's question also brings its timer, which is the part worth keeping in
+ * view: deciding what a day is for is evaluative work, and the way it goes
+ * wrong is quietly turning into something else.
  *
  * The titles are the stage's own, so the two windows ask the same question in
- * the same words; the intentions one is said as the purpose prompt's is out
- * here, as something to decide.
+ * the same words; today's is said as the purpose prompt's is out here, as
+ * something to decide.
  */
 export function MiniSetup({
   stage,
@@ -299,6 +301,7 @@ export function MiniSetup({
   commitments,
   regions,
   intentions,
+  today,
   timer,
   timerMinutes,
   onStartTimer,
@@ -311,7 +314,8 @@ export function MiniSetup({
   /** Today's hours as the calendar draws them, an unsaved draft included. */
   regions: readonly WorkRegion[]
   intentions: readonly Intention[]
-  /** The intentions question's timer. */
+  today: Today
+  /** Today's question's timer. */
   timer: { endsAt: Ms } | null
   /** The setting, for the label on the play button. */
   timerMinutes: number
@@ -319,6 +323,7 @@ export function MiniSetup({
   onOpenTab: () => void
 }) {
   const eyebrow = revisiting ? 'Changing today' : 'To begin'
+  const chosen = useTodayBacklog(today).chosen.length
 
   return (
     <div>
@@ -351,20 +356,16 @@ export function MiniSetup({
       ) : (
         <MiniPrompt
           eyebrow={eyebrow}
-          title="Decide what today is for"
-          detail={
-            intentions.length === 0
-              ? 'Name your intentions in the tab, with the tasks under each.'
-              : `Named so far: ${intentions.map((i) => i.title).join(', ')}.`
-          }
+          title="Choose today's tasks"
+          detail={todayDetail(chosen, intentions)}
           aside={
             <QuestionClock
               now={now}
               timer={timer}
               minutes={timerMinutes}
               onStart={onStartTimer}
-              timeLeftLabel="Time left for intentions"
-              hint="Left to name what today is for"
+              timeLeftLabel="Time left to choose today's tasks"
+              hint="Left to choose what today is for"
             />
           }
         />
@@ -523,4 +524,13 @@ export function MiniAway({
       </Row>
     </div>
   )
+}
+
+/** Where today's answer stands, as a line: how many tasks, and under which names. */
+function todayDetail(chosen: number, intentions: readonly Intention[]): string {
+  if (chosen === 0) return 'Choose the tasks you are working on today in the tab.'
+  const tasks = `${chosen} task${chosen === 1 ? '' : 's'} chosen so far`
+  return intentions.length === 0
+    ? `${tasks}.`
+    : `${tasks}, grouped as ${intentions.map((i) => i.title).join(', ')}.`
 }

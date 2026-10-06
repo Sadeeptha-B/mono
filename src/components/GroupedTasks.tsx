@@ -1,11 +1,12 @@
 /**
  * Tasks under the places they live in, each place said once.
  *
- * How an intention's tasks are shown on the tasks page and on the opening
- * question alike, from the same pruned tree (`groupTasks`). A list of tasks
- * each carrying its own path said "Work › Mono auth › Login pages" again for
- * every task in that outcome; here the place heads its tasks, and a task from
- * another area simply sits under that area too.
+ * How today's tasks and an intention's are shown — on the opening question,
+ * the purpose prompt and the tasks page alike — from the same pruned tree
+ * (`groupTasks`). A list of tasks each carrying its own path said "Work › Mono
+ * auth › Login pages" again for every task in that outcome; here the place
+ * heads its tasks, and a task from another area simply sits under that area
+ * too.
  *
  * A place holding nothing of its own and only one place beneath it is said on
  * one line with that place — `Mono auth › Login pages` — rather than as a
@@ -15,6 +16,10 @@
  * A place's heading is its line of names unless the caller draws it: the
  * purpose prompt puts a checkbox on an outcome's heading that ticks every task
  * under it in that list.
+ *
+ * `gutter` widens the space between a guide line and the rows it holds, for a
+ * caller that hangs something in it: today's list hangs each task's grip
+ * there, so a task's title still starts where a place's name beside it does.
  */
 
 import type { ReactNode } from 'react'
@@ -26,6 +31,7 @@ export function GroupedTasks({
   label,
   renderTask,
   renderPlace,
+  gutter = 'narrow',
   className = '',
 }: {
   groups: readonly TaskTreeNode[]
@@ -35,6 +41,8 @@ export function GroupedTasks({
   renderTask: (task: Item) => ReactNode
   /** A place's heading, given its node and its line of names; the line itself when absent. */
   renderPlace?: (node: TaskTreeNode, line: string) => ReactNode
+  /** Room between a guide line and its rows: `wide` for something hung there. */
+  gutter?: 'narrow' | 'wide'
   className?: string
 }) {
   return (
@@ -46,6 +54,7 @@ export function GroupedTasks({
           above={[]}
           renderTask={renderTask}
           renderPlace={renderPlace}
+          gutter={gutter}
         />
       ))}
     </ul>
@@ -57,12 +66,14 @@ function Group({
   above,
   renderTask,
   renderPlace,
+  gutter,
 }: {
   node: TaskTreeNode
   /** Places folded into this one's line, outermost first. */
   above: readonly string[]
   renderTask: (task: Item) => ReactNode
   renderPlace: ((node: TaskTreeNode, line: string) => ReactNode) | undefined
+  gutter: 'narrow' | 'wide'
 }) {
   const only = node.children[0]
   if (node.tasks.length === 0 && node.children.length === 1 && only) {
@@ -72,6 +83,7 @@ function Group({
         above={[...above, node.name]}
         renderTask={renderTask}
         renderPlace={renderPlace}
+        gutter={gutter}
       />
     )
   }
@@ -82,7 +94,11 @@ function Group({
       <div className={`truncate text-xs ${top ? 'text-body' : 'text-muted'}`}>
         {renderPlace ? renderPlace(node, line) : line}
       </div>
-      <ul className="mt-1 ml-1 flex flex-col gap-1 border-l border-line pl-3">
+      <ul
+        className={`mt-1 ml-1 flex flex-col gap-1 border-l border-line ${
+          gutter === 'wide' ? 'pl-5' : 'pl-3'
+        }`}
+      >
         {node.children.map((child) => (
           <Group
             key={child.id}
@@ -90,6 +106,7 @@ function Group({
             above={[]}
             renderTask={renderTask}
             renderPlace={renderPlace}
+            gutter={gutter}
           />
         ))}
         {node.tasks.map((task) => (

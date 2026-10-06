@@ -39,6 +39,7 @@ import { GhostButton } from '@/components/ui'
 import { AmbienceButton } from '@/ambient/AmbienceButton'
 import { formatClock, formatDuration } from '@/domain/time'
 import { DAY_HASH } from '@/hooks/useRoute'
+import type { Today } from '@/domain/today'
 import type { TimerMode } from '@/domain/time'
 import type { Phase } from '@/domain/machine'
 import type { DayProgress } from '@/domain/dayProgress'
@@ -72,9 +73,11 @@ type Props = {
   commitments: readonly Commitment[]
   regions: readonly WorkRegion[]
   intentions: readonly Intention[]
-  /** The intentions question's timer, which `App` holds rather than the phase. */
-  intentionTimer: { endsAt: Ms } | null
-  onStartIntentionTimer: () => void
+  /** Today's tasks, each with its intention or none. */
+  today: Today
+  /** Today's question's timer, which `App` holds rather than the phase. */
+  todayTimer: { endsAt: Ms } | null
+  onStartTodayTimer: () => void
   onStartDeciding: () => void
   onStartBlock: (kind: BlockKind) => void
   onAbandon: () => void
@@ -209,9 +212,10 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
           commitments={props.commitments}
           regions={props.regions}
           intentions={props.intentions}
-          timer={props.intentionTimer}
+          today={props.today}
+          timer={props.todayTimer}
           timerMinutes={settings.intentionMinutes}
-          onStartTimer={props.onStartIntentionTimer}
+          onStartTimer={props.onStartTodayTimer}
           onOpenTab={openDayInTab}
         />
       )
@@ -238,8 +242,8 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
       )
 
     case 'purpose':
-      // Picking a block's tasks happens in the tab, which has the backlog and
-      // today's intentions to pick from. Not starting at all is still
+      // Picking a block's tasks happens in the tab, which has today's tasks
+      // and the backlog to pick from. Not starting at all is still
       // answerable here, and so is taking a few minutes to decide.
       return (
         <MiniPickInTab

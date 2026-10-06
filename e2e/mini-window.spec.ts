@@ -5,6 +5,7 @@ import { PALETTES } from '../src/ambient/palette.ts'
 import {
   addBlockTask,
   addIntention,
+  addTodayTask,
   goToStage,
   openMono,
   rgb,
@@ -235,10 +236,12 @@ test('the pop-out follows the opening questions, with their answers so far', asy
   await expect(mini.getByRole('heading', { name: 'Are these your hours today?' })).toBeVisible()
   await expect(mini.getByText('9:00 AM–6:00 PM')).toBeVisible()
 
-  await goToStage(page, 'Intentions')
-  await expect(mini.getByRole('heading', { name: 'Decide what today is for' })).toBeVisible()
-  await addIntention(page, 'Ship the planner')
-  await expect(mini.getByText('Named so far: Ship the planner.')).toBeVisible()
+  await goToStage(page, 'Today')
+  await expect(mini.getByRole('heading', { name: "Choose today's tasks" })).toBeVisible()
+  await addTodayTask(page, 'Ship the planner')
+  await expect(mini.getByText('1 task chosen so far.')).toBeVisible()
+  await addIntention(page, 'The planner')
+  await expect(mini.getByText('1 task chosen so far, grouped as The planner.')).toBeVisible()
 
   // Answered, the window follows the day into being ready…
   await stage(page).getByRole('button', { name: 'Start the day' }).click()
@@ -418,21 +421,21 @@ test("a question's timer brings the pop-out with it, by default", async ({ page 
   await openMono(page)
   await expect(page.locator(MINI)).toHaveCount(0)
 
-  // The intentions timer starts by itself on the first visit, so the click that
-  // shows the question is the one that brings the window, with the clock in it.
-  await goToStage(page, 'Intentions')
+  // Today's timer starts by itself on the first visit, so the click that shows
+  // the question is the one that brings the window, with the clock in it.
+  await goToStage(page, 'Today')
   const mini = page.frameLocator(MINI)
-  await expect(mini.getByRole('heading', { name: 'Decide what today is for' })).toBeVisible()
-  await expect(mini.getByLabel('Time left for intentions')).toHaveText('5:00')
+  await expect(mini.getByRole('heading', { name: "Choose today's tasks" })).toBeVisible()
+  await expect(mini.getByLabel("Time left to choose today's tasks")).toHaveText('5:00')
   await page.clock.fastForward('05:00')
   await expect(mini.getByText("Time's up")).toBeVisible()
 
   // Another round from out here runs on the stage too.
   await mini.getByRole('button', { name: 'Take another 5 mins' }).click()
-  await expect(stage(page).getByLabel('Time left for intentions')).toHaveText('5:00')
+  await expect(stage(page).getByLabel("Time left to choose today's tasks")).toHaveText('5:00')
 
   // The purpose prompt's few minutes bring it the same way.
-  await addIntention(page, 'Ship the planner')
+  await addTodayTask(page, 'Ship the planner')
   await stage(page).getByRole('button', { name: 'Start the day' }).click()
   await page.getByRole('button', { name: 'Close pop-out' }).click()
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
