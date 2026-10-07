@@ -287,7 +287,7 @@ test('an awkwardly sized pop-out offers to return to its opening size', async ({
   const mini = page.frameLocator(MINI)
   const reset = mini.getByRole('button', { name: 'Reset size' })
   await expect(frame).toHaveCSS('width', '470px')
-  await expect(frame).toHaveCSS('height', '210px')
+  await expect(frame).toHaveCSS('height', '240px')
   await expect(reset).toHaveCount(0)
   const openingOverflow = await mini.locator('.mono-scroll').evaluate(
     (scroller) => scroller.scrollHeight - scroller.clientHeight,
@@ -301,17 +301,17 @@ test('an awkwardly sized pop-out offers to return to its opening size', async ({
   await expect(reset).toBeVisible()
   await reset.click()
   await expect(frame).toHaveCSS('width', '470px')
-  await expect(frame).toHaveCSS('height', '210px')
+  await expect(frame).toHaveCSS('height', '240px')
   await expect(reset).toHaveCount(0)
 
   // A small trim from the chosen opening height is still within the preferred
   // range, so it should not offer a rescue action prematurely.
   await frame.evaluate((el) => {
-    el.style.height = '180px'
+    el.style.height = '220px'
   })
   await expect(reset).toHaveCount(0)
   await frame.evaluate((el) => {
-    el.style.height = '210px'
+    el.style.height = '240px'
   })
 
   // A visible locator is not enough here: Playwright can scroll a clipped
@@ -341,7 +341,7 @@ test('an awkwardly sized pop-out offers to return to its opening size', async ({
 
   await reset.click()
   await expect(frame).toHaveCSS('width', '470px')
-  await expect(frame).toHaveCSS('height', '210px')
+  await expect(frame).toHaveCSS('height', '240px')
   await expect(reset).toHaveCount(0)
 })
 
@@ -503,4 +503,112 @@ test('ambience is silent by default and the mini control shares its mute', async
   await expect(stage(page).getByRole('button', { name: 'Mute ambience' })).toBeVisible()
   await mini.getByRole('button', { name: 'Mute ambience' }).click()
   await expect(stage(page).getByRole('button', { name: 'Resume ambience' })).toBeVisible()
+})
+
+test('a log and an urge written in the pop-out land on the block in the tab', async ({ page }) => {
+  await stubMiniWindow(page)
+  await openMono(page)
+  await shapeDayInTab(page)
+  await startBlock(page, 'Write the migration')
+
+  const mini = page.frameLocator(MINI)
+  // Long enough that its card is taller than the timer's band above the strip.
+  const line =
+    'Distracted by mail, then by the thread it started, then by a reply to a reply ' +
+    'that did not need reading before the migration was done'
+  // The field is here because this is the window in view while the work is
+  // somewhere else; the list of what has been written is not.
+  await mini.getByRole('button', { name: 'Write a log' }).click()
+  const log = mini.getByLabel('Log', { exact: true })
+  await log.fill(line)
+  await log.press('Enter')
+  await mini.getByRole('button', { name: 'Count an urge' }).click()
+  await expect(mini.getByText('1 logged')).toBeVisible()
+  await expect(mini.getByRole('list', { name: 'Logs in this block' })).toHaveCount(0)
+  // Across the window, the block as the calendar draws it, for the sense of
+  // how much of it is gone.
+  await expect(mini.getByRole('group', { name: 'Deep block from 2:00 PM to 2:45 PM' })).toBeVisible()
+  // Its log is a mark that opens on hover, as on the calendar.
+  await mini.getByRole('button', { name: 'Log at 2:00 PM', exact: true }).hover()
+  await expect(mini.getByText(line, { exact: true })).toBeVisible()
+  // The card opens upward into a body that scrolls, which clips whatever rises
+  // out of it; a long log scrolls inside the card instead, so the card's top,
+  // where its actions are, is still inside the window.
+  const edit = mini.getByRole('button', { name: 'Edit log at 2:00 PM' })
+  await expect(edit).toBeVisible()
+  const body = await mini.locator('.mono-scroll').boundingBox()
+  const actions = await edit.boundingBox()
+  expect(actions!.y).toBeGreaterThanOrEqual(body!.y)
+
+  // One store, two documents.
+  await expect(
+    stage(page).getByRole('list', { name: 'Logs in this block' }),
+  ).toContainText(line)
+  await expect(
+    stage(page).getByRole('group', { name: 'Urges' }).locator('[aria-live]'),
+  ).toHaveText('1')
+})
+
+test("a log's card stays inside a narrow pop-out", async ({ page }) => {
+  // Regression: a card opened from the middle of the strip kept its full
+  // width, and in a window this narrow its edit and delete fell off the side.
+  await stubMiniWindow(page)
+  await openMono(page)
+  await shapeDayInTab(page)
+  await startBlock(page, 'Write the migration')
+  await page.clock.fastForward('20:00')
+
+  const mini = page.frameLocator(MINI)
+  await mini.getByRole('button', { name: 'Write a log' }).click()
+  await mini.getByLabel('Log', { exact: true }).fill('Halfway, and the schema is done')
+  await mini.getByLabel('Log', { exact: true }).press('Enter')
+  await page.locator(MINI).evaluate((el) => {
+    el.style.width = '320px'
+  })
+
+  await mini.getByRole('button', { name: 'Log at 2:20 PM', exact: true }).hover()
+  const body = (await mini.locator('.mono-scroll').boundingBox())!
+  for (const name of ['Edit log at 2:20 PM', 'Delete log at 2:20 PM']) {
+    const control = mini.getByRole('button', { name })
+    await expect(control).toBeVisible()
+    const box = (await control.boundingBox())!
+    expect(box.x).toBeGreaterThanOrEqual(body.x)
+    expect(box.x + box.width).toBeLessThanOrEqual(body.x + body.width)
+  }
+})
+
+test("a log's card stays in view in a short pop-out scrolled to its strip", async ({ page }) => {
+  // Regression: a card always opened upward, as tall as the timer's band, so
+  // with the body scrolled down to the strip its edit and delete rose out of
+  // view where no scrolling reaches.
+  await stubMiniWindow(page)
+  await openMono(page)
+  await shapeDayInTab(page)
+  await startBlock(page, 'Write the migration')
+  await page.clock.fastForward('20:00')
+
+  const mini = page.frameLocator(MINI)
+  await mini.getByRole('button', { name: 'Write a log' }).click()
+  await mini
+    .getByLabel('Log', { exact: true })
+    .fill('Halfway, and the schema is done, though the indexes will take the rest of it')
+  await mini.getByLabel('Log', { exact: true }).press('Enter')
+  await page.locator(MINI).evaluate((el) => {
+    el.style.width = '320px'
+    el.style.height = '160px'
+  })
+
+  const mark = mini.getByRole('button', { name: 'Log at 2:20 PM', exact: true })
+  await mark.scrollIntoViewIfNeeded()
+  await mark.hover()
+  const body = (await mini.locator('.mono-scroll').boundingBox())!
+  for (const name of ['Edit log at 2:20 PM', 'Delete log at 2:20 PM']) {
+    const control = mini.getByRole('button', { name })
+    await expect(control).toBeVisible()
+    const box = (await control.boundingBox())!
+    expect(box.y).toBeGreaterThanOrEqual(body.y)
+    expect(box.y + box.height).toBeLessThanOrEqual(body.y + body.height)
+    expect(box.x).toBeGreaterThanOrEqual(body.x)
+    expect(box.x + box.width).toBeLessThanOrEqual(body.x + body.width)
+  }
 })

@@ -13,6 +13,7 @@
  * answer. They open in place on the calendar now.
  */
 
+import { LogComposer, NoteList, UrgeCounter } from '../BlockLog'
 import { BlockTasks } from '../BlockTasks'
 import { FocusTimer } from '../FocusTimer'
 import { BlockCompletePanel, BreakDurationPanel } from './BreakPanels'
@@ -20,7 +21,7 @@ import { DaySetupPanel } from './DaySetupPanel'
 import { OutsideHoursPanel, ReadyPanel } from './IdlePanel'
 import { PurposePanel } from './PurposePanel'
 import { ReconcilePanel } from './ReconcilePanel'
-import { GhostButton } from '../ui'
+import { GhostButton, quietActionClass } from '../ui'
 import { AmbienceButton } from '@/ambient/AmbienceButton'
 
 import type { SetupStageId } from './stages'
@@ -184,13 +185,39 @@ export function Stage(props: Props) {
             phase={phase}
             timerMode={props.timerMode}
             onToggleTimerMode={props.onToggleTimerMode}
+            // A quiet word level with the block's name, at the far side: the
+            // rarest thing done while a block runs, and the one that cannot be
+            // taken back, so it is in reach without being one of the controls.
+            aside={
+              <button
+                type="button"
+                onClick={props.onAbandon}
+                className={`text-sm text-muted ${quietActionClass}`}
+              >
+                End early
+              </button>
+            }
           />
-          {active?.kind === 'block' && <BlockTasks taskIds={active.taskIds} />}
-          <div className="mt-6 flex flex-wrap gap-2">
-            <GhostButton type="button" onClick={props.onAbandon}>
-              End early
-            </GhostButton>
-            <AmbienceButton ambience={props.ambience} />
+          {/* Two columns under the purpose: what the block is for on the left,
+              and how it is going on the right. The list of logs is the
+              stage's; the mini window, always on top, says how many and
+              opens one at a time from its strip. A second row of the same
+              grid holds the controls, so ✎ Log under the tasks and the urges
+              under the logs stand level however long either list is. Each
+              cell is a box of its own even when empty, so a list with nothing
+              in it yet cannot pull the controls up into its place. */}
+          <div className="grid gap-x-8 sm:grid-cols-2">
+            <div>{active?.kind === 'block' && <BlockTasks taskIds={active.taskIds} />}</div>
+            <div>
+              <NoteList />
+            </div>
+            <div className="mt-3 max-w-md">
+              <LogComposer />
+            </div>
+            <div className="mt-3 flex items-center gap-3">
+              <UrgeCounter />
+              <AmbienceButton ambience={props.ambience} />
+            </div>
           </div>
         </div>
       )

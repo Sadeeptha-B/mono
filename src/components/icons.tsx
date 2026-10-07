@@ -73,6 +73,23 @@ export const ReopenIcon = ({ className = '' }: { className?: string }) => (
     </Icon>
 )
 
+/**
+ * A step down and a step up, for a count: the urge counter. Drawn as a pair
+ * because the typed `−` and `+` are cut differently in most fonts — one sat
+ * wider and heavier than the other on the same button.
+ */
+export const MinusIcon = ({ className = '' }: { className?: string }) => (
+    <Icon className={className}>
+        <path d="M3.5 8h9" />
+    </Icon>
+)
+
+export const PlusIcon = ({ className = '' }: { className?: string }) => (
+    <Icon className={className}>
+        <path d="M3.5 8h9M8 3.5v9" />
+    </Icon>
+)
+
 /** A bin: deleted for good. */
 export const DeleteIcon = ({ className = '' }: { className?: string }) => (
     <Icon className={className}>

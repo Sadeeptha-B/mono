@@ -712,6 +712,29 @@ export function purposeParts(
   return parts
 }
 
+/**
+ * The tasks a block was for, as the backlog has them now, in the block's own
+ * order. A block knows ids and the backlog knows what they say, so a task
+ * renamed since reads as renamed. One deleted since — itself, or with the
+ * epic or area it sat in — is left out, since an id with no title is not
+ * worth a row; one done is kept, for the reader to cross out.
+ *
+ * One answer for every surface that draws a block's tasks — the stage, the
+ * mini window and every block on the calendar — and asked of the shared
+ * index, because the calendar asks it of each block once a second.
+ */
+export function blockTasks(
+  taskIds: readonly string[],
+  items: readonly Item[],
+  areas: readonly Area[],
+): Item[] {
+  const index = indexBacklog(items, areas)
+  return taskIds.flatMap((id) => {
+    const task = index.byId.get(id)
+    return task === undefined || index.gone(id) ? [] : [task]
+  })
+}
+
 // -----------------------------------------------------------------------------
 // Transitions. Each returns a new record stamped with `at`.
 // -----------------------------------------------------------------------------

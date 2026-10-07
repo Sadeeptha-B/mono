@@ -131,7 +131,10 @@ export function MiniTimer({
       <div className="mt-0.5 text-[10px] text-muted">{face.modeLabel}</div>
 
       {active.kind === 'block' && active.purpose && (
-        <p className="mt-2 line-clamp-2 text-sm leading-snug text-body">{active.purpose}</p>
+        // Named as on the stage, so the same line reads the same in both.
+        <p className="mt-2 line-clamp-2 text-sm leading-snug text-body">
+          <span className="text-muted">Purpose:</span> {active.purpose}
+        </p>
       )}
     </div>
   )

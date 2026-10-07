@@ -16,11 +16,20 @@
  *
  * Reads the task store directly rather than taking titles as props. The block
  * knows ids, the backlog knows what they say now, and a task renamed in another
- * tab mid-block should read as renamed here too.
+ * tab mid-block should read as renamed here too. The calendar's blocks read
+ * them the same way, through `useBlockTasks`.
  */
 
-import { isGone, type Item } from '@/domain/tasks'
+import { SectionHeading } from './ui'
+import { blockTasks, type Item } from '@/domain/tasks'
 import { useTasks } from '@/store/tasks'
+
+/** The tasks a block is for, as the backlog has them now (`blockTasks`). */
+export function useBlockTasks(taskIds: readonly string[]): Item[] {
+  const items = useTasks((s) => s.items)
+  const areas = useTasks((s) => s.areas)
+  return blockTasks(taskIds, items, areas)
+}
 
 export function BlockTasks({
   taskIds,
@@ -30,23 +39,15 @@ export function BlockTasks({
   /** Sized for the mini window. */
   compact?: boolean
 }) {
-  const items = useTasks((s) => s.items)
-  const areas = useTasks((s) => s.areas)
+  const tasks = useBlockTasks(taskIds)
   const completeItem = useTasks((s) => s.completeItem)
   const reopenItem = useTasks((s) => s.reopenItem)
-
-  // A task deleted since the block began — itself, or with the epic or area
-  // it sat in — has nothing left to say about itself, and an id with no title
-  // is not worth a row. Order is the block's own.
-  const tasks = taskIds
-    .map((id) => items.find((i) => i.id === id))
-    .filter((t): t is Item => t !== undefined && !isGone(t.id, items, areas))
   if (tasks.length === 0) return null
 
-  return (
+  const list = (
     <ul
       aria-label="Tasks in this block"
-      className={`flex flex-col ${compact ? 'mt-2 gap-0.5 text-xs' : 'mt-4 gap-1.5 text-sm'}`}
+      className={`flex flex-col ${compact ? 'mt-2 gap-0.5 text-xs' : 'mt-1.5 gap-1.5 text-sm'}`}
     >
       {tasks.map((task) => {
         const done = task.status === 'done'
@@ -68,5 +69,16 @@ export function BlockTasks({
         )
       })}
     </ul>
+  )
+
+  // Headed on the stage, where the block's logs follow it and the two lists
+  // would otherwise run together. The mini window shows one list at a time and
+  // has no room to spare for a heading.
+  if (compact) return list
+  return (
+    <section className="mt-5">
+      <SectionHeading>Tasks</SectionHeading>
+      {list}
+    </section>
   )
 }

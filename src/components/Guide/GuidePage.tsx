@@ -353,6 +353,17 @@ function sectionsFor(settings: Settings): Section[] {
             one session and both windows are looking at it.
           </P>
           <P>
+            While a block runs it also has the log field and the urge counter, since that
+            is the window in view when either is wanted. It says how many logs you have
+            written rather than listing them; the stage and the calendar have the list.
+            Across the window, under the timer, is the block itself, drawn as the
+            calendar draws it but on its side, with its start and end at either end:
+            the line standing across it is now, so you can see how much is gone, and its
+            marks are where you logged and felt the urge to leave. Point at a mark there
+            too, to read it or put a log right. End early, or Back to work on a break,
+            is the word at the start of the window's footer.
+          </P>
+          <P>
             You can resize the window. If it becomes awkwardly small or large, use{' '}
             <Em>Reset size</Em> in its footer to bring it back to its compact opening size.
           </P>
@@ -549,6 +560,15 @@ function sectionsFor(settings: Settings): Section[] {
             what it was worked out from.
           </P>
           <P>
+            A block names the tasks it was for, as many as its height has room for, and
+            carries what you wrote in it at the minutes you wrote it, down its right edge:
+            each urge a dot in the block's colour, each log a small bright bar. Point at a
+            bar to read that log in full and to edit or delete it — the block can be long
+            over. Where logs were written too close together for a short block to hold
+            them apart, they share one bar, drawn as a small stack, and pointing at it
+            shows each of them.
+          </P>
+          <P>
             <Em>Hours</Em>, <Em>Break</Em> and <Em>Commitment</Em> in the calendar's
             heading open in place, just below it. Every one of them asks a question
             about the day — when, and what does it displace — and the day is drawn
@@ -635,8 +655,16 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="Focusing"
-              asks="The timer shows time remaining by default. Click it to see time focused so far, and click again to switch back. Your choice carries into later blocks and breaks. Your purpose sits under it, and the block's tasks under that — tick one off the moment it is done."
+              asks="The timer shows time remaining by default. Click it to see time focused so far, and click again to switch back. Your choice carries into later blocks and breaks. End early sits at the far side, level with the block's name. Your purpose is under the timer, and under that two columns: the block's tasks on the left — tick one off the moment it is done — with ✎ Log beneath them, and its logs on the right, with the urge counter beneath them, level with ✎ Log."
               choices={[
+                [
+                  'Log',
+                  'Opens a field to write a line into the block: how it is going, what got in the way, what just worked. Enter keeps it and closes the field; Escape or × closes it without. A log keeps the minute you wrote it, and can be edited or deleted from its ✎ and bin, here or later on the calendar. Deleting takes it off the block; the words stay in the journal Mono keeps, and in an export, as everything you have done does.',
+                ],
+                [
+                  'Urges',
+                  'The + counts an urge to leave the task — the tab you nearly opened, the phone you nearly picked up — whether or not you acted on it. Counting is noticing, not a score: nothing else in Mono reads the number. The − takes back the last one, for a mis-tap.',
+                ],
                 [
                   'End early',
                   'Ends the block now and records it as cut short. Honest, and permanent — there is no pause. Anything you ticked stays done: a task can be finished in a block that was cut short.',
