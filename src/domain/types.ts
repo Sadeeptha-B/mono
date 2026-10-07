@@ -304,22 +304,24 @@ export type IntentionPatch = { title?: string; done?: boolean }
 
 /**
  * A line written while a block ran: how it is going, what got in the way, what
- * just worked. The interface calls it a log; the code calls it a note, because
- * "the log" already means the event log this lives in, and a reader meeting
- * `logs` beside `events` would reasonably think they were the same thing.
+ * just worked. A block's log, and called that in the code as on the screen: it
+ * was a "note" here once, to keep the word apart from the event log it is
+ * written into, and the two words for one thing cost more than the clash did.
+ * Where both are meant in one place, the event log is called that, or the
+ * journal.
  *
  * `at` is the minute it was written and stays that minute when the text is
  * corrected — the calendar draws it there, and a fixed typo did not happen
  * later than the thought it fixed. The id is what lets an edit or a delete name
- * one note among several written in the same minute.
+ * one log among several written in the same minute.
  */
-export type BlockNote = { id: string; at: Ms; text: string }
+export type BlockLog = { id: string; at: Ms; text: string }
 
 /**
  * A block or break that has finished. History is append-only, with one
- * exception that is itself an event: a block's notes can be corrected after it
- * ends (`block/noteEdited`, `block/noteRemoved`). The history is still a fold
- * over the log; the correction is simply part of what is folded.
+ * exception that is itself an event: a block's logs can be corrected after it
+ * ends (`block/logEdited`, `block/logRemoved`). The history is still a fold
+ * over the event log; the correction is simply part of what is folded.
  */
 export type CompletedSegment =
   | {
@@ -335,7 +337,7 @@ export type CompletedSegment =
       /** The tasks it was for. Empty for a priorities block, and for old logs. */
       taskIds: string[]
       /** What was written during it, oldest first. Empty for old logs. */
-      notes: BlockNote[]
+      logs: BlockLog[]
       /**
        * Each moment the user counted wanting to leave the task, oldest first.
        * Instants rather than a number so the calendar can put each where it
@@ -371,7 +373,7 @@ export type ActiveSegment =
       /** The tasks it is for. Empty only for a priorities block. */
       taskIds: string[]
       /** Written so far, oldest first. See `CompletedSegment`. */
-      notes: BlockNote[]
+      logs: BlockLog[]
       /** Counted so far, oldest first. See `CompletedSegment`. */
       urges: Ms[]
     }

@@ -193,16 +193,16 @@ type SessionStore = {
    * Write a line into the running block, count an urge, or take the last one
    * back. Through the machine, so all three are refused outside `focusing`.
    */
-  noteBlock: (text: string) => void
+  logBlock: (text: string) => void
   countUrge: () => void
   takeBackUrge: () => void
   /**
-   * Correct or delete a note, in the running block or one already over. Not
+   * Correct or delete a block's log, in the running block or one already over. Not
    * through the machine: a mistype is worth fixing whatever is on the stage,
    * as an intention is renamed whatever is on it.
    */
-  editNote: (blockId: string, noteId: string, text: string) => void
-  removeNote: (blockId: string, noteId: string) => void
+  editLog: (blockId: string, logId: string, text: string) => void
+  removeLog: (blockId: string, logId: string) => void
 
   /** Roll the day over if the calendar day changed. Safe to call every tick. */
   checkDayRollover: (now: Ms) => void
@@ -325,17 +325,17 @@ export const useSession = create<SessionStore>()(
       linkTask: (taskId, intentionId) =>
         get().append({ type: 'intention/taskLinked', at: Date.now(), taskId, intentionId }),
 
-      noteBlock: (text) => get().dispatch({ type: 'noteBlock', at: Date.now(), text }),
+      logBlock: (text) => get().dispatch({ type: 'logBlock', at: Date.now(), text }),
 
       countUrge: () => get().dispatch({ type: 'countUrge', at: Date.now() }),
 
       takeBackUrge: () => get().dispatch({ type: 'takeBackUrge', at: Date.now() }),
 
-      editNote: (blockId, noteId, text) =>
-        get().append({ type: 'block/noteEdited', at: Date.now(), blockId, noteId, text }),
+      editLog: (blockId, logId, text) =>
+        get().append({ type: 'block/logEdited', at: Date.now(), blockId, logId, text }),
 
-      removeNote: (blockId, noteId) =>
-        get().append({ type: 'block/noteRemoved', at: Date.now(), blockId, noteId }),
+      removeLog: (blockId, logId) =>
+        get().append({ type: 'block/logRemoved', at: Date.now(), blockId, logId }),
 
       checkDayRollover: (now) => {
         const today = dayKey(now)

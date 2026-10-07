@@ -545,7 +545,7 @@ export function RenameField({
   onSave: () => void
   onCancel: () => void
   textClass?: 'text-xs' | 'text-sm' | 'text-[15px]'
-  /** A title is short; a block's note is a sentence or two. */
+  /** A title is short; a block's log is a sentence or two. */
   maxLength?: number
 }) {
   return (

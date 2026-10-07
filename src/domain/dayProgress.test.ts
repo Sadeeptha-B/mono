@@ -13,7 +13,7 @@ const block = (
   result: 'completed' | 'abandoned' = 'completed',
   purpose = 'Write',
 ): CompletedSegment => ({
-  kind: 'block', id: `b-${offset}`, blockKind: kind, purpose, taskIds: [], notes: [], urges: [],
+  kind: 'block', id: `b-${offset}`, blockKind: kind, purpose, taskIds: [], logs: [], urges: [],
   startedAt: NOW + offset * minute,
   endedAt: NOW + (offset + minutes) * minute,
   plannedEndsAt: NOW + (offset + minutes) * minute,
@@ -27,7 +27,7 @@ const rest = (offset: number, minutes: number): CompletedSegment => ({
 })
 
 const pending = (offset: number, minutes: number, kind: BlockKind = 'deep'): ActiveSegment => ({
-  kind: 'block', id: 'pending', blockKind: kind, purpose: 'Land it', taskIds: [], notes: [], urges: [],
+  kind: 'block', id: 'pending', blockKind: kind, purpose: 'Land it', taskIds: [], logs: [], urges: [],
   startedAt: NOW + offset * minute, endsAt: NOW + (offset + minutes) * minute,
 })
 
