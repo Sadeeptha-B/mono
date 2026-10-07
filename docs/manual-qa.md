@@ -109,7 +109,8 @@ The two-tab checks below assume it is there.
 
 3. Start a block, pop out, then bury the tab behind something else for five
    minutes. The timer must still move every second in either mode and the cat
-   must still walk. This is the one that decides whether the feature works at all.
+   must still walk, and the line standing across the strip must keep
+   moving along it. This is the one that decides whether the feature works at all.
    Click the time in each window and check that both show the same mode.
 4. Close the mini window from its own control rather than Mono's. The app must
    carry on, and `Pop out` must open a fresh one.
@@ -118,7 +119,7 @@ The two-tab checks below assume it is there.
    Chromium reuses the last placement unless a site opts out, and Mono
    deliberately does not, so this is the whole of the multi-monitor story.
    In a fresh browser profile with no remembered PiP placement, opening at
-   470×210 should not show `Reset size`.
+   470×240 should not show `Reset size`.
 6. Sleep the machine across a block end with the window open. "You were away"
    must appear in both, and answering it in either must resolve both.
 7. Open it in each room. The window is dressed before it is shown, so it must
@@ -127,10 +128,10 @@ The two-tab checks below assume it is there.
 8. Resize it below the size it opens at. The contents are built to survive being
    made much smaller than the opening hint. Controls should remain reachable
    without overlapping the footer: the content scrolls while the timing footer
-   stays visible. A small trim to 180px height should not show `Reset size`.
+   stays visible. A small trim to 220px height should not show `Reset size`.
    Narrower than 320, shorter than 160, wider than 520, or taller than 420,
    `Reset size` should appear without scrolling and return the viewport to about
-   470×210. Check that the outer border remains at the window edge when the
+   470×240. Check that the outer border remains at the window edge when the
    content has a scrollbar, and that it stands out against similarly dark
    windows in every room.
 9. Throttle the network hard, or block the stylesheet, and pop out. The inline
@@ -143,6 +144,11 @@ The two-tab checks below assume it is there.
     docblock names. Then do the same from a block's `Take 5 mins to decide`.
     Turn `Pop the timer out when you take time to decide` off and check that
     neither opens it.
+11. During a block, from another app, click the window's log field, type a line
+    and press Enter, then count an urge. The first click must land on the field
+    or the button and the typing must reach the field, not the app behind. The
+    window must not take the focus by itself before you click, and the tab's
+    log list and counter must show both at once.
 
 ## Ambient sound
 

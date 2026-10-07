@@ -196,6 +196,12 @@ shaped around:
   it is ticked — plus a purpose of its own that starts as the
   tasks' titles. Ticking a task done belongs to the backlog and finishing a
   block to the block; neither writes the other.
+- **A block can be written in while it runs.** A log field takes a line about
+  how it is going, and a counter counts each urge to leave the task, with a −
+  for a mis-tap; both are on the stage and in the pop-out. The calendar draws
+  them on the block at the minutes they happened, and pointing at a log's mark
+  shows it, to edit or delete. The count is noticing, not a score: nothing else
+  in Mono reads it.
 - **Outside working hours Mono says so** and names the next stretch, rather than
   offering a block in time you declared unstructured. The way to work anyway is
   to change the hours.
