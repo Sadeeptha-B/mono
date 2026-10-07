@@ -525,6 +525,37 @@ function sectionsFor(settings: Settings): Section[] {
       ),
     },
     {
+      id: 'recurring',
+      title: 'Commitments that repeat',
+      body: (
+        <>
+          <P>
+            A standup every weekday, a swim on Tuesdays and Thursdays, a review on the
+            first of the month: anything fixed on a schedule is written once, on the{' '}
+            <Em>Recurring</Em> page in the header, rather than every morning. It takes
+            the same fields as any commitment, the time either side included, and then
+            how often — every weekday, every few days, on chosen weekdays every week or
+            every other week, or on a date every month or every few. A date a month does
+            not have, like the 31st, falls on that month's last day. The form lists the
+            next few dates as you write it, which is the quickest way to see a fortnightly
+            rule anchored to the wrong week.
+          </P>
+          <P>
+            Each day a series falls on shows it among that day's commitments, marked as
+            recurring, without anything being added. Change it there and you change that
+            day only: <Em>
+              <EditGlyph />
+            </Em>{' '}
+            moves today's and leaves the series alone, and <Em>×</Em> skips today, with
+            tomorrow's coming round as usual. Changing the series itself reaches every day
+            still following it, today included — except a day you have already changed by
+            hand, and except anything of it that has already begun, which stays where it
+            happened. Deleting a series stops it for good, on the same terms.
+          </P>
+        </>
+      ),
+    },
+    {
       id: 'calendar',
       title: 'Reading the calendar',
       body: (

@@ -58,7 +58,7 @@ src/domain/      pure: types, event log, planner, state machine, time, vitals
 src/store/       the only place that reads the clock, makes ids, persists
 src/hooks/       the ticker, reconciliation, notifications
 src/ambient/     rooms, procedural sound, theme, controls, shared scene geometry
-src/components/  the two panels, the stage prompts, the guide, the tasks page, the companion
+src/components/  the two panels, the stage prompts, the guide, the tasks and recurring pages, the companion
 src/pip/         the always-on-top mini window
 src/contract/    the one type the browser extension shares with the app
 src/blocking/    publishing what the session is doing, for the extension
@@ -134,6 +134,12 @@ inside without changing it, and deleting one, or an area, deletes its subtree.
 The stage sees today's tasks and the tasks a block is for, and lets you write
 or find one there; filing and tidying happens on the page, away from the timer.
 
+The **recurring page** at `#/recurring` is where commitments that come round on
+a schedule are written once: every weekday, Tuesdays and Thursdays, the first of
+the month. Each one is derived onto the days it falls on rather than copied into
+them, the way today's hours follow the default shape, and the day can move or
+skip its own occurrence without touching the series.
+
 Session state is a fold over an append-only event log
 ([src/domain/events.ts](src/domain/events.ts)). The log is persisted and the
 rest of the session is rebuilt from it on load. It is also the raw material for
@@ -202,6 +208,11 @@ shaped around:
   them on the block at the minutes they happened, and pointing at a log's mark
   shows it, to edit or delete. The count is noticing, not a score: nothing else
   in Mono reads it.
+- **Recurring commitments come round by themselves.** A series written on the
+  recurring page appears among the commitments of every day it falls on.
+  Editing or removing it on the day changes that day only; changing the series
+  reaches every day still following it, but never anything of it that has
+  already begun.
 - **Outside working hours Mono says so** and names the next stretch, rather than
   offering a block in time you declared unstructured. The way to work anyway is
   to change the hours.

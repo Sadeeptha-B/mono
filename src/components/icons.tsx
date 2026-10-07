@@ -1,6 +1,6 @@
 /**
  * The small line icons that stand in for words on a dense row: done, drop,
- * archive, restore, reopen, delete.
+ * archive, restore, reopen, delete, and the mark of a commitment that repeats.
  *
  * Drawn rather than typed, for the reason `GripGlyph` gives on the tasks page:
  * the Unicode characters that look like these are missing from some system
@@ -117,5 +117,17 @@ export const TodayIcon = ({ chosen, className = '' }: { chosen: boolean; classNa
     <Icon className={className}>
         <circle cx="8" cy="8" r="2.75" {...(chosen ? { fill: 'currentColor' } : {})} />
         <path d="M8 1.75v1.5M8 12.75v1.5M1.75 8h1.5M12.75 8h1.5M3.6 3.6l1.05 1.05M11.35 11.35l1.05 1.05M3.6 12.4l1.05-1.05M11.35 4.65l1.05-1.05" />
+    </Icon>
+)
+
+/**
+ * Two arrows chasing round: comes round again. Marks a commitment that is one
+ * day of a series, wherever the day lists it, so a standup that repeats reads
+ * differently from one typed in this morning.
+ */
+export const RepeatIcon = ({ className = '' }: { className?: string }) => (
+    <Icon className={className}>
+        <path d="M2.75 7.25V6.5a2.5 2.5 0 0 1 2.5-2.5h7.5M10.75 2l2 2-2 2" />
+        <path d="M13.25 8.75v.75a2.5 2.5 0 0 1-2.5 2.5h-7.5M5.25 14l-2-2 2-2" />
     </Icon>
 )

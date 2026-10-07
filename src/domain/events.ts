@@ -8,6 +8,13 @@
  *
  * `reduce` is pure. Nothing here reads the clock; every event carries the `at`
  * it happened.
+ *
+ * It does read the local calendar, in one place: which day a series of
+ * recurring commitments is being asked about is the local day containing an
+ * event's `at` (`commitmentsFor`). That is what lets the pin rules below see
+ * today's standup without a stored copy of it. The cost is that a log replayed
+ * in another time zone could put an occurrence somewhere else; on the device
+ * that wrote it, replay is exactly as deterministic as before.
  */
 
 import {
@@ -28,9 +35,12 @@ import {
   type Ms,
   type PlannedBreak,
   type PlannedBreakPatch,
+  type RecurringCommitment,
+  type RecurringPatch,
   type Settings,
   type WorkRegion,
 } from './types'
+import { occurrenceOn } from './recurrence'
 
 export type MonoEvent =
   | { type: 'settings/changed'; at: Ms; patch: Partial<Settings> }
@@ -93,6 +103,10 @@ export type MonoEvent =
   | { type: 'today/taskAdded'; at: Ms; taskId: string }
   /** Put a task back out of today, and out of whichever intention held it. */
   | { type: 'today/taskRemoved'; at: Ms; taskId: string }
+  /** A series of commitments that comes round on a schedule. See `commitmentsFor`. */
+  | { type: 'recurring/added'; at: Ms; rule: RecurringCommitment }
+  | { type: 'recurring/updated'; at: Ms; id: string; patch: RecurringPatch }
+  | { type: 'recurring/removed'; at: Ms; id: string }
 
 export type SessionState = {
   settings: Settings
@@ -152,6 +166,18 @@ export type SessionState = {
    * asked where they are shown (`carriedOver`).
    */
   lastDay: string[]
+  /**
+   * The commitments that come round on a schedule. Rules, not days: what each
+   * puts into a day is derived by `commitmentsFor`. Like settings, they are
+   * about every day rather than this one, so the midnight reset leaves them be.
+   */
+  recurring: RecurringCommitment[]
+  /**
+   * Occurrences of a series that this day has said no to, by occurrence id.
+   * Removing today's standup is a decision about today, so it is recorded
+   * here and cleared at midnight; tomorrow's comes round as usual.
+   */
+  skipped: string[]
 }
 
 export const initialState: SessionState = {
@@ -165,6 +191,8 @@ export const initialState: SessionState = {
   intentions: [],
   today: {},
   lastDay: [],
+  recurring: [],
+  skipped: [],
 }
 
 export function reduce(state: SessionState, event: MonoEvent): SessionState {
@@ -190,24 +218,56 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
     // against where the meeting *ends up*, which is the shape the day now has.
     // The slot it vacated needs no thought, because nothing was ever allowed to
     // pin a break inside it — see `clashesWithCommitment`.
+    //
+    // An edit to today's occurrence of a series gives the day its own copy,
+    // under the occurrence's id and with the edit applied. From then on the
+    // day follows the copy rather than the rule — moving today's standup is
+    // not moving every standup — as an edited day's hours stop following the
+    // default shape. The same id, so the entry on the calendar moves rather
+    // than being replaced by a different one.
     case 'commitment/updated': {
       const existing = state.commitments.find((c) => c.id === event.id)
-      // An id that is not there changes nothing, so it clears nothing either.
-      if (!existing) return state
+      if (existing) {
+        const updated = { ...existing, ...event.patch }
+        return {
+          ...state,
+          commitments: state.commitments.map((c) => (c.id === event.id ? updated : c)),
+          overrides: pinsClearOf(state.overrides, commitmentSpan(updated), event.at),
+        }
+      }
 
-      const updated = { ...existing, ...event.patch }
+      const occurrence = occurrencesFor(state, event.at).find((c) => c.id === event.id)
+      // An id that is not there changes nothing, so it clears nothing either.
+      if (!occurrence) return state
+      const updated = { ...occurrence, ...event.patch }
+      // An edit that leaves it saying what it said is not an edit, and must
+      // not cost the day its link to the series: a form opened and closed
+      // with Done sends the whole draft back, and detaching on that would
+      // leave today at five after the series moved to four. Compared as the
+      // day sees it, so a margin sent as zero matches one that was never set.
+      if (sameCommitment(occurrence, updated)) return state
       return {
         ...state,
-        commitments: state.commitments.map((c) => (c.id === event.id ? updated : c)),
+        commitments: [...state.commitments, updated],
         overrides: pinsClearOf(state.overrides, commitmentSpan(updated), event.at),
       }
     }
 
-    case 'commitment/removed':
+    // Removing one day of a series skips that day, whether the day had its own
+    // copy or was still following the rule: without the skip, taking the copy
+    // away would simply let the rule's occurrence back in.
+    case 'commitment/removed': {
+      const target =
+        state.commitments.find((c) => c.id === event.id) ??
+        occurrencesFor(state, event.at).find((c) => c.id === event.id)
       return {
         ...state,
         commitments: state.commitments.filter((c) => c.id !== event.id),
+        ...(target?.recurringId !== undefined && !state.skipped.includes(event.id)
+          ? { skipped: [...state.skipped, event.id] }
+          : {}),
       }
+    }
 
     case 'region/set':
       // The whole day's shape is replaced at once rather than patched
@@ -223,7 +283,9 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
     // A pin laid across something already fixed is not recorded at all. See
     // `clashesWithCommitment` for why that is a refusal rather than a cleanup.
     case 'break/planned':
-      if (clashesWithCommitment(event.plannedBreak, state.commitments)) return state
+      if (clashesWithCommitment(event.plannedBreak, commitmentsFor(state, event.at))) {
+        return state
+      }
       return {
         ...state,
         overrides: [...state.overrides, event.plannedBreak].sort(
@@ -248,7 +310,7 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
       // the user tried to put it somewhere it cannot go would be a surprise,
       // and the composer has already said no before this can be reached.
       const updated = { ...existing, ...event.patch }
-      if (clashesWithCommitment(updated, state.commitments)) return state
+      if (clashesWithCommitment(updated, commitmentsFor(state, event.at))) return state
 
       return {
         ...state,
@@ -416,6 +478,10 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
         intentions: [],
         today: {},
         lastDay: Object.keys(state.today).length > 0 ? Object.keys(state.today) : state.lastDay,
+        // Skipping yesterday's standup was about yesterday. The series are
+        // about every day, and stay; the new day's occurrences are derived
+        // from them, so there is nothing to write for it here.
+        skipped: [],
       }
 
     case 'day/shaped':
@@ -476,6 +542,37 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
       return { ...state, today: rest }
     }
 
+    // A new series reaches today at once if today is one of its days, so it
+    // clears the pins it lands on exactly as a commitment typed in would.
+    case 'recurring/added':
+      // A replayed or duplicated event, not a second series.
+      if (state.recurring.some((r) => r.id === event.rule.id)) return state
+      return clearPinsUnder(
+        { ...state, recurring: [...state.recurring, event.rule] },
+        event.rule.id,
+        event.at,
+      )
+
+    // Changing a series reshapes every day still following it, today
+    // included — unless today's has already begun. See `keepBegun`.
+    case 'recurring/updated': {
+      const existing = state.recurring.find((r) => r.id === event.id)
+      if (!existing) return state
+      const updated = applyRecurringPatch(existing, event.patch)
+      const kept = keepBegun(state, event.id, event.at)
+      return clearPinsUnder(
+        { ...kept, recurring: kept.recurring.map((r) => (r.id === event.id ? updated : r)) },
+        event.id,
+        event.at,
+      )
+    }
+
+    case 'recurring/removed': {
+      if (!state.recurring.some((r) => r.id === event.id)) return state
+      const kept = keepBegun(state, event.id, event.at)
+      return { ...kept, recurring: kept.recurring.filter((r) => r.id !== event.id) }
+    }
+
     default: {
       // The `never` keeps the switch exhaustive at compile time, but the log
       // can also arrive from an imported file, where an unrecognised event is
@@ -490,6 +587,100 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
 
 export const replay = (events: readonly MonoEvent[]): SessionState =>
   events.reduce(reduce, initialState)
+
+/**
+ * The day's commitments: the ones written into it, and the occurrences of
+ * every series that comes round on the local day containing `at`.
+ *
+ * Derived, never seeded, for the reason today's hours are (`regionsForDay`):
+ * a copy of the standup written into each day at midnight would be a stored
+ * schedule, and changing the series would then leave every copy already
+ * written telling the old story. Here there is one answer, recomputed on each
+ * call, so changing the series reshapes every day that has not been changed
+ * by hand.
+ *
+ * A day changes its occurrence in two ways, both by id. Editing one gives the
+ * day its own copy in `commitments`, which this then prefers to the rule's;
+ * removing one puts its id in `skipped`. Both are decisions about one day and
+ * go at midnight with the rest of it.
+ *
+ * Hands back `commitments` itself when no series has anything to add, so a
+ * day with no series costs nothing and reads exactly as it did before they
+ * existed.
+ */
+export function commitmentsFor(state: SessionState, at: Ms): Commitment[] {
+  const derived = occurrencesFor(state, at)
+  return derived.length === 0 ? state.commitments : [...state.commitments, ...derived]
+}
+
+/** The occurrences `commitmentsFor` adds: the day's, less those it has overruled. */
+function occurrencesFor(state: SessionState, at: Ms): Commitment[] {
+  if (state.recurring.length === 0) return []
+  const own = new Set(state.commitments.map((c) => c.id))
+  const found: Commitment[] = []
+  for (const rule of state.recurring) {
+    const occurrence = occurrenceOn(rule, at)
+    if (occurrence === null || own.has(occurrence.id) || state.skipped.includes(occurrence.id)) {
+      continue
+    }
+    found.push(occurrence)
+  }
+  return found
+}
+
+/** Whether two commitments take the same time out of the day under the same name. */
+function sameCommitment(a: Commitment, b: Commitment): boolean {
+  return (
+    a.title === b.title &&
+    a.startsAt === b.startsAt &&
+    a.durationMin === b.durationMin &&
+    (a.prepMin ?? 0) === (b.prepMin ?? 0) &&
+    (a.recoverMin ?? 0) === (b.recoverMin ?? 0)
+  )
+}
+
+/**
+ * The state with today's occurrence of a series kept as it is, if it has
+ * already begun.
+ *
+ * Changing or ending a series is a decision about the days to come. Applied
+ * to today's standup after you have stood up, it would move a meeting that
+ * already happened — or, ending the series, take it off a calendar that is
+ * meant to say what the day was. So before the rule changes, an occurrence
+ * whose span has started (getting ready included) becomes the day's own
+ * copy, exactly as an edit makes one. One still ahead today is left to follow
+ * the rule, which is what the change was for.
+ */
+function keepBegun(state: SessionState, ruleId: string, at: Ms): SessionState {
+  const occurrence = occurrencesFor(state, at).find((c) => c.recurringId === ruleId)
+  if (!occurrence || commitmentSpan(occurrence).start > at) return state
+  return { ...state, commitments: [...state.commitments, occurrence] }
+}
+
+/** The pins today's occurrence of a series lands on, cleared as `commitment/added` clears them. */
+function clearPinsUnder(state: SessionState, ruleId: string, at: Ms): SessionState {
+  const occurrence = occurrencesFor(state, at).find((c) => c.recurringId === ruleId)
+  if (!occurrence) return state
+  return { ...state, overrides: pinsClearOf(state.overrides, commitmentSpan(occurrence), at) }
+}
+
+/**
+ * Merge an edit into a series. `endsOn: null` is how a patch says "no end any
+ * more": with `exactOptionalPropertyTypes` an absent field can only mean
+ * "leave it", the trap `readCommitmentEdit` steps around for margins.
+ */
+function applyRecurringPatch(
+  rule: RecurringCommitment,
+  patch: RecurringPatch,
+): RecurringCommitment {
+  const { endsOn, ...rest } = patch
+  const merged: RecurringCommitment = { ...rule, ...rest }
+  if (endsOn === undefined) return merged
+  if (endsOn !== null) return { ...merged, endsOn }
+  const { endsOn: dropped, ...open } = merged
+  void dropped
+  return open
+}
 
 /**
  * The pins a commitment occupying `span` can still be honoured alongside.

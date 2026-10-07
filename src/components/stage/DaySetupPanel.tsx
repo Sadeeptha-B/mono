@@ -72,6 +72,9 @@ import {
   type CommitmentDraft,
 } from '../CommitmentFields'
 import { resolveHours, TodayHoursFields } from '../TodayHours'
+import { RepeatIcon } from '../icons'
+import { TodayOnlyNote } from '../Timeline/SegmentEditor'
+import { RECURRING_HASH } from '@/hooks/useRoute'
 import { TodayPanel, type TodayTimer } from './TodayPanel'
 import { useIntentionRename } from '../TodayList'
 import { useTodayBacklog } from '../useTodayBacklog'
@@ -240,6 +243,9 @@ export function DaySetupPanel({
   // Not the same read: an edit is merged onto what is already there, so it has
   // to say a margin is zero rather than leave it out. See `readCommitmentEdit`.
   const ready = editing ? readCommitmentEdit(now, draft) : readCommitment(now, draft)
+  // Editing one day of a series changes that day only, and the form says so.
+  const subjectRecurs =
+    editing !== null && commitments.find((c) => c.id === editing)?.recurringId !== undefined
   // Mono plans inside working hours and nowhere else, so a day with none of
   // them is a day it can do nothing with. The button says no; the line under it
   // has to say why, and where to fix it.
@@ -282,6 +288,16 @@ export function DaySetupPanel({
             title="What are your commitments for today?"
             detail="Anything you can't move. These come first because they decide how much of the day is yours to spend."
           />
+          {/* Where the ones that come round every day are kept, so they need
+              not be answered here again. Quiet, and under the question rather
+              than in it: most mornings it is not what is being asked. */}
+          <p className="-mt-2 mb-4 text-xs text-muted">
+            Same every week?{' '}
+            <a href={RECURRING_HASH} className="underline underline-offset-4 hover:text-bright">
+              Set it up once on Recurring
+            </a>
+            .
+          </p>
 
           {/* Named, because the stage strip below is a list too, and "the
               commitments" has to be reachable as one thing. */}
@@ -333,6 +349,7 @@ export function DaySetupPanel({
                 onDraft={setDraft}
                 large
               />
+              {subjectRecurs && <TodayOnlyNote />}
               {/* With nothing written it only folds — which is nothing
                 to do while the form is the whole question. With
                 something written that does not read yet, it waits
@@ -429,6 +446,7 @@ function CommitmentRow({
 }) {
   const span = commitmentSpan(commitment)
   const event = minutesToMs(commitment.durationMin)
+  const recurs = commitment.recurringId !== undefined
   const around = span.end - span.start - event
 
   return (
@@ -441,7 +459,15 @@ function CommitmentRow({
         {formatClock(commitment.startsAt)}
       </span>
       <div className="min-w-0 flex-1">
-        <div className="truncate text-sm text-bright">{commitment.title}</div>
+        <div className="flex items-center gap-1.5 text-sm text-bright">
+          {recurs && (
+            <span title="Recurring" className="text-commit">
+              <RepeatIcon />
+              <span className="sr-only">Recurring: </span>
+            </span>
+          )}
+          <span className="truncate">{commitment.title}</span>
+        </div>
         <div className="tnum text-xs text-muted">
           {formatDuration(event)}
           {around > 0 && ` + ${formatDuration(around)} around`}
@@ -455,10 +481,12 @@ function CommitmentRow({
       >
         <EditGlyph />
       </button>
+      {/* One day of a series is skipped rather than removed: tomorrow's comes
+          round as usual, and the series is changed on its own page. */}
       <button
         type="button"
         onClick={onRemove}
-        aria-label={`Remove ${commitment.title}`}
+        aria-label={recurs ? `Skip ${commitment.title} today` : `Remove ${commitment.title}`}
         className="shrink-0 text-muted transition hover:text-commit"
       >
         ×

@@ -93,7 +93,9 @@ export function styleFor(entry: TimelineEntry): RowStyle {
     case 'commitment':
       return {
         label: entry.commitment.title,
-        detail: 'commitment',
+        // One day of a series says so, so the day reads a standup that comes
+        // round differently from one typed in this morning.
+        detail: entry.commitment.recurringId === undefined ? 'commitment' : 'recurring commitment',
         text: 'text-commit',
         ring: 'ring-commit/50',
         bg: 'bg-commit/15',

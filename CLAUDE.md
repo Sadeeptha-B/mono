@@ -45,7 +45,7 @@ src/domain/      pure. no clock, no storage, no React. the interesting logic.
 src/store/       the only place that reads the clock, makes ids, or persists (log + backlog).
 src/hooks/       the shared ticker, reconciliation, notifications.
 src/ambient/     rooms, procedural audio, theme, controls, shared scene geometry.
-src/components/  the two panels, the stage prompts, the guide, the tasks page, the companion.
+src/components/  the two panels, the stage prompts, the guide, the tasks and recurring pages, the companion.
 src/pip/         the always-on-top mini window: lifecycle, styles, its panels.
 src/contract/    the wire type the browser extension shares. pure, both sides.
 src/blocking/    publishes what the session is doing. no extension knowledge.
