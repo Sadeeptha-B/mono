@@ -44,6 +44,9 @@ import {
   type ComposerKind,
   type EntryComposer,
 } from './SegmentEditor'
+import { MARK_LANE_PX, Marks, countsOf, writtenIn, writtenWithin } from './BlockMarks'
+import { styleFor } from './style'
+import { useBlockTasks } from '../BlockTasks'
 import { EditGlyph } from '../ui'
 import { dayBounds, formatClock, formatDuration } from '@/domain/time'
 import {
@@ -452,13 +455,24 @@ function Block({
   onRemoveBreak: (id: string) => void
   onRemoveCommitment: (id: string) => void
 }) {
-  const { entry, top, height, lane, lanes } = item
+  const { entry, top, height, shown, lane, lanes } = item
   const style = styleFor(entry)
   const isPast = entry.endsAt <= now
   const isActive = entry.kind === 'active'
   const showLabel = height >= LABEL_MIN_PX
   const editor = editorFor(entry, now)
   const isEditing = editor !== null && editor.editing === editing
+  // The block's counts are the whole block's; its marks are only those on
+  // the part of it this day draws.
+  const written = writtenIn(entry)
+  const drawn =
+    written && writtenWithin(written, { start: entry.startsAt, end: entry.endsAt }, shown)
+  const tasks = useBlockTasks(
+    (entry.kind === 'past' || entry.kind === 'active') && entry.segment.kind === 'block'
+      ? entry.segment.taskIds
+      : [],
+  )
+  const drawnHeight = Math.max(height, 4)
 
   const remove =
     entry.kind === 'planned-break'
@@ -470,72 +484,115 @@ function Block({
   const width = `calc((100% - ${GUTTER_PX}px) / ${lanes} - 4px)`
   const left = `calc(${GUTTER_PX}px + (100% - ${GUTTER_PX}px) * ${lane} / ${lanes})`
 
+  // Two boxes rather than one. The block clips its own text to its own height,
+  // which is what sizes its list of tasks to a short block; the marks and a
+  // note's card sit on its edges and have to be drawn outside it, so they
+  // belong to a wrapper that does not clip. The wrapper keeps the marks'
+  // layers to itself (`isolate`), and rises above its neighbours while the
+  // pointer or focus is in it or a card in it is open for an edit, so an open
+  // card is not drawn under the next block down. Dimming a past block is the
+  // inner box's alone, or the card would be dimmed with it.
   return (
     <div
       className={[
-        'group absolute overflow-hidden rounded-md border px-2 py-1 transition',
-        style.border,
-        style.bg,
-        isPast && !isActive ? 'opacity-40' : '',
-        isActive ? 'z-10 ring-1 ring-inset ' + style.ring : '',
-        isEditing ? 'z-10 ring-1 ring-inset ring-bright/70' : '',
+        'group absolute isolate hover:z-30 focus-within:z-30 [&:has([data-open])]:z-30',
+        isActive || isEditing ? 'z-10' : '',
       ].join(' ')}
-      style={{ top, height: Math.max(height, 4), width, left }}
-      title={`${style.label} · ${formatClock(entry.startsAt)} · ${formatDuration(
-        entry.endsAt - entry.startsAt,
-      )}`}
+      style={{ top, height: drawnHeight, width, left }}
     >
-      {showLabel ? (
-        <>
-          <div className="flex items-baseline justify-between gap-1.5">
-            <span className={`truncate text-xs font-medium ${style.text}`}>
-              {style.label}
-            </span>
-            {/*
-              Named controls rather than a click anywhere on the block. The
-              block is a drawing of a span of the day, and the day is a thing
-              you point at while you think — a bare surface that silently means
-              "open a form" is the kind of affordance you discover by accident.
-              Hidden until the pointer or the keyboard arrives, so the axis
-              stays a picture of the day at rest; `focus-within` is what keeps
-              them reachable without a mouse.
-            */}
-            {(editor !== null || (remove !== null && !isPast)) && (
-              <span className="flex shrink-0 items-baseline gap-1 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100">
-                {editor !== null && (
-                  <button
-                    type="button"
-                    onClick={() => onEdit(editor)}
-                    aria-label={`Edit ${style.label}`}
-                    className="text-muted transition hover:text-bright"
-                  >
-                    <EditGlyph />
-                  </button>
-                )}
-                {remove !== null && !isPast && (
-                  <button
-                    type="button"
-                    onClick={remove}
-                    aria-label={`Remove ${style.label}`}
-                    className="text-muted transition hover:text-commit"
-                  >
-                    ×
-                  </button>
-                )}
+      <div
+        className={[
+          'h-full overflow-hidden rounded-md border py-1 pl-2 transition',
+          style.border,
+          style.bg,
+          isPast && !isActive ? 'opacity-40' : '',
+          isActive ? 'ring-1 ring-inset ' + style.ring : '',
+          isEditing ? 'ring-1 ring-inset ring-bright/70' : '',
+        ].join(' ')}
+        // Its words stop short of the column of marks down its right edge.
+        style={{ paddingRight: drawn ? MARK_LANE_PX : 8 }}
+        title={`${style.label} · ${formatClock(entry.startsAt)} · ${formatDuration(
+          entry.endsAt - entry.startsAt,
+        )}${written ? ` · ${countsOf(written, ' · ')}` : ''}`}
+      >
+        {showLabel ? (
+          <>
+            <div className="flex items-baseline justify-between gap-1.5">
+              <span className={`truncate text-xs font-medium ${style.text}`}>
+                {style.label}
               </span>
-            )}
-          </div>
-          {height >= 44 && style.detail && (
-            <div className="truncate text-[11px] text-muted italic">{style.detail}</div>
-          )}
-          {height >= 60 && (
-            <div className="tnum mt-0.5 text-[11px] text-muted">
-              {formatDuration(entry.endsAt - entry.startsAt)}
+              {/*
+                Named controls rather than a click anywhere on the block. The
+                block is a drawing of a span of the day, and the day is a thing
+                you point at while you think — a bare surface that silently means
+                "open a form" is the kind of affordance you discover by accident.
+                Hidden until the pointer or the keyboard arrives, so the axis
+                stays a picture of the day at rest; `focus-within` is what keeps
+                them reachable without a mouse.
+              */}
+              {(editor !== null || (remove !== null && !isPast)) && (
+                <span className="flex shrink-0 items-baseline gap-1 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100">
+                  {editor !== null && (
+                    <button
+                      type="button"
+                      onClick={() => onEdit(editor)}
+                      aria-label={`Edit ${style.label}`}
+                      className="text-muted transition hover:text-bright"
+                    >
+                      <EditGlyph />
+                    </button>
+                  )}
+                  {remove !== null && !isPast && (
+                    <button
+                      type="button"
+                      onClick={remove}
+                      aria-label={`Remove ${style.label}`}
+                      className="text-muted transition hover:text-commit"
+                    >
+                      ×
+                    </button>
+                  )}
+                </span>
+              )}
             </div>
-          )}
-        </>
-      ) : (
-        <span className="sr-only">{style.label}</span>
+            {height >= 44 && style.detail && (
+              <div className="truncate text-[11px] text-muted italic">{style.detail}</div>
+            )}
+            {/* A block's tasks take the duration's place, since the block's
+                height already says how long it was. However many there are,
+                the box clips them at its own height — that is what sizes them
+                to the block. Its logs are not printed here: each is a mark on
+                its edge, there in full under the pointer. */}
+            {height >= 44 && tasks.length > 0
+              ? tasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className={`truncate text-[11px] ${task.status === 'done' ? 'text-muted line-through' : 'text-body/80'}`}
+                  >
+                    {task.title}
+                  </div>
+                ))
+              : height >= 60 && (
+                  <div className="tnum mt-0.5 text-[11px] text-muted">
+                    {formatDuration(entry.endsAt - entry.startsAt)}
+                  </div>
+                )}
+          </>
+        ) : (
+          <span className="sr-only">{style.label}</span>
+        )}
+        {written && <span className="sr-only">{countsOf(written, ', ')}</span>}
+      </div>
+
+      {drawn && (
+        <Marks
+          written={drawn}
+          span={shown}
+          length={drawnHeight}
+          axis="column"
+          tone={style.mark ?? 'bg-muted'}
+          dim={isPast && !isActive}
+        />
       )}
     </div>
   )
@@ -575,6 +632,8 @@ type Placed = {
   /** Clipped to the visible day — see `layout`. The entry keeps the truth. */
   top: number
   height: number
+  /** The stretch of time `top` and `height` draw: the entry's, clipped the same way. */
+  shown: Interval
   lane: number
   lanes: number
 }
@@ -646,6 +705,7 @@ function layout(timeline: Timeline, now: Ms) {
         entry,
         top: TOP_PAD_PX + ((startsAt - rangeStart) / HOUR_MS) * HOUR_PX,
         height: ((endsAt - startsAt) / HOUR_MS) * HOUR_PX,
+        shown: { start: startsAt, end: endsAt },
         lane,
         lanes,
         visible: endsAt > startsAt,
@@ -704,114 +764,14 @@ const floorToHour = (at: Ms): Ms => {
   return d.getTime()
 }
 
-type RowStyle = {
-  label: string
-  detail?: string
-  bg: string
-  border: string
-  ring: string
-  text: string
-}
-
-function styleFor(entry: TimelineEntry): RowStyle {
-  const block = (kind: string, label: string, detail?: string): RowStyle => {
-    const tone =
-      kind === 'deep'
-        ? { text: 'text-deep', ring: 'ring-deep/50', bg: 'bg-deep/15', border: 'border-deep/40' }
-        : kind === 'short'
-          ? { text: 'text-short', ring: 'ring-short/50', bg: 'bg-short/15', border: 'border-short/40' }
-          : {
-              text: 'text-reflect',
-              ring: 'ring-reflect/50',
-              bg: 'bg-reflect/15',
-              border: 'border-reflect/40',
-            }
-    return { label, ...(detail === undefined ? {} : { detail }), ...tone }
-  }
-
-  const rest: Omit<RowStyle, 'label' | 'detail'> = {
-    text: 'text-rest',
-    ring: 'ring-rest/50',
-    bg: 'bg-rest/15',
-    border: 'border-rest/40',
-  }
-
-  switch (entry.kind) {
-    case 'past': {
-      const s = entry.segment
-      if (s.kind === 'block') {
-        return block(
-          s.blockKind,
-          s.result === 'abandoned' ? `${kindLabel(s.blockKind)} (cut short)` : kindLabel(s.blockKind),
-          s.purpose ?? undefined,
-        )
-      }
-      if (s.kind === 'break') return { label: 'Break', ...rest }
-      return {
-        label: 'Away',
-        detail: 'unaccounted',
-        text: 'text-muted',
-        ring: 'ring-line',
-        bg: 'bg-transparent',
-        border: 'border-line border-dashed',
-      }
-    }
-
-    case 'active': {
-      const s = entry.segment
-      if (s.kind === 'break') return { label: 'Break', detail: 'now', ...rest }
-      return block(s.blockKind, kindLabel(s.blockKind), s.purpose ?? 'now')
-    }
-
-    case 'planned-block':
-      return block(entry.blockKind, kindLabel(entry.blockKind))
-
-    case 'planned-break':
-      return { label: 'Break', detail: 'planned', ...rest }
-
-    case 'commitment':
-      return {
-        label: entry.commitment.title,
-        detail: 'commitment',
-        text: 'text-commit',
-        ring: 'ring-commit/50',
-        bg: 'bg-commit/15',
-        border: 'border-commit/40',
-      }
-
-    // The commitment's own colour, at half the weight and with a dashed edge:
-    // it is unmistakably part of that commitment, and unmistakably not the
-    // thing itself.
-    case 'commitment-margin':
-      return {
-        label: entry.side === 'before' ? 'Getting ready' : 'Getting back',
-        detail: entry.commitment.title,
-        text: 'text-commit/85',
-        ring: 'ring-commit/30',
-        bg: 'bg-commit/5',
-        border: 'border-commit/30 border-dashed',
-      }
-
-    case 'margin':
-      return {
-        label: 'Unfocused',
-        text: 'text-muted',
-        ring: 'ring-line',
-        bg: 'bg-transparent',
-        border: 'border-line border-dashed',
-      }
-  }
-}
-
-const kindLabel = (kind: string): string =>
-  kind === 'deep' ? 'Deep' : kind === 'short' ? 'Short' : 'Priorities'
-
 function keyFor(entry: TimelineEntry, index: number): string {
   switch (entry.kind) {
+    // One key for a segment whether it is running or over: the block that
+    // ends is the block that ran, and drawing it as a new one at that moment
+    // threw away what its marks were holding, an edit under way included.
     case 'past':
-      return `past-${entry.segment.id}`
     case 'active':
-      return `active-${entry.segment.id}`
+      return `segment-${entry.segment.id}`
     case 'commitment':
       return `commit-${entry.commitment.id}`
     case 'commitment-margin':

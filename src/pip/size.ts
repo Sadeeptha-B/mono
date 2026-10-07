@@ -4,7 +4,7 @@
  * guide for offering a gesture-driven reset, not window constraints or the
  * smallest size at which the scrolling content still works.
  */
-export const MINI_WINDOW_SIZE = { width: 470, height: 210 } as const
+export const MINI_WINDOW_SIZE = { width: 470, height: 240 } as const
 
 export const MINI_WINDOW_RANGE = {
   minWidth: 320,

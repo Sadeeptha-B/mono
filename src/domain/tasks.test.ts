@@ -7,6 +7,7 @@ import {
   archive,
   areaOf,
   backlogProblem,
+  blockTasks,
   canParent,
   childrenOf,
   complete,
@@ -493,6 +494,20 @@ describe('open tasks under a parent', () => {
       item('shipped', 'task', 'auth', { status: 'done', doneAt: AT }),
     ]
     expect(openTasksUnder('auth', items).map((i) => i.id)).toEqual(['form'])
+  })
+})
+
+describe("a block's tasks", () => {
+  it("keeps the block's order and done tasks, and leaves out what is gone or unknown", () => {
+    const items = [
+      item('auth', 'epic', 'work', { deletedAt: AT }),
+      item('form', 'task', 'auth'),
+      item('readme', 'task', 'work'),
+      item('ship', 'task', 'work', { status: 'done', doneAt: AT }),
+      item('typo', 'task', 'work', { deletedAt: AT }),
+    ]
+    const tasks = blockTasks(['ship', 'form', 'missing', 'typo', 'readme'], items, [work])
+    expect(tasks.map((t) => t.id)).toEqual(['ship', 'readme'])
   })
 })
 

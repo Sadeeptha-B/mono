@@ -5,6 +5,8 @@
  * so a missed or throttled tick makes either briefly stale but never wrong.
  */
 
+import type { ReactNode } from 'react'
+
 import { timerFace } from './timerFace'
 import type { TimerMode } from '@/domain/time'
 import type { ActiveSegment } from '@/domain/types'
@@ -16,6 +18,8 @@ type Props = {
   phase: Phase
   timerMode: TimerMode
   onToggleTimerMode: () => void
+  /** Set at the far side of the block's name: the stage's End early. */
+  aside?: ReactNode
 }
 
 const KIND_LABEL: Record<string, string> = {
@@ -24,7 +28,7 @@ const KIND_LABEL: Record<string, string> = {
   reflect: 'Working out priorities',
 }
 
-export function FocusTimer({ now, active, phase, timerMode, onToggleTimerMode }: Props) {
+export function FocusTimer({ now, active, phase, timerMode, onToggleTimerMode, aside }: Props) {
   if (!active) {
     return (
       <div className="text-muted">
@@ -58,6 +62,7 @@ export function FocusTimer({ now, active, phase, timerMode, onToggleTimerMode }:
         {face.overrun && (
           <span className="text-xs text-commit">over by {face.overBy}</span>
         )}
+        {aside && <span className="ml-auto">{aside}</span>}
       </div>
 
       <button
@@ -75,7 +80,11 @@ export function FocusTimer({ now, active, phase, timerMode, onToggleTimerMode }:
       <div className="mt-0.5 text-xs text-muted">{face.modeLabel}</div>
 
       {active.kind === 'block' && active.purpose && (
-        <p className="mt-3 max-w-sm text-lg leading-snug text-body">{active.purpose}</p>
+        // Named as the purpose, now that the tasks and the logs under it are
+        // headed too: three blocks of text in a column read as one otherwise.
+        <p className="mt-3 max-w-sm text-lg leading-snug text-body">
+          <span className="text-muted">Purpose:</span> {active.purpose}
+        </p>
       )}
     </div>
   )

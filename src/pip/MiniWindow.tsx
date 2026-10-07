@@ -21,7 +21,9 @@
 
 import { useEffect, useRef, useState, type MouseEvent } from 'react'
 
+import { BlockControls } from '@/components/BlockLog'
 import { Companion } from '@/components/Companion/Companion'
+import { SegmentGlance } from '@/components/Timeline/SegmentGlance'
 import {
   MiniAway,
   MiniBreakLength,
@@ -35,7 +37,7 @@ import {
 } from './MiniPanels'
 import { miniViewFor, type MiniFacts } from './view'
 import { MINI_WINDOW_SIZE, outsideMiniWindowRange } from './size'
-import { GhostButton } from '@/components/ui'
+import { quietActionClass } from '@/components/ui'
 import { AmbienceButton } from '@/ambient/AmbienceButton'
 import { formatClock, formatDuration } from '@/domain/time'
 import { DAY_HASH } from '@/hooks/useRoute'
@@ -146,6 +148,23 @@ export function MiniWindow(props: Props) {
             className="h-16 w-28"
           />
         </div>
+
+        {/* While something runs, the window reads in bands, each the width of
+            the window: the timer and the cat above; the block as the calendar
+            draws it, on its side (`SegmentGlance`); the line to write and the
+            urges to count; and the footer, which holds End early. It used to be
+            two columns, the controls stacked down one and the block upright
+            down the other, each too narrow for what it held. */}
+        {view.kind === 'running' && active && (
+          <div className="mt-3">
+            <SegmentGlance now={now} active={active} />
+          </div>
+        )}
+        {view.kind === 'running' && view.segment === 'block' && (
+          <div className="mt-3">
+            <BlockControls after={<AmbienceButton ambience={props.ambience} />} />
+          </div>
+        )}
       </div>
 
       {/* The timing is the other half of what an indicator is for. Keep it and
@@ -153,16 +172,33 @@ export function MiniWindow(props: Props) {
           window is made short. */}
       <div className="shrink-0 px-4 pb-3">
         <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-line pt-2 text-[11px] text-muted">
-          <span>
-            {active
-              ? `Ends ${formatClock(active.endsAt)} · ${blocksAhead(props.planned.blocks)}`
-              : `${blocksAhead(props.planned.blocks)} · ${formatDuration(props.planned.minutes * 60_000)} of focus`}
-          </span>
+          {view.kind === 'running' ? (
+            // Ending what runs is a quiet word here rather than a button among
+            // the controls: it is the rarest thing done in this window, and
+            // the one that cannot be taken back. The strip above already says
+            // when it ends.
+            <span>
+              <button
+                type="button"
+                onClick={view.segment === 'break' ? props.onEndBreak : props.onAbandon}
+                className={footerLinkClass}
+              >
+                {view.segment === 'break' ? 'Back to work' : 'End early'}
+              </button>
+              {` · ${blocksAhead(props.planned.blocks)}`}
+            </span>
+          ) : (
+            <span>
+              {active
+                ? `Ends ${formatClock(active.endsAt)} · ${blocksAhead(props.planned.blocks)}`
+                : `${blocksAhead(props.planned.blocks)} · ${formatDuration(props.planned.minutes * 60_000)} of focus`}
+            </span>
+          )}
           {showResetSize && (
             <button
               type="button"
               onClick={resetSize}
-              className="shrink-0 rounded-sm text-body underline-offset-2 hover:text-bright hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bright"
+              className={`shrink-0 ${footerLinkClass}`}
             >
               Reset size
             </button>
@@ -187,6 +223,9 @@ function openDayInTab(): void {
   if (window.location.hash !== DAY_HASH) window.location.hash = DAY_HASH
   window.focus()
 }
+
+/** A word in the footer that does something: Reset size, End early, Back to work. */
+const footerLinkClass = `text-body ${quietActionClass}`
 
 const blocksAhead = (blocks: number): string =>
   `${blocks} block${blocks === 1 ? '' : 's'} ahead`
@@ -257,32 +296,25 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
       )
 
     case 'running':
+      // Only the timer and its purpose here, level with the cat. The strip, the
+      // row to write in and End early are bands of their own below, the width
+      // of the window (see the layout above).
+      //
+      // No task list while the block runs, and no list of what has been logged
+      // either. The purpose already says what the block is for in one line, and
+      // a list always on top is a list of reasons to look at it. The tasks come
+      // back at the end of the block, where ticking them is the point; the logs
+      // are on the stage and the calendar. What this window does keep is the
+      // field and the counter, because writing a line or counting an urge is
+      // the moment you are most likely to be in another window — which is this
+      // one's job.
       return (
-        <div>
-          <MiniTimer
-            now={now}
-            active={active}
-            timerMode={props.timerMode}
-            onToggleTimerMode={props.onToggleTimerMode}
-          />
-          {/* No task list here while the block runs. The purpose above already
-              says what the block is for in one line, the opening size is tuned
-              to hold exactly the timer, that line and the controls, and a list
-              always on top is a list of reasons to look at it. The tasks come
-              back at the end of the block, where ticking them is the point. */}
-          <div className="mt-3 flex flex-wrap gap-2">
-            {view.segment === 'break' ? (
-              <GhostButton type="button" onClick={props.onEndBreak}>
-                Back to work
-              </GhostButton>
-            ) : (
-              <GhostButton type="button" onClick={props.onAbandon}>
-                End early
-              </GhostButton>
-            )}
-            {view.segment === 'block' && <AmbienceButton ambience={props.ambience} />}
-          </div>
-        </div>
+        <MiniTimer
+          now={now}
+          active={active}
+          timerMode={props.timerMode}
+          onToggleTimerMode={props.onToggleTimerMode}
+        />
       )
 
     case 'done':

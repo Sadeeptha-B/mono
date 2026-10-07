@@ -99,6 +99,24 @@ export const revealOnHover =
   'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:opacity-100'
 
 /**
+ * A word that does something, drawn as a word rather than a button: End early
+ * and Back to work while something runs, on the stage and in the mini window,
+ * and the mini window's Reset size. Kept for the rare actions that should be
+ * in reach without standing among the controls. The host sets the colour.
+ */
+export const quietActionClass =
+  'rounded-sm underline-offset-2 hover:text-bright hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bright'
+
+/**
+ * The small label over one of the stage's lists under a running block —
+ * Tasks, Logs — set like the block's own label above the timer, so the parts
+ * of the stage read as parts.
+ */
+export const SectionHeading = ({ children }: { children: ReactNode }) => (
+  <h3 className="text-[11px] font-medium tracking-widest text-muted uppercase">{children}</h3>
+)
+
+/**
  * An action drawn as an icon (`icons.tsx`, or `EditGlyph`) rather than a word:
  * the tasks page's rename, done, drop, archive, reopen, restore and delete,
  * and the same actions on a place in All Tasks.
@@ -539,13 +557,16 @@ export function RenameField({
   onSave,
   onCancel,
   textClass = 'text-sm',
+  maxLength = 120,
 }: {
   label: string
   value: string
   onChange: (value: string) => void
   onSave: () => void
   onCancel: () => void
-  textClass?: 'text-sm' | 'text-[15px]'
+  textClass?: 'text-xs' | 'text-sm' | 'text-[15px]'
+  /** A title is short; a block's note is a sentence or two. */
+  maxLength?: number
 }) {
   return (
     <div className="flex min-w-0 flex-1 items-center gap-2">
@@ -564,7 +585,7 @@ export function RenameField({
         }}
         aria-label={label}
         autoFocus
-        maxLength={120}
+        maxLength={maxLength}
         className={`${fieldClass} py-1 ${textClass}`}
       />
       <GhostButton
