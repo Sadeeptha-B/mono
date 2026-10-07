@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { MonoEvent } from '@/domain/events'
+import { replay, type MonoEvent } from '@/domain/events'
 import { migratePersisted, readImport, SCHEMA_VERSION } from './schema'
 
 /**
@@ -48,6 +48,7 @@ const EVERY_EVENT = {
       durationMin: 30,
       prepMin: 5,
       recoverMin: 10,
+      recurringId: 'series-added',
     },
   },
   'commitment/updated': {
@@ -155,6 +156,37 @@ const EVERY_EVENT = {
     blockId: 'block-started',
     noteId: 'note-a',
   },
+  'recurring/added': {
+    type: 'recurring/added',
+    at: 29,
+    rule: {
+      id: 'series-added',
+      title: 'Standup',
+      time: '09:00',
+      durationMin: 15,
+      prepMin: 5,
+      recoverMin: 5,
+      repeat: { every: 'week', interval: 1, weekdays: [1, 2, 3, 4, 5] },
+      startsOn: '2026-09-01',
+      endsOn: '2026-12-18',
+    },
+  },
+  'recurring/updated': {
+    type: 'recurring/updated',
+    at: 30,
+    id: 'series-added',
+    patch: {
+      title: 'Swim',
+      time: '16:00',
+      durationMin: 60,
+      prepMin: 30,
+      recoverMin: 20,
+      repeat: { every: 'month', interval: 2, monthDay: 31 },
+      startsOn: '2026-09-02',
+      endsOn: null,
+    },
+  },
+  'recurring/removed': { type: 'recurring/removed', at: 31, id: 'series-added' },
 } satisfies CompleteEventLog
 
 const EVERY: MonoEvent[] = Object.values(EVERY_EVENT)
@@ -167,6 +199,9 @@ const V6: readonly string[] = [
   'block/noteEdited',
   'block/noteRemoved',
 ]
+
+/** What v7 added: commitments that come round on a schedule. */
+const isV7 = (e: MonoEvent): boolean => e.type.startsWith('recurring/')
 
 describe('persisted schema', () => {
   it('returns a well-formed current log unchanged', () => {
@@ -234,7 +269,10 @@ describe('the v4 schema', () => {
     const v3 = {
       events: EVERY.filter(
         (e) =>
-          !e.type.startsWith('intention/') && !e.type.startsWith('today/') && !V6.includes(e.type),
+          !e.type.startsWith('intention/') &&
+          !e.type.startsWith('today/') &&
+          !V6.includes(e.type) &&
+          !isV7(e),
       ),
       dayKey: today,
     }
@@ -243,14 +281,14 @@ describe('the v4 schema', () => {
 
   it('reads a v4 log exactly as it was, rather than discarding it on upgrade', () => {
     const v4 = {
-      events: EVERY.filter((e) => !e.type.startsWith('today/') && !V6.includes(e.type)),
+      events: EVERY.filter((e) => !e.type.startsWith('today/') && !V6.includes(e.type) && !isV7(e)),
       dayKey: today,
     }
     expect(migratePersisted(v4, 4)).toEqual(v4)
   })
 
   it('reads a v5 log exactly as it was, rather than discarding it on upgrade', () => {
-    const v5 = { events: EVERY.filter((e) => !V6.includes(e.type)), dayKey: today }
+    const v5 = { events: EVERY.filter((e) => !V6.includes(e.type) && !isV7(e)), dayKey: today }
     expect(migratePersisted(v5, 5)).toEqual(v5)
   })
 
@@ -271,6 +309,62 @@ describe('the v4 schema', () => {
       { type: 'block/noteEdited', at: 7, blockId: 'b', noteId: 'n', text: 'fixed' },
       { type: 'block/noteRemoved', at: 9, blockId: 'b', noteId: 'n' },
     ])
+  })
+
+  it('reads a v6 log exactly as it was, rather than discarding it on upgrade', () => {
+    const v6 = { events: EVERY.filter((e) => !isV7(e)), dayKey: today }
+    expect(migratePersisted(v6, 6)).toEqual(v6)
+  })
+
+  it('drops an event whose instants no date can hold, rather than failing to load', () => {
+    // Finite, and far past the last day a `Date` can represent: replay reads
+    // the day from it, and formatting it throws.
+    const series = EVERY_EVENT['recurring/added']
+    const shaped: MonoEvent = { type: 'day/shaped', at: 4 }
+    const events = [
+      series,
+      { ...EVERY_EVENT['recurring/updated'], at: 1e20 },
+      { ...EVERY_EVENT['commitment/added'], commitment: { ...EVERY_EVENT['commitment/added'].commitment, startsAt: 1e20 } },
+      { type: 'away/recorded', at: 3, from: -1e20, to: 5 },
+      { type: 'block/started', at: 4, id: 'b', blockKind: 'deep', endsAt: 1e17, purpose: null },
+      shaped,
+    ] as MonoEvent[]
+
+    const { events: kept } = migratePersisted({ events, dayKey: null }, SCHEMA_VERSION)
+    expect(kept).toEqual([series, shaped])
+    expect(() => replay(kept)).not.toThrow()
+  })
+
+  it('drops a series it cannot read whole, rather than guessing at its days', () => {
+    const rule = {
+      id: 'series',
+      title: 'Standup',
+      time: '09:00',
+      durationMin: 15,
+      repeat: { every: 'day', interval: 1 },
+      startsOn: '2026-09-01',
+    }
+    const kept = { type: 'recurring/added', at: 1, rule } as MonoEvent
+    const events = [
+      kept,
+      { type: 'recurring/added', at: 2, rule: { ...rule, id: 'a', time: '9am' } },
+      { type: 'recurring/added', at: 3, rule: { ...rule, id: 'b', startsOn: '2026-02-30' } },
+      { type: 'recurring/added', at: 4, rule: { ...rule, id: 'c', endsOn: 'soon' } },
+      {
+        type: 'recurring/added',
+        at: 5,
+        rule: { ...rule, id: 'd', repeat: { every: 'week', interval: 1, weekdays: [] } },
+      },
+      {
+        type: 'recurring/added',
+        at: 6,
+        rule: { ...rule, id: 'e', repeat: { every: 'month', interval: 1, monthDay: 32 } },
+      },
+      { type: 'recurring/added', at: 7, rule: { ...rule, id: 'f', repeat: { every: 'year' } } },
+      { type: 'recurring/updated', at: 8, id: 'series', patch: { startsOn: 'tomorrow' } },
+    ] as MonoEvent[]
+
+    expect(migratePersisted({ events, dayKey: null }, SCHEMA_VERSION).events).toEqual([kept])
   })
 
   it("drops a today event that names no task", () => {

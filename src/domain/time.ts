@@ -17,6 +17,21 @@ export type DayKey = string
 export const dayKey = (at: Ms): DayKey => format(at, 'yyyy-MM-dd')
 
 /**
+ * The furthest instant either side of 1970 a `Date` can hold, by the
+ * specification: a hundred million days.
+ */
+const MAX_INSTANT: Ms = 8.64e15
+
+/**
+ * Whether a value is an instant this module can turn into a day. Finite is not
+ * enough: `1e20` is finite, makes an invalid `Date`, and `format` throws on it.
+ * For the boundary where data Mono did not write becomes state (`schema.ts`);
+ * everything Mono writes itself comes from the clock and always passes.
+ */
+export const isInstant = (value: unknown): value is Ms =>
+  typeof value === 'number' && Number.isFinite(value) && Math.abs(value) <= MAX_INSTANT
+
+/**
  * Whether two instants fall on the same local calendar day.
  *
  * One definition, because three things ask it and they have to agree: the

@@ -19,7 +19,7 @@ import {
 } from 'react'
 
 import { coerceBoundedMinutes } from './minutes'
-import { GUIDE_HASH, TASKS_HASH, type Route } from '@/hooks/useRoute'
+import { GUIDE_HASH, RECURRING_HASH, TASKS_HASH, type Route } from '@/hooks/useRoute'
 
 export const fieldClass =
   'min-w-0 w-full max-w-full rounded-lg border border-muted/70 bg-ink px-3.5 py-2.5 text-bright placeholder:text-muted/90 focus:border-deep focus:outline-none'
@@ -31,15 +31,15 @@ export const labelClass =
  * The controls in the top-right of a view: Tasks, Guide, Settings, Back to
  * today.
  *
- * Shared because there are three headers — the day, the tasks page and the
- * guide — and they carry the same controls. Two copies of this string drifted
+ * Shared because there are four headers — the day, the tasks page, the
+ * recurring page and the guide — and they carry the same controls. Two copies of this string drifted
  * apart once already.
  */
 export const headerControlClass =
   'rounded-lg border border-muted/70 px-3 py-1.5 text-xs text-body transition hover:bg-surface-raised hover:text-bright'
 
 /**
- * Tasks and Guide, the same pair in every header.
+ * Tasks, Recurring and Guide, the same links in every header.
  *
  * Each page used to leave out its own link, which made the header change shape
  * from one page to the next and left no way from the guide to the tasks without
@@ -64,6 +64,7 @@ export function PageLinks({ current }: { current: Route }) {
   return (
     <>
       {link('tasks', TASKS_HASH, 'Tasks')}
+      {link('recurring', RECURRING_HASH, 'Recurring')}
       {link('guide', GUIDE_HASH, 'Guide')}
     </>
   )
@@ -198,16 +199,28 @@ export function GhostButton({
  * The frame forwards a click from its padding to the input, so separating the
  * visual box does not make the native picker's tap target any smaller.
  */
-export function TimeInput({
-  variant = 'field',
-  ...props
-}: Omit<InputHTMLAttributes<HTMLInputElement>, 'className' | 'type'> & {
+type TemporalInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'className' | 'type'> & {
   /**
    * Working-hour ranges use the same boundary with denser spacing. Its
    * `@max-xs` adjustment requires an ancestor marked `@container`.
    */
   variant?: 'field' | 'compact'
-}) {
+}
+
+export const TimeInput = (props: TemporalInputProps) => <TemporalInput {...props} type="time" />
+
+/**
+ * A native date field, framed as `TimeInput` is and for the same WebKit bug,
+ * which affects every temporal input rather than only time. The recurring
+ * page's start and end dates are the only ones Mono asks for.
+ */
+export const DateInput = (props: TemporalInputProps) => <TemporalInput {...props} type="date" />
+
+function TemporalInput({
+  type,
+  variant = 'field',
+  ...props
+}: TemporalInputProps & { type: 'time' | 'date' }) {
   const input = useRef<HTMLInputElement>(null)
   const lastPointerType = useRef<string | null>(null)
   const frameClass =
@@ -247,7 +260,7 @@ export function TimeInput({
       <input
         {...props}
         ref={input}
-        type="time"
+        type={type}
         className="tnum block min-w-0 w-full max-w-full border-0 bg-transparent p-0 text-bright focus:outline-none"
       />
     </div>

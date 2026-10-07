@@ -14,8 +14,8 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { reduce, replay, type MonoEvent } from './events'
-import type { Commitment, Ms, PlannedBreak } from './types'
+import { commitmentsFor, reduce, replay, type MonoEvent } from './events'
+import type { Commitment, Ms, PlannedBreak, RecurringCommitment } from './types'
 
 const BASE_DAY = new Date(2026, 7, 20)
 
@@ -612,5 +612,183 @@ describe("a block's notes and urges", () => {
       { type: 'block/noteRemoved', at: at(15), blockId: 'other', noteId: 'n1' },
     ]
     for (const miss of misses) expect(reduce(before, miss)).toBe(before)
+  })
+})
+
+describe('recurring commitments', () => {
+  /** Weekdays at nine, from the Monday before `BASE_DAY` (a Thursday). */
+  const standup: RecurringCommitment = {
+    id: 'standup',
+    title: 'Standup',
+    time: '09:00',
+    durationMin: 15,
+    repeat: { every: 'week', interval: 1, weekdays: [1, 2, 3, 4, 5] },
+    startsOn: '2026-08-17',
+  }
+  const today = 'standup@2026-08-20'
+  const started = (when: Ms, rule: RecurringCommitment = standup): MonoEvent => ({
+    type: 'recurring/added',
+    at: when,
+    rule,
+  })
+  const ids = (events: MonoEvent[], when: Ms) => commitmentsFor(replay(events), when).map((c) => c.id)
+  const nextDay = new Date(2026, 7, 21, 8).getTime()
+
+  it("put today's occurrence among the day's commitments, under an id the day derives", () => {
+    const state = replay([started(at(7))])
+    expect(state.commitments).toEqual([])
+    expect(commitmentsFor(state, at(8))).toEqual([
+      {
+        id: today,
+        title: 'Standup',
+        startsAt: at(9),
+        durationMin: 15,
+        recurringId: 'standup',
+      },
+    ])
+    expect(commitmentsFor(state, nextDay).map((c) => c.id)).toEqual(['standup@2026-08-21'])
+    // A Saturday has none.
+    expect(commitmentsFor(state, new Date(2026, 7, 22, 8).getTime())).toEqual([])
+  })
+
+  it('stay with the series when an edit to today changes nothing', () => {
+    // Done on an untouched form sends the whole draft back, margins as zeros.
+    const before = replay([started(at(7))])
+    const unchanged = reduce(before, {
+      type: 'commitment/updated',
+      at: at(7, 30),
+      id: today,
+      patch: { title: 'Standup', startsAt: at(9), durationMin: 15, prepMin: 0, recoverMin: 0 },
+    })
+    expect(unchanged).toBe(before)
+
+    const moved = reduce(unchanged, {
+      type: 'recurring/updated',
+      at: at(7, 45),
+      id: 'standup',
+      patch: { time: '08:30' },
+    })
+    expect(commitmentsFor(moved, at(8))).toEqual([
+      expect.objectContaining({ id: today, startsAt: at(8, 30) }),
+    ])
+  })
+
+  it("give the day its own copy when today's is edited, which a later change to the series leaves alone", () => {
+    const events: MonoEvent[] = [
+      started(at(7)),
+      { type: 'commitment/updated', at: at(7, 30), id: today, patch: { startsAt: at(10) } },
+      { type: 'recurring/updated', at: at(7, 45), id: 'standup', patch: { time: '11:00' } },
+    ]
+    const state = replay(events)
+    expect(commitmentsFor(state, at(8))).toEqual([
+      expect.objectContaining({ id: today, startsAt: at(10), recurringId: 'standup' }),
+    ])
+    // Tomorrow follows the series, changed.
+    expect(commitmentsFor(state, nextDay).find((c) => c.id === 'standup@2026-08-21')?.startsAt).toBe(
+      new Date(2026, 7, 21, 11).getTime(),
+    )
+  })
+
+  it('skip today when today is removed, edited or not, and come back the next day', () => {
+    const skipped = [started(at(7)), { type: 'commitment/removed', at: at(7, 30), id: today }] as MonoEvent[]
+    expect(ids(skipped, at(8))).toEqual([])
+
+    const editedThenRemoved = [
+      started(at(7)),
+      { type: 'commitment/updated', at: at(7, 15), id: today, patch: { durationMin: 30 } },
+      { type: 'commitment/removed', at: at(7, 30), id: today },
+    ] as MonoEvent[]
+    expect(ids(editedThenRemoved, at(8))).toEqual([])
+
+    const reset = [...skipped, { type: 'day/reset', at: nextDay }] as MonoEvent[]
+    expect(replay(reset).skipped).toEqual([])
+    expect(ids(reset, nextDay)).toEqual(['standup@2026-08-21'])
+  })
+
+  it("move today's with the series while it is still ahead", () => {
+    const events: MonoEvent[] = [
+      started(at(7)),
+      { type: 'recurring/updated', at: at(8), id: 'standup', patch: { time: '10:00' } },
+    ]
+    const state = replay(events)
+    expect(state.commitments).toEqual([])
+    expect(commitmentsFor(state, at(8))[0]?.startsAt).toBe(at(10))
+  })
+
+  it('never rewrite one that has already begun, whether changed or ended', () => {
+    const changed = replay([
+      started(at(7)),
+      { type: 'recurring/updated', at: at(9, 5), id: 'standup', patch: { time: '10:00' } },
+    ])
+    expect(commitmentsFor(changed, at(12))).toEqual([
+      expect.objectContaining({ id: today, startsAt: at(9) }),
+    ])
+    expect(commitmentsFor(changed, nextDay).find((c) => c.id === 'standup@2026-08-21')?.startsAt).toBe(
+      new Date(2026, 7, 21, 10).getTime(),
+    )
+
+    const ended = replay([started(at(7)), { type: 'recurring/removed', at: at(9, 5), id: 'standup' }])
+    expect(ended.recurring).toEqual([])
+    expect(commitmentsFor(ended, at(12)).map((c) => c.id)).toEqual([today])
+    const tomorrow = reduce(ended, { type: 'day/reset', at: nextDay })
+    expect(commitmentsFor(tomorrow, nextDay)).toEqual([])
+
+    // Ended before it began, today's goes with the series.
+    const endedEarly = replay([started(at(7)), { type: 'recurring/removed', at: at(8), id: 'standup' }])
+    expect(commitmentsFor(endedEarly, at(8))).toEqual([])
+  })
+
+  it('count getting ready as having begun', () => {
+    const state = replay([
+      started(at(7), { ...standup, prepMin: 30 }),
+      { type: 'recurring/removed', at: at(8, 40), id: 'standup' },
+    ])
+    expect(commitmentsFor(state, at(12)).map((c) => c.id)).toEqual([today])
+  })
+
+  it("clear the pins today's occurrence lands on, and refuse a pin across it", () => {
+    const covered: PlannedBreak = { id: 'covered', startsAt: at(9, 5), durationMin: 10 }
+    expect(replay([pinned(covered), started(at(8))]).overrides).toEqual([])
+    expect(replay([started(at(8)), { ...pinned(covered), at: at(8, 30) }]).overrides).toEqual([])
+
+    // Moved onto a pin by a change to the series, the pin goes too.
+    const later: PlannedBreak = { id: 'later', startsAt: at(11), durationMin: 10 }
+    expect(
+      replay([
+        started(at(7)),
+        { ...pinned(later), at: at(7, 30) },
+        { type: 'recurring/updated', at: at(8), id: 'standup', patch: { time: '11:00' } },
+      ]).overrides,
+    ).toEqual([])
+  })
+
+  it('end a series given an end, and lose the end when told it has none', () => {
+    const state = replay([
+      started(at(7)),
+      { type: 'recurring/updated', at: at(8), id: 'standup', patch: { endsOn: '2026-08-20' } },
+    ])
+    expect(commitmentsFor(state, nextDay)).toEqual([])
+    const reopened = reduce(state, {
+      type: 'recurring/updated',
+      at: at(8),
+      id: 'standup',
+      patch: { endsOn: null },
+    })
+    expect(reopened.recurring[0]).not.toHaveProperty('endsOn')
+    expect(commitmentsFor(reopened, nextDay)).toHaveLength(1)
+  })
+
+  it('survive midnight, and ignore a duplicate', () => {
+    const state = replay([started(at(7)), started(at(7)), { type: 'day/reset', at: nextDay }])
+    expect(state.recurring).toEqual([standup])
+  })
+
+  it('replay to the same day every time', () => {
+    const events: MonoEvent[] = [
+      started(at(7)),
+      { type: 'commitment/updated', at: at(7, 30), id: today, patch: { durationMin: 20 } },
+      { type: 'recurring/updated', at: at(9, 30), id: 'standup', patch: { title: 'Sync' } },
+    ]
+    expect(commitmentsFor(replay(events), at(12))).toEqual(commitmentsFor(replay(events), at(12)))
   })
 })

@@ -2,10 +2,10 @@
  * What a commitment is, as a form: what, when, how long, and what it costs
  * either side of itself.
  *
- * Two places ask for one — the question the day opens with, and the calendar's
- * composer — and they used to be separate copies of the same form with
- * different labels. They can now be on screen at the same time, so the ids are
- * prefixed rather than fixed: two `id="commitment-time"` inputs would leave the
+ * Three places ask for one — the question the day opens with, the calendar's
+ * composer, and the recurring page — and the first two used to be separate
+ * copies of the same form with different labels. They can now be on screen at
+ * the same time, so the ids are prefixed rather than fixed: two `id="commitment-time"` inputs would leave the
  * second label pointing at the first field.
  *
  * The before/after pair is folded away by default. Most commitments do not need
@@ -37,6 +37,7 @@ import { format } from 'date-fns'
 
 import { fieldClass, labelClass, MinutesInput, TimeInput } from './ui'
 import { COMMITMENT_MINUTES, MARGIN_MINUTES, parseBoundedMinutes } from './minutes'
+import { isWallClock } from '@/domain/recurrence'
 import { wallClockOn } from '@/domain/time'
 import type { Commitment, Ms } from '@/domain/types'
 
@@ -102,18 +103,10 @@ export function readCommitment(
   now: Ms,
   draft: CommitmentDraft,
 ): Omit<Commitment, 'id'> | null {
-  const title = draft.title.trim()
+  const parts = readParts(draft)
   const startsAt = wallClockOn(now, draft.time)
-  const durationMin = parseBoundedMinutes(
-    draft.durationText,
-    COMMITMENT_MINUTES.min,
-    COMMITMENT_MINUTES.max,
-  )
-  const prepMin = parseMargin(draft.prepText)
-  const recoverMin = parseMargin(draft.recoverText)
-
-  if (title.length === 0 || startsAt === null || durationMin === null) return null
-  if (prepMin === null || recoverMin === null) return null
+  if (parts === null || startsAt === null) return null
+  const { title, durationMin, prepMin, recoverMin } = parts
 
   return {
     title,
@@ -122,6 +115,39 @@ export function readCommitment(
     ...(prepMin === 0 ? {} : { prepMin }),
     ...(recoverMin === 0 ? {} : { recoverMin }),
   }
+}
+
+/**
+ * What the draft says before it is put on any particular day: the title, the
+ * wall-clock time, and the minutes, with zero margins kept as zeros.
+ *
+ * What a series needs from the same fieldset. A series has no day attached —
+ * its time stays "09:00" and is resolved onto each day it comes round on — so
+ * the recurring page reads the draft through this and never goes near an
+ * instant. `readCommitment` is the other half, for a commitment on today.
+ */
+export function readCommitmentShape(
+  draft: CommitmentDraft,
+): { title: string; time: string; durationMin: number; prepMin: number; recoverMin: number } | null {
+  const parts = readParts(draft)
+  if (parts === null || !isWallClock(draft.time)) return null
+  return { ...parts, time: draft.time }
+}
+
+/** The title and the minutes, which mean the same with or without a day. */
+function readParts(draft: CommitmentDraft) {
+  const title = draft.title.trim()
+  const durationMin = parseBoundedMinutes(
+    draft.durationText,
+    COMMITMENT_MINUTES.min,
+    COMMITMENT_MINUTES.max,
+  )
+  const prepMin = parseMargin(draft.prepText)
+  const recoverMin = parseMargin(draft.recoverText)
+
+  if (title.length === 0 || durationMin === null) return null
+  if (prepMin === null || recoverMin === null) return null
+  return { title, durationMin, prepMin, recoverMin }
 }
 
 /**

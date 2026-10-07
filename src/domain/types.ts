@@ -173,10 +173,73 @@ export type Commitment = {
   prepMin?: Minutes
   /** Getting back and settling, after it ends. */
   recoverMin?: Minutes
+  /**
+   * The series this is one day of, when it came from one. Present on an
+   * occurrence derived from a `RecurringCommitment`, and kept on the day's own
+   * copy once that occurrence has been edited, so the day still knows it is a
+   * standup that repeats rather than a one-off that happens to share its name.
+   * Absent on everything typed into the day by hand.
+   */
+  recurringId?: string
 }
 
-/** Fields an edit may change; identity belongs to the event's target id. */
-export type CommitmentPatch = Partial<Omit<Commitment, 'id'>>
+/**
+ * Fields an edit may change; identity belongs to the event's target id, and
+ * which series a commitment came from is part of its identity too.
+ */
+export type CommitmentPatch = Partial<Omit<Commitment, 'id' | 'recurringId'>>
+
+/** A day of the week, in `Date#getDay` order: Sunday is 0. */
+export type Weekday = 0 | 1 | 2 | 3 | 4 | 5 | 6
+
+/**
+ * How often a series comes round. Deliberately three shapes and no more — see
+ * `recurrence.ts` for what each means and why nothing like an RRULE is here.
+ *
+ * `interval` is "every N": 1 is every day, week or month, 2 is every other.
+ * Weeks are counted from the week the series starts in, and a monthly date
+ * past the end of a short month falls on that month's last day.
+ */
+export type Repeat =
+  | { every: 'day'; interval: number }
+  | { every: 'week'; interval: number; weekdays: Weekday[] }
+  | { every: 'month'; interval: number; monthDay: number }
+
+/**
+ * A commitment that comes round on a schedule: the standup every weekday, the
+ * swim every Tuesday and Thursday.
+ *
+ * It is the rule, not the days. Nothing about any particular day is stored
+ * here, for the reason today's hours are not stored as a copy of the default
+ * shape: each day's occurrence is *derived* from the rule, so changing the
+ * rule reshapes every day that has not been changed by hand, today included.
+ * See `commitmentsFor` in `events.ts`.
+ *
+ * The time is wall clock ("09:00") rather than an instant, and the dates are
+ * local calendar days ("2026-08-20"), for the same reason a `DefaultRegion`
+ * is: a standup at nine is at nine on both sides of a DST shift. `endsOn` is
+ * the last day it can happen, inclusive; absent means it does not end.
+ */
+export type RecurringCommitment = {
+  id: string
+  title: string
+  time: string
+  durationMin: Minutes
+  prepMin?: Minutes
+  recoverMin?: Minutes
+  repeat: Repeat
+  startsOn: string
+  endsOn?: string
+}
+
+/**
+ * Fields an edit may change. Merged like every other patch, so clearing an
+ * end date or a margin is said rather than left out — see `readRecurringEdit`.
+ * `endsOn: null` is that saying for the one field that can be absent.
+ */
+export type RecurringPatch = Partial<Omit<RecurringCommitment, 'id' | 'endsOn'>> & {
+  endsOn?: string | null
+}
 
 /**
  * A break the user pinned onto the timeline. Breaks are never planned

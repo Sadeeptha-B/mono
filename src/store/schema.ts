@@ -24,7 +24,8 @@ import {
   type Area,
   type Item,
 } from '@/domain/tasks'
-import { dayKey } from '@/domain/time'
+import { isDayKey, isWallClock } from '@/domain/recurrence'
+import { dayKey, isInstant } from '@/domain/time'
 import {
   isRoomId,
   type Commitment,
@@ -34,7 +35,11 @@ import {
   type Ms,
   type PlannedBreak,
   type PlannedBreakPatch,
+  type RecurringCommitment,
+  type RecurringPatch,
+  type Repeat,
   type Settings,
+  type Weekday,
   type WorkRegion,
 } from '@/domain/types'
 
@@ -77,8 +82,14 @@ export type ExportedShape = PersistedShape & { version: number; tasks?: Exported
  * corrections to a note. A v5 build would drop all of them and read the day as
  * though nothing had been written, so it is a bump for the same reason. No
  * existing event changed; a block from an older log simply has none of either.
+ *
+ * v7 added the `recurring/` events: commitments that come round on a
+ * schedule. A v6 build would drop them and read a day with a standup every
+ * morning as a day with nothing fixed, so it is a bump. No existing event
+ * changed shape; a commitment gained an optional `recurringId`, absent on
+ * everything written before series existed.
  */
-export const SCHEMA_VERSION = 6
+export const SCHEMA_VERSION = 7
 
 /**
  * Read an export. Throws only when the file is not a Mono export, or comes
@@ -134,12 +145,11 @@ export type ImportedFile = ReturnType<typeof readImport>
  * through into this one.
  */
 export function migratePersisted(persisted: unknown, from: number): PersistedShape {
-  // v3 -> v4, v4 -> v5 and v5 -> v6 only added things, so any of those logs is
-  // read exactly as a current one. This branch is the whole migration, and
-  // without it the fall-through below would throw every existing log away on
-  // upgrade.
+  // Every bump since v3 only added things, so any of those logs is read
+  // exactly as a current one. This branch is the whole migration, and without
+  // it the fall-through below would throw every existing log away on upgrade.
   if (
-    (from === SCHEMA_VERSION || from === 5 || from === 4 || from === 3) &&
+    (from === SCHEMA_VERSION || from === 6 || from === 5 || from === 4 || from === 3) &&
     isPersisted(persisted)
   ) {
     return {
@@ -220,12 +230,19 @@ export const inferDayKey = (events: readonly MonoEvent[]): string | null => {
  * The shape every event has, whatever its type. Enough to hand to `reduce`,
  * which ignores types it does not recognise — an imported file is data from
  * outside, so it is filtered rather than trusted.
+ *
+ * `at` has to be an instant a date can hold, not merely a number. Replay reads
+ * the local day from it — the history's days, and since recurring commitments
+ * the day a series is asked about — and `1e20` is a finite number that no
+ * `Date` can format, so one such event threw out of rehydration and left the
+ * app on an empty session. Every other instant in an event, and in an
+ * exported backlog, is held to the same rule (`sanitiseInstant`).
  */
 const isEventShaped = (v: unknown): v is MonoEvent =>
   typeof v === 'object' &&
   v !== null &&
   typeof (v as MonoEvent).type === 'string' &&
-  typeof (v as MonoEvent).at === 'number'
+  isInstant((v as MonoEvent).at)
 
 const isPresent = <T,>(value: T | null): value is T => value !== null
 
@@ -277,7 +294,7 @@ function sanitiseImportedEvent(event: MonoEvent): MonoEvent | null {
     case 'block/started': {
       const id = sanitiseString(raw.id)
       const blockKind = sanitiseBlockKind(raw.blockKind)
-      const endsAt = sanitiseNumber(raw.endsAt)
+      const endsAt = sanitiseInstant(raw.endsAt)
       const purpose = sanitiseNullableString(raw.purpose)
       if (id === null || blockKind === null || endsAt === null || purpose === undefined) {
         return null
@@ -339,13 +356,13 @@ function sanitiseImportedEvent(event: MonoEvent): MonoEvent | null {
 
     case 'break/started': {
       const id = sanitiseString(raw.id)
-      const endsAt = sanitiseNumber(raw.endsAt)
+      const endsAt = sanitiseInstant(raw.endsAt)
       return id === null || endsAt === null ? null : { type: event.type, at: event.at, id, endsAt }
     }
 
     case 'away/recorded': {
-      const from = sanitiseNumber(raw.from)
-      const to = sanitiseNumber(raw.to)
+      const from = sanitiseInstant(raw.from)
+      const to = sanitiseInstant(raw.to)
       return from === null || to === null ? null : { type: event.type, at: event.at, from, to }
     }
 
@@ -378,6 +395,22 @@ function sanitiseImportedEvent(event: MonoEvent): MonoEvent | null {
       const taskId = sanitiseString(raw.taskId)
       return taskId === null ? null : { type: event.type, at: event.at, taskId }
     }
+
+    case 'recurring/added': {
+      const rule = sanitiseRecurring(raw.rule)
+      return rule === null ? null : { type: event.type, at: event.at, rule }
+    }
+
+    case 'recurring/updated': {
+      const id = sanitiseString(raw.id)
+      const patch = sanitiseRecurringPatch(raw.patch)
+      return id === null || patch === null ? null : { type: event.type, at: event.at, id, patch }
+    }
+
+    case 'recurring/removed': {
+      const id = sanitiseString(raw.id)
+      return id === null ? null : { type: event.type, at: event.at, id }
+    }
   }
 
   // Unreachable for the types above: the `never` is what makes adding an event
@@ -396,6 +429,9 @@ const isRecord = (value: unknown): value is Record<string, unknown> =>
 
 const sanitiseNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null
+
+/** An instant a `Date` can represent, so formatting it as a day cannot throw. */
+const sanitiseInstant = (value: unknown): number | null => (isInstant(value) ? value : null)
 
 const sanitisePositiveMinutes = (value: unknown): number | null => {
   if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0) return null
@@ -504,7 +540,7 @@ function sanitiseCommitment(value: unknown): Commitment | null {
   if (!isRecord(value)) return null
   const id = sanitiseString(value.id)
   const title = sanitiseString(value.title)
-  const startsAt = sanitiseNumber(value.startsAt)
+  const startsAt = sanitiseInstant(value.startsAt)
   const durationMin = sanitisePositiveMinutes(value.durationMin)
   if (id === null || title === null || startsAt === null || durationMin === null) {
     return null
@@ -516,6 +552,9 @@ function sanitiseCommitment(value: unknown): Commitment | null {
   const prepMin = sanitiseMarginMinutes(value.prepMin)
   const recoverMin = sanitiseMarginMinutes(value.recoverMin)
   if (prepMin === null || recoverMin === null) return null
+  // Which series it came from only labels it, so an unreadable one costs the
+  // label rather than the commitment.
+  const recurringId = sanitiseString(value.recurringId)
 
   return {
     id,
@@ -524,8 +563,139 @@ function sanitiseCommitment(value: unknown): Commitment | null {
     durationMin,
     ...(prepMin === undefined ? {} : { prepMin }),
     ...(recoverMin === undefined ? {} : { recoverMin }),
+    ...(recurringId === null ? {} : { recurringId }),
   }
 }
+
+/**
+ * A series as the log holds one. Strict, like a commitment: a series whose
+ * time, length or days cannot be read would put a meeting somewhere nobody
+ * said, every day it matched, so it is dropped whole. An end date that cannot
+ * be read is dropped with it rather than read as "never ends", which would be
+ * the louder of the two mistakes.
+ */
+function sanitiseRecurring(value: unknown): RecurringCommitment | null {
+  if (!isRecord(value)) return null
+  const id = sanitiseString(value.id)
+  const title = sanitiseText(value.title)
+  const time = sanitiseWallClock(value.time)
+  const durationMin = sanitisePositiveMinutes(value.durationMin)
+  const repeat = sanitiseRepeat(value.repeat)
+  const startsOn = sanitiseDayKey(value.startsOn)
+  if (
+    id === null ||
+    title === null ||
+    time === null ||
+    durationMin === null ||
+    repeat === null ||
+    startsOn === null
+  ) {
+    return null
+  }
+  const prepMin = sanitiseMarginMinutes(value.prepMin)
+  const recoverMin = sanitiseMarginMinutes(value.recoverMin)
+  const endsOn = value.endsOn === undefined ? undefined : sanitiseDayKey(value.endsOn)
+  if (prepMin === null || recoverMin === null || endsOn === null) return null
+
+  return {
+    id,
+    title,
+    time,
+    durationMin,
+    ...(prepMin === undefined ? {} : { prepMin }),
+    ...(recoverMin === undefined ? {} : { recoverMin }),
+    repeat,
+    startsOn,
+    ...(endsOn === undefined ? {} : { endsOn }),
+  }
+}
+
+/** An edit to a series. As with a commitment's, one bad field drops the edit. */
+function sanitiseRecurringPatch(value: unknown): RecurringPatch | null {
+  if (!isRecord(value)) return null
+
+  const patch: RecurringPatch = {}
+  if ('title' in value) {
+    const title = sanitiseText(value.title)
+    if (title === null) return null
+    patch.title = title
+  }
+  if ('time' in value) {
+    const time = sanitiseWallClock(value.time)
+    if (time === null) return null
+    patch.time = time
+  }
+  if ('durationMin' in value) {
+    const durationMin = sanitisePositiveMinutes(value.durationMin)
+    if (durationMin === null) return null
+    patch.durationMin = durationMin
+  }
+  if ('prepMin' in value) {
+    const prepMin = sanitiseMarginMinutes(value.prepMin)
+    if (prepMin === null || prepMin === undefined) return null
+    patch.prepMin = prepMin
+  }
+  if ('recoverMin' in value) {
+    const recoverMin = sanitiseMarginMinutes(value.recoverMin)
+    if (recoverMin === null || recoverMin === undefined) return null
+    patch.recoverMin = recoverMin
+  }
+  if ('repeat' in value) {
+    const repeat = sanitiseRepeat(value.repeat)
+    if (repeat === null) return null
+    patch.repeat = repeat
+  }
+  if ('startsOn' in value) {
+    const startsOn = sanitiseDayKey(value.startsOn)
+    if (startsOn === null) return null
+    patch.startsOn = startsOn
+  }
+  if ('endsOn' in value) {
+    // `null` is a real answer here: the series no longer ends.
+    const endsOn = value.endsOn === null ? null : sanitiseDayKey(value.endsOn)
+    if (endsOn === null && value.endsOn !== null) return null
+    patch.endsOn = endsOn
+  }
+
+  return Object.keys(patch).length === 0 ? null : patch
+}
+
+function sanitiseRepeat(value: unknown): Repeat | null {
+  if (!isRecord(value)) return null
+  const interval = sanitisePositiveMinutes(value.interval)
+  if (interval === null) return null
+
+  switch (value.every) {
+    case 'day':
+      return { every: 'day', interval }
+    case 'week': {
+      if (!Array.isArray(value.weekdays)) return null
+      const weekdays = [
+        ...new Set(
+          value.weekdays.filter(
+            (d): d is Weekday => typeof d === 'number' && Number.isInteger(d) && d >= 0 && d <= 6,
+          ),
+        ),
+      ]
+      // A weekly series on no day at all never happens, which is not a series.
+      return weekdays.length === 0 ? null : { every: 'week', interval, weekdays }
+    }
+    case 'month': {
+      const monthDay = value.monthDay
+      if (typeof monthDay !== 'number' || !Number.isInteger(monthDay)) return null
+      if (monthDay < 1 || monthDay > 31) return null
+      return { every: 'month', interval, monthDay }
+    }
+    default:
+      return null
+  }
+}
+
+const sanitiseDayKey = (value: unknown): string | null =>
+  typeof value === 'string' && isDayKey(value) ? value : null
+
+const sanitiseWallClock = (value: unknown): string | null =>
+  typeof value === 'string' && isWallClock(value) ? value : null
 
 function sanitiseCommitmentPatch(value: unknown): CommitmentPatch | null {
   if (!isRecord(value)) return null
@@ -537,7 +707,7 @@ function sanitiseCommitmentPatch(value: unknown): CommitmentPatch | null {
     patch.title = title
   }
   if ('startsAt' in value) {
-    const startsAt = sanitiseNumber(value.startsAt)
+    const startsAt = sanitiseInstant(value.startsAt)
     if (startsAt === null) return null
     patch.startsAt = startsAt
   }
@@ -565,7 +735,7 @@ function sanitiseBreakPatch(value: unknown): PlannedBreakPatch | null {
 
   const patch: PlannedBreakPatch = {}
   if ('startsAt' in value) {
-    const startsAt = sanitiseNumber(value.startsAt)
+    const startsAt = sanitiseInstant(value.startsAt)
     if (startsAt === null) return null
     patch.startsAt = startsAt
   }
@@ -581,7 +751,7 @@ function sanitiseBreakPatch(value: unknown): PlannedBreakPatch | null {
 function sanitisePlannedBreak(value: unknown): PlannedBreak | null {
   if (!isRecord(value)) return null
   const id = sanitiseString(value.id)
-  const startsAt = sanitiseNumber(value.startsAt)
+  const startsAt = sanitiseInstant(value.startsAt)
   const durationMin = sanitisePositiveMinutes(value.durationMin)
   return id === null || startsAt === null || durationMin === null
     ? null
@@ -595,8 +765,8 @@ function sanitiseRegions(value: unknown): WorkRegion[] | null {
   for (const region of value) {
     if (!isRecord(region)) return null
     const id = sanitiseString(region.id)
-    const startsAt = sanitiseNumber(region.startsAt)
-    const endsAt = sanitiseNumber(region.endsAt)
+    const startsAt = sanitiseInstant(region.startsAt)
+    const endsAt = sanitiseInstant(region.endsAt)
     if (id === null || startsAt === null || endsAt === null) return null
     regions.push({ id, startsAt, endsAt })
   }
@@ -679,10 +849,10 @@ function sanitiseArea(value: unknown): Area | null {
   const id = sanitiseString(value.id)
   const name = sanitiseString(value.name)
   const order = sanitiseNumber(value.order)
-  const createdAt = sanitiseNumber(value.createdAt)
+  const createdAt = sanitiseInstant(value.createdAt)
   const updatedAt = sanitiseVersion(value.updatedAt)
-  const archivedAt = sanitiseOptionalNumber(value.archivedAt)
-  const deletedAt = sanitiseOptionalNumber(value.deletedAt)
+  const archivedAt = sanitiseOptionalInstant(value.archivedAt)
+  const deletedAt = sanitiseOptionalInstant(value.deletedAt)
   if (
     id === null ||
     name === null ||
@@ -711,11 +881,11 @@ function sanitiseItem(value: unknown): Item | null {
   const title = sanitiseString(value.title)
   const parentId = sanitiseString(value.parentId)
   const order = sanitiseNumber(value.order)
-  const createdAt = sanitiseNumber(value.createdAt)
+  const createdAt = sanitiseInstant(value.createdAt)
   const updatedAt = sanitiseVersion(value.updatedAt)
-  const doneAt = sanitiseOptionalNumber(value.doneAt)
-  const archivedAt = sanitiseOptionalNumber(value.archivedAt)
-  const deletedAt = sanitiseOptionalNumber(value.deletedAt)
+  const doneAt = sanitiseOptionalInstant(value.doneAt)
+  const archivedAt = sanitiseOptionalInstant(value.archivedAt)
+  const deletedAt = sanitiseOptionalInstant(value.deletedAt)
   const kind = ITEM_KINDS.find((k) => k === value.kind) ?? null
   const status = ITEM_STATUSES.find((s) => s === value.status) ?? null
   if (
@@ -748,8 +918,8 @@ function sanitiseItem(value: unknown): Item | null {
   }
 }
 
-const sanitiseOptionalNumber = (value: unknown): number | null | undefined =>
-  value === undefined ? undefined : sanitiseNumber(value)
+const sanitiseOptionalInstant = (value: unknown): number | null | undefined =>
+  value === undefined ? undefined : sanitiseInstant(value)
 
 /**
  * A record's version (`isVersion`): a whole number of milliseconds within the

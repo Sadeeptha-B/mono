@@ -546,7 +546,13 @@ function Block({
                     <button
                       type="button"
                       onClick={remove}
-                      aria-label={`Remove ${style.label}`}
+                      // Removing one day of a series skips that day, and says
+                      // so: the series itself is on the recurring page.
+                      aria-label={
+                        entry.kind === 'commitment' && entry.commitment.recurringId !== undefined
+                          ? `Skip ${style.label} today`
+                          : `Remove ${style.label}`
+                      }
                       className="text-muted transition hover:text-commit"
                     >
                       ×

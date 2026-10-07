@@ -14,7 +14,14 @@ import { create } from 'zustand'
 import { persist, createJSONStorage, type StateStorage } from 'zustand/middleware'
 
 import type { DerivePlanInput } from '@/domain/planner'
-import { initialState, reduce, replay, type MonoEvent, type SessionState } from '@/domain/events'
+import {
+  commitmentsFor,
+  initialState,
+  reduce,
+  replay,
+  type MonoEvent,
+  type SessionState,
+} from '@/domain/events'
 import { initialPhase, transition, type Action, type Phase } from '@/domain/machine'
 import { dayKey, regionsForDay } from '@/domain/time'
 import {
@@ -34,6 +41,8 @@ import type {
   Ms,
   PlannedBreak,
   PlannedBreakPatch,
+  RecurringCommitment,
+  RecurringPatch,
   Settings,
   WorkRegion,
 } from '@/domain/types'
@@ -142,8 +151,21 @@ type SessionStore = {
    * clearing a margin means sending a zero, not omitting the field.
    */
   updateCommitment: (id: string, patch: CommitmentPatch) => void
+  /**
+   * Remove one from the day. For today's occurrence of a series this skips
+   * today only; the series is changed on its own page, through the three below.
+   */
   removeCommitment: (id: string) => void
-  planBreak: (input: Omit<PlannedBreak, 'id'>) => void
+  /** Start a series of commitments that comes round on a schedule. */
+  addRecurring: (input: Omit<RecurringCommitment, 'id'>) => void
+  /**
+   * Change a series. Every day still following it follows the change, today
+   * included unless today's has already begun — see `keepBegun` in the log.
+   */
+  updateRecurring: (id: string, patch: RecurringPatch) => void
+  /** End a series for good. Today's stays if it has already begun. */
+  removeRecurring: (id: string) => void
+  planBreak:(input: Omit<PlannedBreak, 'id'>) => void
   updateBreak: (id: string, patch: PlannedBreakPatch) => void
   removeBreak: (id: string) => void
   setRegions: (regions: WorkRegion[]) => void
@@ -255,6 +277,14 @@ export const useSession = create<SessionStore>()(
 
       removeCommitment: (id) =>
         get().append({ type: 'commitment/removed', at: Date.now(), id }),
+
+      addRecurring: (input) =>
+        get().append({ type: 'recurring/added', at: Date.now(), rule: { ...input, id: newId() } }),
+
+      updateRecurring: (id, patch) =>
+        get().append({ type: 'recurring/updated', at: Date.now(), id, patch }),
+
+      removeRecurring: (id) => get().append({ type: 'recurring/removed', at: Date.now(), id }),
 
       planBreak: (input) =>
         get().append({
@@ -408,6 +438,16 @@ export function selectRegions(state: SessionStore, now: Ms): WorkRegion[] {
 }
 
 /**
+ * Today's commitments: those written into the day, and today's occurrence of
+ * every series that comes round on it. The same rule as `selectRegions` — the
+ * recurring answer is derived on the day rather than copied into it — and the
+ * one list every surface that shows or plans around commitments reads.
+ */
+export function selectCommitments(state: SessionStore, now: Ms): Commitment[] {
+  return commitmentsFor(state.session, now)
+}
+
+/**
  * Everything the planner needs, gathered from the store. The timeline itself
  * is derived in the view from this plus `now`, so it is always consistent with
  * the timer rather than a stored schedule that can drift away from it.
@@ -428,7 +468,7 @@ export function toPlanInput(
     now,
     settings: session.settings,
     regions,
-    commitments: session.commitments,
+    commitments: selectCommitments(state, now),
     history: session.history,
     active: session.active,
     overrides: session.overrides,

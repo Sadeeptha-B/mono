@@ -71,7 +71,13 @@ import { breakCost, countPlannedFocus, derivePlan } from '@/domain/planner'
 import { dayProgressFor } from '@/domain/dayProgress'
 import { dayKey, formatDuration, isWithinRegions, nextRegionStart } from '@/domain/time'
 import type { TimerMode } from '@/domain/time'
-import { useSession, useStorageHealth, toPlanInput, selectRegions } from '@/store/session'
+import {
+  useSession,
+  useStorageHealth,
+  toPlanInput,
+  selectCommitments,
+  selectRegions,
+} from '@/store/session'
 import { isToday } from '@/domain/today'
 import { playChime, unlockAudio } from '@/ambient/audio'
 import type { TodayTimer } from '@/components/stage/TodayPanel'
@@ -83,7 +89,9 @@ import { minutesToMs, type BlockKind, type Ms } from '@/domain/types'
  * The tasks page is the second, deferred for the same reason and in the same
  * way: it is a route you navigate to, and nothing on the first paint renders
  * it. The task *store* is not deferred — the purpose prompt reads it — only the
- * page that edits it.
+ * page that edits it. The recurring page is the third, for the same reason:
+ * the series it edits live in the session log, which is never deferred, and
+ * only the page that writes them is.
  *
  * The guide is a separate route you have to navigate to, and its prose is
  * around 28 KB that the first paint was parsing in order to render a timer.
@@ -200,6 +208,7 @@ export function App() {
     setTimerMode((mode) => (mode === 'remaining' ? 'elapsed' : 'remaining'))
   const guide = useDeferred(() => import('@/components/Guide/GuidePage'))
   const tasksPage = useDeferred(() => import('@/components/Tasks/TasksPage'))
+  const recurringPage = useDeferred(() => import('@/components/Recurring/RecurringPage'))
   const [composer, setComposer] = useState<Composer | null>(null)
   const [setupStage, setSetupStage] = useState<SetupStageId>(FIRST_SETUP_STAGE)
   // The opening questions, re-opened after the day was already shaped. It is
@@ -269,6 +278,9 @@ export function App() {
   }, [session.settings.roomId])
   const [seenPhase, setSeenPhase] = useState(phase.name)
   const regions = selectRegions(store, now)
+  // Today's, series included: what every surface below shows and plans around.
+  // The plan input reads the same list, so the two cannot disagree.
+  const commitments = selectCommitments(store, now)
 
   /**
    * Today's hours as the opening question has them, saved or not.
@@ -610,7 +622,7 @@ export function App() {
         }}
         planned={planned}
         costOf={(minutes) => breakCost(planInput, now, minutes, timeline)}
-        commitments={session.commitments}
+        commitments={commitments}
         // As the calendar draws them, so an hours draft typed into the stage
         // shows out here as it does beside it.
         regions={planInput.regions}
@@ -675,6 +687,37 @@ export function App() {
 
   // The same arrangement as the guide's, for the same reasons: a view swap, so
   // the block keeps running, and the page's own background while it arrives.
+  if (route === 'recurring') {
+    return (
+      <>
+        {recurringPage.view ? (
+          // Keyed by the session's generation, as the stage is. Its drafts —
+          // a series being written or changed — describe the log they were
+          // opened against, and an import can replace that log under them
+          // while keeping every id, so the id alone cannot say the series
+          // underneath is not the one the draft was seeded from. The midnight
+          // reset folds them too, which costs a half-written series at most.
+          <recurringPage.view.RecurringPage
+            key={store.generation}
+            now={now}
+            active={session.active}
+            timerMode={timerMode}
+            onOpenSettings={openSettings}
+            mini={mini}
+          />
+        ) : (
+          <div className="flex min-h-dvh items-center justify-center bg-ink p-4">
+            {recurringPage.failed && (
+              <PageDidNotLoad name="recurring page" onOpenSettings={openSettings} />
+            )}
+          </div>
+        )}
+        {settings}
+        {miniWindow}
+      </>
+    )
+  }
+
   if (route === 'tasks') {
     return (
       <>
@@ -784,7 +827,7 @@ export function App() {
                   revisitingSetup={setupOpen && dayShaped}
                   setupStage={setupStage}
                   onSetupStage={goToSetupStage}
-                  commitments={session.commitments}
+                  commitments={commitments}
                   // The day as the calendar is drawing it, draft included, so
                   // the question and the timeline beside it cannot disagree
                   // about whether any hours have been declared at all.
@@ -874,7 +917,7 @@ export function App() {
                 regions={regions}
                 composer={composer}
                 onComposer={openComposer}
-                commitments={session.commitments}
+                commitments={commitments}
                 breaks={session.overrides}
                 onAddBreak={store.planBreak}
                 onAddCommitment={store.addCommitment}

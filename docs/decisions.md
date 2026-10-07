@@ -138,6 +138,11 @@ only make a clock fresher, never wrong. The extension is handed one absolute
 | Margin always rounds down | Fifty minutes holds one block and five dead minutes, never more. |
 | Work regions (positive space) replaced a single `dayEndsAt` | One end-time could not describe an unstructured evening with work after it, and once the clock passed it, it silently fell back to midnight. |
 | Regions are a recurring default plus a per-day override | Today's regions are **derived, not seeded**, so changing the default reshapes every uncustomised day immediately. Saving an untouched draft therefore writes nothing (`hoursToSave` returns `null`); stamping one would silently detach the day from the default. |
+| Recurring commitments are derived per day, like regions | A series is a rule in the log, and each day's occurrence of it is computed by `commitmentsFor`, never written into the day. Seeding copies at midnight would be a stored schedule: editing the series would leave every copy already written telling the old story. Occurrence ids are the series id and the day, so re-deriving is idempotent. |
+| A day overrules its occurrence by id, and only that day | Editing today's gives the day its own copy under the occurrence's id, which `commitmentsFor` then prefers; removing it records a skip. Both go at midnight. An edit that leaves the occurrence saying what it said makes no copy: the day's editors send the whole draft back on `Done`, and detaching on that silently cut today off from the series. The reducer compares, so replay holds the rule too. "This and following" edits were left out: they need a series split, and changing the series on its page already means "from now on". |
+| Changing or ending a series never rewrites what has begun | Before a series changes, today's occurrence becomes the day's own copy if its span, getting ready included, has started. Otherwise moving the standup to ten would move this morning's nine o'clock after it happened, and ending a series would take it off a calendar that says what the day was. One still ahead today follows the change. |
+| Series live in the session log, not IndexedDB | The reducer's pin rules and the first plan need them synchronously at boot, which is the log's guarantee (see *Traps*). There are a handful, edited rarely, so they are settings-like rather than backlog-like, and export carries them for free. The cost is that the reducer now resolves a local day from an event's `at`: replay is deterministic on one device, and a log replayed in another time zone could place an occurrence differently. |
+| Series are written only on their own page | The day's forms edit one day and link to the page. A Repeats choice on the day's form was a second place to author a series, and the one where "for today" and "every day" are easiest to confuse. |
 | One shape for all days | No weekday/weekend split. Per-day edits cover the exceptions. |
 | Regions never wrap past midnight | The plan is scoped to a calendar day. A late stretch ends at 23:59; overnight regions would complicate the whole model. |
 | A commitment outside every region shows but does not extend the horizon | It is a fact about the day, not permission to plan in it. |
@@ -165,7 +170,7 @@ only make a clock fresher, never wrong. The extension is handed one absolute
 | An editor holds an id, not a copy | It looks its subject up in the store on every render. A copy would be a second answer to what the thing is; the timeline entry would be a wrong one, since the planner clips a break already under way. An editor whose subject vanishes closes, before paint. |
 | One editor of a single value on screen | Two drafts of today's hours is a race with a human in it — whichever saves second silently wins. Commitment forms are exempt because they append rather than overwrite. |
 | A draft exists only once someone has typed in it | A seeded copy is a photograph the day can change under. Untouched, a form renders what the store says now; whether a fold is open is derived from what is in the draft. An edit nobody has changed is not an edit, and folds away (`draftsMatch`). |
-| Replacing the session is announced, not inferred | The store bumps `generation` at the midnight reset and on import, and nowhere else. Day-specific React state resets on it or is keyed by it. Three earlier fixes inferred replacement from signals that only correlated with it, and each missed a case. State that can be derived each render beats state that has to be reset at all. |
+| Replacing the session is announced, not inferred | The store bumps `generation` at the midnight reset and on import, and nowhere else. Day-specific React state resets on it or is keyed by it, and so does any draft of something the log holds: the recurring page is keyed by it, because an import restores series under the ids an open editor is already pointing at. Three earlier fixes inferred replacement from signals that only correlated with it, and each missed a case. State that can be derived each render beats state that has to be reset at all. |
 
 ### The session
 
@@ -331,6 +336,12 @@ prop on a mounted form brings the hazard back. The legitimate exception is an
 effect whose job is to watch the clock — `useReconciliation` checks every tick
 for a block boundary — and it guards itself so that a transition fires once.
 
+**A finite number is not an instant.** `1e20` passes `Number.isFinite`, makes an
+invalid `Date`, and `format` throws on it. Replay reads days from event times, so
+one such event in storage threw out of rehydration and left an empty session.
+Every instant that crosses the schema boundary — an event's `at` and the times
+inside it, and the backlog's — goes through `isInstant` in `time.ts`.
+
 **Zustand's `persist` rehydrates synchronously, during module evaluation.**
 With a sync storage, `migrate` and `onRehydrateStorage` execute at the
 `create(...)` call — before any `const` declared *below* it in the same file
@@ -460,6 +471,14 @@ the companion's vitals, the backlog's projections — should stay keyed that way
   independent sessions writing one key. The backlog converges between tabs; the
   day does not, and the extension's lease exists because of it.
 - **No weekday-aware default shape.**
+- **No RRULE, and no "first Monday of the month".** Every N days, every N
+  weeks on some weekdays, and every N months on a date say nearly everything a
+  working day is fixed around. Each extra shape is a form field and a case the
+  day has to be tested against; the nth weekday is the obvious next one.
+- **No exceptions to a series on any day but today.** Skipping next Tuesday's
+  swim would need a stored list of future days, which is the schedule the
+  derivation avoids, and planning tomorrow is not built either. A series can be
+  given an end date, or the day can be skipped when it comes.
 - **No editing a block's purpose after it starts.** Its tasks can be ticked,
   not added to. What it can take is a log about how it is going, which says
   nothing about what the block is for.

@@ -41,6 +41,7 @@ import {
 import { hoursToSave, TodayHoursFields, useHoursDraft } from '../TodayHours'
 import { GhostButton, labelClass, MinutesInput, PrimaryButton, TimeInput } from '../ui'
 import { BREAK_MINUTES, parseBoundedMinutes } from '../minutes'
+import { RECURRING_HASH } from '@/hooks/useRoute'
 import { nextHalfHour, wallClockOn } from '@/domain/time'
 import {
   commitmentSpan,
@@ -143,6 +144,8 @@ export function CommitmentComposer({
           onDraft={setDraft}
         />
 
+        {editing?.recurringId !== undefined && <TodayOnlyNote />}
+
         <p className="mt-3 text-xs leading-relaxed text-muted">
           {editing ? 'Changing' : 'Adding'} this re-derives the plan. Any break you
           pinned inside it — the time either side included — is cleared.
@@ -158,6 +161,24 @@ export function CommitmentComposer({
         </Actions>
       </form>
     </ComposerShell>
+  )
+}
+
+/**
+ * What an edit to one day of a series changes: that day. Said beside the form,
+ * because the form looks exactly like the one for a commitment typed in by
+ * hand, and with the way to the series itself, which is the other answer.
+ * Shared by the calendar's composer and the opening question.
+ */
+export function TodayOnlyNote() {
+  return (
+    <p className="mt-3 text-xs leading-relaxed text-muted">
+      This changes today's only. The series it comes from is on{' '}
+      <a href={RECURRING_HASH} className="underline underline-offset-4 hover:text-bright">
+        Recurring
+      </a>
+      .
+    </p>
   )
 }
 
