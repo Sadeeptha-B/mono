@@ -1,5 +1,5 @@
 /**
- * The header's quick room and sound menu, on both the day and the guide route.
+ * The header's quick room and sound menu, on every view.
  *
  * It is a popover rather than a dialog in any behavioural sense. `role="dialog"`
  * names it for assistive technology, but it is deliberately not modal and not
@@ -19,7 +19,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
 
 import { RoomControls } from './RoomControls'
-import { headerControlClass } from '@/components/ui'
+import { headerIconClass } from '@/components/ui'
 import { ROOMS } from './rooms'
 import { useSession } from '@/store/session'
 
@@ -34,6 +34,7 @@ export function RoomMenu({ idPrefix }: { idPrefix: string }) {
   const panel = useRef<HTMLDivElement>(null)
   const placed = useRef<Placement | null>(null)
   const roomId = useSession((state) => state.session.settings.roomId)
+  const room = ROOMS[roomId]
   const panelId = `${idPrefix}-room-menu`
 
   useEffect(() => {
@@ -145,9 +146,18 @@ export function RoomMenu({ idPrefix }: { idPrefix: string }) {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((was) => !was)}
-        className={headerControlClass}
+        // The trigger is the room's own swatch, the same dot the menu shows
+        // beside each choice, so the header says which room you are in by
+        // colour and the name is a hover or a screen reader away.
+        aria-label={`Room · ${room.label}`}
+        title={`Room and sound · ${room.label}`}
+        className={`${headerIconClass} ${open ? 'bg-surface-raised' : ''}`}
       >
-        Room <span className="hidden text-muted sm:inline">· {ROOMS[roomId].label}</span>
+        <span
+          aria-hidden="true"
+          className="size-3 rounded-full border border-bright/30"
+          style={{ backgroundColor: room.palette[room.indicator] }}
+        />
       </button>
 
       {open && (

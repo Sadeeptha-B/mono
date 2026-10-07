@@ -41,7 +41,7 @@ import {
 import { hoursToSave, TodayHoursFields, useHoursDraft } from '../TodayHours'
 import { GhostButton, labelClass, MinutesInput, PrimaryButton, TimeInput } from '../ui'
 import { BREAK_MINUTES, parseBoundedMinutes } from '../minutes'
-import { RECURRING_HASH } from '@/hooks/useRoute'
+import { RoutineLink } from '../RoutineLink'
 import { nextHalfHour, wallClockOn } from '@/domain/time'
 import {
   commitmentSpan,
@@ -173,11 +173,7 @@ export function CommitmentComposer({
 export function TodayOnlyNote() {
   return (
     <p className="mt-3 text-xs leading-relaxed text-muted">
-      This changes today's only. The series it comes from is on{' '}
-      <a href={RECURRING_HASH} className="underline underline-offset-4 hover:text-bright">
-        Recurring
-      </a>
-      .
+      This changes today's only. The series it comes from is on <RoutineLink />.
     </p>
   )
 }
@@ -312,7 +308,7 @@ export function HoursComposer({
   return (
     <ComposerShell title="Hours">
       <p className="-mt-1 mb-3 text-xs leading-relaxed text-muted">
-        {"Edits apply for today only"}
+        Edits apply for today only. Your usual hours are on <RoutineLink />.
       </p>
 
       <TodayHoursFields draft={draft} onDraft={onDraft} now={now} hideLegend />

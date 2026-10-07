@@ -1,11 +1,12 @@
 /**
  * What the timer would be saying, for a page that is not the day.
  *
- * The guide and the tasks page both take the stage off the screen, and both are
- * pages you stay on for a while. Neither should quietly cost you the block you
- * are in, or a question Mono is waiting on, so both headers carry this strip,
- * and it links back to the timer. One component, because two copies of what
- * the timer "would be saying" would be two answers to the same question.
+ * The guide, the tasks page and the routine page all take the stage off the
+ * screen, and all are pages you stay on for a while. None should quietly cost
+ * you the block you are in, or a question Mono is waiting on, so each header
+ * carries this strip (`AppHeader`'s `status`), and it links back to the timer.
+ * One component, because two copies of what the timer "would be saying" would
+ * be two answers to the same question.
  */
 
 import type { ReactNode } from 'react'

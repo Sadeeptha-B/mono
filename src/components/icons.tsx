@@ -1,6 +1,7 @@
 /**
  * The small line icons that stand in for words on a dense row: done, drop,
- * archive, restore, reopen, delete, and the mark of a commitment that repeats.
+ * archive, restore, reopen, delete, and the mark of a commitment that repeats;
+ * and the header's tools, which stand in for words for the same reason.
  *
  * Drawn rather than typed, for the reason `GripGlyph` gives on the tasks page:
  * the Unicode characters that look like these are missing from some system
@@ -129,5 +130,35 @@ export const RepeatIcon = ({ className = '' }: { className?: string }) => (
     <Icon className={className}>
         <path d="M2.75 7.25V6.5a2.5 2.5 0 0 1 2.5-2.5h7.5M10.75 2l2 2-2 2" />
         <path d="M13.25 8.75v.75a2.5 2.5 0 0 1-2.5 2.5h-7.5M5.25 14l-2-2 2-2" />
+    </Icon>
+)
+
+/**
+ * Three sliders: settings. Sliders rather than a gear because a gear drawn at
+ * this size is a blot, and what the panel holds is a set of levels to adjust.
+ */
+export const SettingsIcon = ({ className = '' }: { className?: string }) => (
+    <Icon className={className}>
+        <path d="M2.5 4h11M2.5 8h11M2.5 12h11" />
+        <circle cx="5.5" cy="4" r="1.4" fill="currentColor" />
+        <circle cx="10.5" cy="8" r="1.4" fill="currentColor" />
+        <circle cx="7" cy="12" r="1.4" fill="currentColor" />
+    </Icon>
+)
+
+/** A window with an arrow leaving it: the timer, kept on top elsewhere. */
+export const PopOutIcon = ({ className = '' }: { className?: string }) => (
+    <Icon className={className}>
+        <path d="M7 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9" />
+        <path d="M9.5 2.5h4v4M13.5 2.5 8 8" />
+    </Icon>
+)
+
+/** A question mark in a ring: how Mono works. */
+export const GuideIcon = ({ className = '' }: { className?: string }) => (
+    <Icon className={className}>
+        <circle cx="8" cy="8" r="5.75" />
+        <path d="M6.4 6.4a1.65 1.65 0 1 1 2.3 1.5c-.45.2-.7.55-.7 1.05v.3" />
+        <circle cx="8" cy="11.1" r="0.35" fill="currentColor" />
     </Icon>
 )

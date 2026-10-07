@@ -230,6 +230,23 @@ export async function startBlock(page: Page, purpose: string) {
   await page.getByRole('button', { name: 'Start', exact: true }).click()
 }
 
+/**
+ * Go to the routine page, where the usual hours and the recurring commitments
+ * live, the way someone who remembers the hours in Settings would: Settings
+ * says where they went and takes you there.
+ */
+export async function openRoutine(page: Page) {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Settings' }).getByRole('link', { name: 'Routine' }).click()
+  await expect(page.getByRole('heading', { name: 'Routine', exact: true })).toBeVisible()
+}
+
+/** Back to the day from any page, by its place in the header. */
+export async function backToToday(page: Page) {
+  await page.getByRole('navigation', { name: 'Pages' }).getByRole('link', { name: 'Today' }).click()
+  await expect(page.getByRole('heading', { name: 'Today', exact: true })).toBeVisible()
+}
+
 /** Hand a file straight to the import control, without going via a download. */
 export async function importSession(page: Page, contents: unknown) {
   await page.getByRole('button', { name: 'Settings', exact: true }).click()

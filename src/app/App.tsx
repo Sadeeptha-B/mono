@@ -25,7 +25,7 @@ import { createPortal } from 'react-dom'
 import { Clock } from '@/components/Clock'
 import { SettingsPanel } from '@/components/SettingsPanel'
 import { Companion } from '@/components/Companion/Companion'
-import { HeaderMark } from '@/components/HeaderMark'
+import { AppHeader } from '@/components/AppHeader'
 import { Stage } from '@/components/stage/Stage'
 import { StageCarousel } from '@/components/stage/StageCarousel'
 import {
@@ -45,18 +45,16 @@ import {
 import { emptyBlockPick, pickedInPlay, tickTasks, type BlockPick } from '@/components/blockPick'
 import { TodayCarry } from '@/components/TodayList'
 import { useTodayBacklog } from '@/components/useTodayBacklog'
-import { StorageWarning } from '@/components/StorageWarning'
 import {
   hoursToSave,
   resolveHours,
   useHoursDraft,
   withIds,
 } from '@/components/TodayHours'
-import { GhostButton, headerControlClass, PageLinks, PrimaryButton } from '@/components/ui'
+import { GhostButton, PrimaryButton } from '@/components/ui'
 import type { Composer } from '@/components/Timeline/SegmentEditor'
 
 import { MiniWindow } from '@/pip/MiniWindow'
-import { PopOutButton } from '@/pip/PopOutButton'
 import { useMiniWindow } from '@/pip/useMiniWindow'
 
 import { useNow } from '@/hooks/useNow'
@@ -65,7 +63,6 @@ import { useReconciliation } from '@/hooks/useReconciliation'
 import { useBlockEndAlerts, useUnlock } from '@/hooks/useNotifications'
 import { useAmbience } from '@/ambient/useAmbience'
 import { applyRoomTheme } from '@/ambient/theme'
-import { RoomMenu } from '@/ambient/RoomMenu'
 import { paint } from '@/pip/styles'
 import { breakCost, countPlannedFocus, derivePlan } from '@/domain/planner'
 import { dayProgressFor } from '@/domain/dayProgress'
@@ -89,9 +86,9 @@ import { minutesToMs, type BlockKind, type Ms } from '@/domain/types'
  * The tasks page is the second, deferred for the same reason and in the same
  * way: it is a route you navigate to, and nothing on the first paint renders
  * it. The task *store* is not deferred — the purpose prompt reads it — only the
- * page that edits it. The recurring page is the third, for the same reason:
- * the series it edits live in the session log, which is never deferred, and
- * only the page that writes them is.
+ * page that edits it. The routine page is the third, for the same reason: the
+ * usual hours and the series it edits live in the session log, which is never
+ * deferred, and only the page that writes them is.
  *
  * The guide is a separate route you have to navigate to, and its prose is
  * around 28 KB that the first paint was parsing in order to render a timer.
@@ -208,7 +205,7 @@ export function App() {
     setTimerMode((mode) => (mode === 'remaining' ? 'elapsed' : 'remaining'))
   const guide = useDeferred(() => import('@/components/Guide/GuidePage'))
   const tasksPage = useDeferred(() => import('@/components/Tasks/TasksPage'))
-  const recurringPage = useDeferred(() => import('@/components/Recurring/RecurringPage'))
+  const routinePage = useDeferred(() => import('@/components/Routine/RoutinePage'))
   const [composer, setComposer] = useState<Composer | null>(null)
   const [setupStage, setSetupStage] = useState<SetupStageId>(FIRST_SETUP_STAGE)
   // The opening questions, re-opened after the day was already shaped. It is
@@ -539,14 +536,11 @@ export function App() {
     if (decideTimeUp && soundEnabled) playChime()
   }, [decideTimeUp])
 
-  // Settings is the last dialog in Mono, and the only thing both routes offer.
-  // Opening it closes whatever the calendar had expanded: they both edit
-  // working hours, and two editors of the same thing on screen at once is a
-  // question about which one wins that nobody should have to ask.
-  const openSettings = () => {
-    setComposer(null)
-    setSettingsOpen(true)
-  }
+  // Settings is the last dialog in Mono, and the only thing every route offers.
+  // It once closed whatever the calendar had expanded, because both edited
+  // working hours; the usual hours have moved to the routine page, so the two
+  // no longer share a value and a composer can wait under the dialog.
+  const openSettings = () => setSettingsOpen(true)
 
   /**
    * The same rule, applied to the other pair that edits today's hours.
@@ -687,17 +681,17 @@ export function App() {
 
   // The same arrangement as the guide's, for the same reasons: a view swap, so
   // the block keeps running, and the page's own background while it arrives.
-  if (route === 'recurring') {
+  if (route === 'routine') {
     return (
       <>
-        {recurringPage.view ? (
+        {routinePage.view ? (
           // Keyed by the session's generation, as the stage is. Its drafts —
           // a series being written or changed — describe the log they were
           // opened against, and an import can replace that log under them
           // while keeping every id, so the id alone cannot say the series
           // underneath is not the one the draft was seeded from. The midnight
           // reset folds them too, which costs a half-written series at most.
-          <recurringPage.view.RecurringPage
+          <routinePage.view.RoutinePage
             key={store.generation}
             now={now}
             active={session.active}
@@ -707,8 +701,8 @@ export function App() {
           />
         ) : (
           <div className="flex min-h-dvh items-center justify-center bg-ink p-4">
-            {recurringPage.failed && (
-              <PageDidNotLoad name="recurring page" onOpenSettings={openSettings} />
+            {routinePage.failed && (
+              <PageDidNotLoad name="routine page" onOpenSettings={openSettings} />
             )}
           </div>
         )}
@@ -756,19 +750,8 @@ export function App() {
         does well.
       */}
       <div className="mx-auto flex max-w-6xl flex-col p-4 sm:p-6 lg:h-dvh">
-        <header className="mb-5 flex items-start justify-between gap-3">
-          <HeaderMark phase={phase} home />
-          <div className="flex flex-wrap items-center justify-end gap-2">
-            {/* Nothing at all unless the browser has started refusing to save,
-                which is the one failure worth a permanent place on screen. */}
-            <StorageWarning onOpenSettings={openSettings} />
-            <RoomMenu idPrefix="day-header" />
-            <PopOutButton mini={mini} />
-            <PageLinks current="day" />
-            <button type="button" onClick={openSettings} className={headerControlClass}>
-              Settings
-            </button>
-          </div>
+        <header className="mb-5">
+          <AppHeader current="day" phase={phase} mini={mini} onOpenSettings={openSettings} />
         </header>
 
         {/* One hand for carrying tasks around both columns, so a task can be

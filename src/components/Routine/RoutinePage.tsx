@@ -1,10 +1,23 @@
 /**
- * Commitments that come round on a schedule, as a page.
+ * The routine: what every day starts from, as a page. Two things live here,
+ * the usual working hours and the commitments that come round on a schedule,
+ * because they are the same kind of thing — a recurring default that each day
+ * derives its own answer from, and that the day can change for itself without
+ * touching. The hours used to be in Settings, beside block lengths and sound,
+ * which are preferences about how Mono behaves rather than facts about your
+ * week; the series arrived with a page of their own, and together they are
+ * the one place to say what an ordinary day looks like.
  *
- * A page for the tasks page's reason: setting up a standup every weekday is
- * something done once and then left, away from the timer, and the stage is
- * for one question about today at a time. `App` swaps the view without
- * unmounting anything, so a block keeps running while you are here.
+ * A page for the tasks page's reason: this is set up once and then left, away
+ * from the timer, and the stage is for one question about today at a time.
+ * `App` swaps the view without unmounting anything, so a block keeps running
+ * while you are here. It has no tab in the header (see `AppHeader`); it is
+ * reached from Settings and from the day's questions about hours and
+ * commitments, where wanting it happens (`RoutineLink`).
+ *
+ * The usual hours write through as they are typed, as they did in Settings:
+ * there is one copy of them and nothing to save, and today's hours, while
+ * nobody has changed them, follow along (`useHoursDraft`).
  *
  * Each series is a rule (`RecurringCommitment`), and the day it falls on
  * derives its occurrence from it (`commitmentsFor`). So this page is the only
@@ -28,9 +41,9 @@
 
 import { useState } from 'react'
 
-import { HeaderMark } from '../HeaderMark'
+import { AppHeader } from '../AppHeader'
+import { RegionShapeEditor } from '../RegionShapeEditor'
 import { HeaderStatus } from '../HeaderStatus'
-import { StorageWarning } from '../StorageWarning'
 import {
   CommitmentFields,
   draftsMatch,
@@ -50,14 +63,10 @@ import {
   AddFold,
   EditGlyph,
   GhostButton,
-  headerControlClass,
   IconButton,
-  PageLinks,
   PrimaryButton,
 } from '../ui'
-import { PopOutButton } from '@/pip/PopOutButton'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
-import { RoomMenu } from '@/ambient/RoomMenu'
 import { useSession } from '@/store/session'
 import { describeRepeat, formatOccurrenceDay, upcoming } from '@/domain/recurrence'
 import { dayKey, formatClock, formatDuration, wallClockOn, type TimerMode } from '@/domain/time'
@@ -72,7 +81,7 @@ const commitmentDraftOf = (rule: RecurringCommitment): CommitmentDraft => ({
   recoverText: String(rule.recoverMin ?? 0),
 })
 
-export function RecurringPage({
+export function RoutinePage({
   now,
   active,
   timerMode,
@@ -86,6 +95,8 @@ export function RecurringPage({
   mini: MiniWindowControls
 }) {
   const phase = useSession((s) => s.phase)
+  const defaultRegions = useSession((s) => s.session.settings.defaultRegions)
+  const updateSettings = useSession((s) => s.updateSettings)
   const recurring = useSession((s) => s.session.recurring)
   const addRecurring = useSession((s) => s.addRecurring)
   const updateRecurring = useSession((s) => s.updateRecurring)
@@ -161,32 +172,53 @@ export function RecurringPage({
       {/* The tasks page's header, for the guide's reasons: pinned on a wide
           screen, sticky on a narrow one, and carrying the timer either way. */}
       <header className="sticky top-0 z-20 shrink-0 border-b border-line bg-ink px-4 py-3 sm:px-6 lg:static">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <HeaderMark phase={phase} home={false} />
-
-          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-            <StorageWarning onOpenSettings={onOpenSettings} />
-            <HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />
-            <RoomMenu idPrefix="recurring-header" />
-            <PopOutButton mini={mini} />
-            <PageLinks current="recurring" />
-            <button type="button" onClick={onOpenSettings} className={headerControlClass}>
-              Settings
-            </button>
-          </div>
+        <div className="mx-auto max-w-5xl">
+          {/* A page invites you to stay, so whatever the timer would be
+              saying stays in sight — including when it is waiting on you. */}
+          <AppHeader
+            current="routine"
+            phase={phase}
+            mini={mini}
+            onOpenSettings={onOpenSettings}
+            status={<HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />}
+          />
         </div>
       </header>
 
       <div className="mono-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-          <h1 className="text-3xl font-light text-bright sm:text-4xl">Recurring</h1>
+          <h1 className="text-3xl font-light text-bright sm:text-4xl">Routine</h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
-            Commitments that come round on a schedule. Each one is put into every day it
-            falls on, so you never type the standup in again. Moving or skipping one day of
-            it happens on that day and leaves the series here alone.
+            What an ordinary day looks like: the hours you work and the commitments that
+            come round. Every day starts from these. Changing one day's hours, or moving or
+            skipping one day of a commitment, happens on that day and leaves this alone.
           </p>
 
-          <section aria-label="Series" className="mt-8 border-t border-line pt-6">
+          <section aria-labelledby="routine-hours" className="mt-8 border-t border-line pt-6">
+            <h2 id="routine-hours" className="text-lg font-light text-bright">
+              Working hours
+            </h2>
+            <p className="mt-1 mb-4 max-w-2xl text-sm leading-relaxed text-muted">
+              The only time Mono plans in. Every day starts from this shape, and changes
+              with it until you change that day's own hours.
+            </p>
+            <div className="max-w-md">
+              <RegionShapeEditor
+                regions={defaultRegions}
+                onChange={(regions) => updateSettings({ defaultRegions: regions })}
+                hideLegend
+              />
+            </div>
+          </section>
+
+          <section aria-labelledby="routine-series" className="mt-10 border-t border-line pt-6">
+            <h2 id="routine-series" className="text-lg font-light text-bright">
+              Recurring commitments
+            </h2>
+            <p className="mt-1 mb-4 max-w-2xl text-sm leading-relaxed text-muted">
+              Each one is put into every day it falls on, so you never type the standup in
+              again.
+            </p>
             {inOrder.length === 0 ? (
               <p className="text-sm text-muted">
                 Nothing repeats yet. A standup every weekday, a swim on Tuesdays and

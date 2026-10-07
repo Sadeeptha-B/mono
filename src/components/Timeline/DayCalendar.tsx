@@ -547,7 +547,7 @@ function Block({
                       type="button"
                       onClick={remove}
                       // Removing one day of a series skips that day, and says
-                      // so: the series itself is on the recurring page.
+                      // so: the series itself is on the routine page.
                       aria-label={
                         entry.kind === 'commitment' && entry.commitment.recurringId !== undefined
                           ? `Skip ${style.label} today`

@@ -70,7 +70,7 @@ import {
   type ReactNode,
 } from 'react'
 
-import { HeaderMark } from '../HeaderMark'
+import { AppHeader } from '../AppHeader'
 import { HeaderStatus } from '../HeaderStatus'
 import {
   Carry,
@@ -94,21 +94,16 @@ import {
   RestoreIcon,
   TodayIcon,
 } from '../icons'
-import { StorageWarning } from '../StorageWarning'
 import {
   AddFold,
   EditGlyph,
   fieldClass,
   GhostButton,
-  headerControlClass,
   IconButton,
-  PageLinks,
   RenameField,
   revealOnHover,
 } from '../ui'
-import { PopOutButton } from '@/pip/PopOutButton'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
-import { RoomMenu } from '@/ambient/RoomMenu'
 import { useSession } from '@/store/session'
 import { useTasks } from '@/store/tasks'
 import {
@@ -176,19 +171,16 @@ export function TasksPage({
       {/* The guide's header, for the guide's reasons: pinned on a wide screen,
           sticky on a narrow one, and carrying the timer either way. */}
       <header className="sticky top-0 z-20 shrink-0 border-b border-line bg-ink px-4 py-3 sm:px-6 lg:static">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <HeaderMark phase={phase} home={false} />
-
-          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-            <StorageWarning onOpenSettings={onOpenSettings} />
-            <HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />
-            <RoomMenu idPrefix="tasks-header" />
-            <PopOutButton mini={mini} />
-            <PageLinks current="tasks" />
-            <button type="button" onClick={onOpenSettings} className={headerControlClass}>
-              Settings
-            </button>
-          </div>
+        <div className="mx-auto max-w-5xl">
+          {/* A page invites you to stay, so whatever the timer would be
+              saying stays in sight — including when it is waiting on you. */}
+          <AppHeader
+            current="tasks"
+            phase={phase}
+            mini={mini}
+            onOpenSettings={onOpenSettings}
+            status={<HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />}
+          />
         </div>
       </header>
 
