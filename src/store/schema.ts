@@ -72,8 +72,13 @@ export type ExportedShape = PersistedShape & { version: number; tasks?: Exported
  * an optional `done`, which reads as not done where it is absent. A v4 log
  * reads as it was written, its linked tasks becoming today's because linking
  * now implies choosing.
+ *
+ * v6 added what is written into a running block: its notes and urges, and the
+ * corrections to a note. A v5 build would drop all of them and read the day as
+ * though nothing had been written, so it is a bump for the same reason. No
+ * existing event changed; a block from an older log simply has none of either.
  */
-export const SCHEMA_VERSION = 5
+export const SCHEMA_VERSION = 6
 
 /**
  * Read an export. Throws only when the file is not a Mono export, or comes
@@ -129,10 +134,14 @@ export type ImportedFile = ReturnType<typeof readImport>
  * through into this one.
  */
 export function migratePersisted(persisted: unknown, from: number): PersistedShape {
-  // v3 -> v4 and v4 -> v5 only added things, so either log is read exactly as
-  // a current one. This branch is the whole migration, and without it the
-  // fall-through below would throw every existing log away on upgrade.
-  if ((from === SCHEMA_VERSION || from === 4 || from === 3) && isPersisted(persisted)) {
+  // v3 -> v4, v4 -> v5 and v5 -> v6 only added things, so any of those logs is
+  // read exactly as a current one. This branch is the whole migration, and
+  // without it the fall-through below would throw every existing log away on
+  // upgrade.
+  if (
+    (from === SCHEMA_VERSION || from === 5 || from === 4 || from === 3) &&
+    isPersisted(persisted)
+  ) {
     return {
       events: persisted.events
         .filter(isEventShaped)
@@ -296,6 +305,31 @@ function sanitiseImportedEvent(event: MonoEvent): MonoEvent | null {
       return purpose === null ? null : { type: event.type, at: event.at, purpose }
     }
 
+    case 'block/noted': {
+      const id = sanitiseString(raw.id)
+      const text = sanitiseText(raw.text)
+      return id === null || text === null ? null : { type: event.type, at: event.at, id, text }
+    }
+
+    case 'block/noteEdited': {
+      const blockId = sanitiseString(raw.blockId)
+      const noteId = sanitiseString(raw.noteId)
+      const text = sanitiseText(raw.text)
+      return blockId === null || noteId === null || text === null
+        ? null
+        : { type: event.type, at: event.at, blockId, noteId, text }
+    }
+
+    case 'block/noteRemoved': {
+      const blockId = sanitiseString(raw.blockId)
+      const noteId = sanitiseString(raw.noteId)
+      return blockId === null || noteId === null
+        ? null
+        : { type: event.type, at: event.at, blockId, noteId }
+    }
+
+    case 'block/urged':
+    case 'block/urgeTakenBack':
     case 'block/completed':
     case 'block/abandoned':
     case 'break/ended':
@@ -384,6 +418,10 @@ const sanitiseMarginMinutes = (value: unknown): number | null | undefined => {
 
 const sanitiseString = (value: unknown): string | null =>
   typeof value === 'string' ? value : null
+
+/** Words someone wrote: trimmed, and refused when nothing is left. */
+const sanitiseText = (value: unknown): string | null =>
+  typeof value === 'string' && value.trim() !== '' ? value.trim() : null
 
 const sanitiseNullableString = (value: unknown): string | null | undefined =>
   value === null ? null : typeof value === 'string' ? value : undefined

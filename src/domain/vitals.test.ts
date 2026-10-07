@@ -24,6 +24,8 @@ const block = (
   blockKind,
   purpose: 'something',
   taskIds: [],
+  notes: [],
+  urges: [],
   startedAt,
   endedAt: startedAt + minutes(lengthMin),
   plannedEndsAt: startedAt + minutes(lengthMin),
@@ -176,6 +178,8 @@ describe('a block waiting to be confirmed', () => {
       blockKind,
       purpose: 'the one thing',
       taskIds: [],
+      notes: [],
+      urges: [],
       startedAt,
       endsAt: startedAt + minutes(lengthMin),
     }) satisfies ActiveSegment

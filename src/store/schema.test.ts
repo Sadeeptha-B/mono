@@ -134,9 +134,39 @@ const EVERY_EVENT = {
   },
   'today/taskAdded': { type: 'today/taskAdded', at: 22, taskId: 'task-c' },
   'today/taskRemoved': { type: 'today/taskRemoved', at: 23, taskId: 'task-c' },
+  'block/noted': {
+    type: 'block/noted',
+    at: 24,
+    id: 'note-a',
+    text: 'Schema done',
+  },
+  'block/urged': { type: 'block/urged', at: 25 },
+  'block/urgeTakenBack': { type: 'block/urgeTakenBack', at: 26 },
+  'block/noteEdited': {
+    type: 'block/noteEdited',
+    at: 27,
+    blockId: 'block-started',
+    noteId: 'note-a',
+    text: 'Schema finished',
+  },
+  'block/noteRemoved': {
+    type: 'block/noteRemoved',
+    at: 28,
+    blockId: 'block-started',
+    noteId: 'note-a',
+  },
 } satisfies CompleteEventLog
 
 const EVERY: MonoEvent[] = Object.values(EVERY_EVENT)
+
+/** What v6 added: everything written into a running block. */
+const V6: readonly string[] = [
+  'block/noted',
+  'block/urged',
+  'block/urgeTakenBack',
+  'block/noteEdited',
+  'block/noteRemoved',
+]
 
 describe('persisted schema', () => {
   it('returns a well-formed current log unchanged', () => {
@@ -202,15 +232,45 @@ describe('the v4 schema', () => {
 
   it('reads a v3 log exactly as it was, rather than discarding it on upgrade', () => {
     const v3 = {
-      events: EVERY.filter((e) => !e.type.startsWith('intention/') && !e.type.startsWith('today/')),
+      events: EVERY.filter(
+        (e) =>
+          !e.type.startsWith('intention/') && !e.type.startsWith('today/') && !V6.includes(e.type),
+      ),
       dayKey: today,
     }
     expect(migratePersisted(v3, 3)).toEqual(v3)
   })
 
   it('reads a v4 log exactly as it was, rather than discarding it on upgrade', () => {
-    const v4 = { events: EVERY.filter((e) => !e.type.startsWith('today/')), dayKey: today }
+    const v4 = {
+      events: EVERY.filter((e) => !e.type.startsWith('today/') && !V6.includes(e.type)),
+      dayKey: today,
+    }
     expect(migratePersisted(v4, 4)).toEqual(v4)
+  })
+
+  it('reads a v5 log exactly as it was, rather than discarding it on upgrade', () => {
+    const v5 = { events: EVERY.filter((e) => !V6.includes(e.type)), dayKey: today }
+    expect(migratePersisted(v5, 5)).toEqual(v5)
+  })
+
+  it("drops a block's note or correction it cannot read, and trims what it keeps", () => {
+    const events = [
+      { type: 'block/noted', at: 1, id: 'n', text: '   ' },
+      { type: 'block/noted', at: 2, text: 'no id' },
+      { type: 'block/noted', at: 3, id: 'n', text: 7 },
+      { type: 'block/noted', at: 4, id: 'n', text: '  kept  ' },
+      { type: 'block/noteEdited', at: 5, blockId: 'b', noteId: 'n', text: '' },
+      { type: 'block/noteEdited', at: 6, blockId: 'b', text: 'no note' },
+      { type: 'block/noteEdited', at: 7, blockId: 'b', noteId: 'n', text: ' fixed ' },
+      { type: 'block/noteRemoved', at: 8, noteId: 'n' },
+      { type: 'block/noteRemoved', at: 9, blockId: 'b', noteId: 'n' },
+    ]
+    expect(migratePersisted({ events, dayKey: null }, SCHEMA_VERSION).events).toEqual([
+      { type: 'block/noted', at: 4, id: 'n', text: 'kept' },
+      { type: 'block/noteEdited', at: 7, blockId: 'b', noteId: 'n', text: 'fixed' },
+      { type: 'block/noteRemoved', at: 9, blockId: 'b', noteId: 'n' },
+    ])
   })
 
   it("drops a today event that names no task", () => {

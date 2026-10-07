@@ -9,6 +9,8 @@ const block: ActiveSegment = {
   blockKind: 'deep',
   purpose: 'Write',
   taskIds: [],
+  notes: [],
+  urges: [],
   startedAt: 0,
   endsAt: 60_000,
 }

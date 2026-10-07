@@ -18,6 +18,7 @@ import {
   overlaps,
   type ActiveSegment,
   type BlockKind,
+  type BlockNote,
   type Commitment,
   type CommitmentPatch,
   type CompletedSegment,
@@ -56,6 +57,22 @@ export type MonoEvent =
       taskIds?: string[]
     }
   | { type: 'block/purposeSet'; at: Ms; purpose: string }
+  /**
+   * A line written in the running block, at `at`, which becomes the note's
+   * own minute. Ignored with no block running.
+   */
+  | { type: 'block/noted'; at: Ms; id: string; text: string }
+  /** One urge to leave the task, counted in the running block. */
+  | { type: 'block/urged'; at: Ms }
+  /** The running block's most recent urge, taken back as a mis-tap. */
+  | { type: 'block/urgeTakenBack'; at: Ms }
+  /**
+   * A note's text corrected, in the running block or one already in history.
+   * The note keeps its own `at`: a fixed typo is not a later thought.
+   */
+  | { type: 'block/noteEdited'; at: Ms; blockId: string; noteId: string; text: string }
+  /** A note deleted, in the running block or one already in history. */
+  | { type: 'block/noteRemoved'; at: Ms; blockId: string; noteId: string }
   | { type: 'block/completed'; at: Ms }
   | { type: 'block/abandoned'; at: Ms }
   | { type: 'break/started'; at: Ms; id: string; endsAt: Ms }
@@ -259,6 +276,8 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
           startedAt: event.at,
           endsAt: event.endsAt,
           taskIds: event.taskIds ?? [],
+          notes: [],
+          urges: [],
         },
         // A task a block was for is part of today, whether or not it was
         // chosen this morning: the block is the day doing it. Here rather than
@@ -269,6 +288,57 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
     case 'block/purposeSet':
       if (state.active?.kind !== 'block') return state
       return { ...state, active: { ...state.active, purpose: event.purpose } }
+
+    // Notes and urges belong to the block they were written in, so they ride
+    // on the segment and go into history with it — the calendar, and anything
+    // that later reads the day back, then has one record of the block rather
+    // than a block and a list beside it to keep in step. With nothing running
+    // there is no block for them to be about, and they are dropped.
+    case 'block/noted': {
+      if (state.active?.kind !== 'block') return state
+      // A replayed or duplicated event, not a second note with the same words.
+      if (state.active.notes.some((n) => n.id === event.id)) return state
+      const note: BlockNote = { id: event.id, at: event.at, text: event.text }
+      return {
+        ...state,
+        active: { ...state.active, notes: [...state.active.notes, note] },
+      }
+    }
+
+    case 'block/urged':
+      if (state.active?.kind !== 'block') return state
+      return {
+        ...state,
+        active: { ...state.active, urges: [...state.active.urges, event.at] },
+      }
+
+    case 'block/urgeTakenBack':
+      if (state.active?.kind !== 'block' || state.active.urges.length === 0) return state
+      return {
+        ...state,
+        active: { ...state.active, urges: state.active.urges.slice(0, -1) },
+      }
+
+    // Corrections reach a block in history as well as the running one: a
+    // mistype is often only seen on the calendar afterwards. Blank text is
+    // refused rather than stored, since deleting is its own event and a note
+    // of nothing is not a note.
+    case 'block/noteEdited': {
+      const text = event.text.trim()
+      if (text === '') return state
+      return withNotes(state, event.blockId, (notes) =>
+        notes.some((n) => n.id === event.noteId)
+          ? notes.map((n) => (n.id === event.noteId ? { ...n, text } : n))
+          : notes,
+      )
+    }
+
+    case 'block/noteRemoved':
+      return withNotes(state, event.blockId, (notes) =>
+        notes.some((n) => n.id === event.noteId)
+          ? notes.filter((n) => n.id !== event.noteId)
+          : notes,
+      )
 
     case 'block/completed':
       if (state.active?.kind !== 'block') return state
@@ -524,7 +594,35 @@ export function completeBlock(
     plannedEndsAt: active.endsAt,
     result,
     taskIds: active.taskIds,
+    notes: active.notes,
+    urges: active.urges,
   }
+}
+
+/**
+ * The state with one block's notes rewritten, wherever that block is: running,
+ * or already in history. Hands back the same state when the block is not there
+ * or `update` changed nothing, so a correction aimed at nothing is no change at
+ * all rather than a fresh object for every subscriber to re-render on.
+ */
+function withNotes(
+  state: SessionState,
+  blockId: string,
+  update: (notes: BlockNote[]) => BlockNote[],
+): SessionState {
+  if (state.active?.kind === 'block' && state.active.id === blockId) {
+    const notes = update(state.active.notes)
+    return notes === state.active.notes ? state : { ...state, active: { ...state.active, notes } }
+  }
+
+  const index = state.history.findIndex((s) => s.kind === 'block' && s.id === blockId)
+  const segment = state.history[index]
+  if (segment?.kind !== 'block') return state
+  const notes = update(segment.notes)
+  if (notes === segment.notes) return state
+  const history = [...state.history]
+  history[index] = { ...segment, notes }
+  return { ...state, history }
 }
 
 /**
