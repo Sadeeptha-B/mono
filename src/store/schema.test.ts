@@ -135,26 +135,26 @@ const EVERY_EVENT = {
   },
   'today/taskAdded': { type: 'today/taskAdded', at: 22, taskId: 'task-c' },
   'today/taskRemoved': { type: 'today/taskRemoved', at: 23, taskId: 'task-c' },
-  'block/noted': {
-    type: 'block/noted',
+  'block/logged': {
+    type: 'block/logged',
     at: 24,
-    id: 'note-a',
+    id: 'log-a',
     text: 'Schema done',
   },
   'block/urged': { type: 'block/urged', at: 25 },
   'block/urgeTakenBack': { type: 'block/urgeTakenBack', at: 26 },
-  'block/noteEdited': {
-    type: 'block/noteEdited',
+  'block/logEdited': {
+    type: 'block/logEdited',
     at: 27,
     blockId: 'block-started',
-    noteId: 'note-a',
+    logId: 'log-a',
     text: 'Schema finished',
   },
-  'block/noteRemoved': {
-    type: 'block/noteRemoved',
+  'block/logRemoved': {
+    type: 'block/logRemoved',
     at: 28,
     blockId: 'block-started',
-    noteId: 'note-a',
+    logId: 'log-a',
   },
   'recurring/added': {
     type: 'recurring/added',
@@ -193,11 +193,11 @@ const EVERY: MonoEvent[] = Object.values(EVERY_EVENT)
 
 /** What v6 added: everything written into a running block. */
 const V6: readonly string[] = [
-  'block/noted',
+  'block/logged',
   'block/urged',
   'block/urgeTakenBack',
-  'block/noteEdited',
-  'block/noteRemoved',
+  'block/logEdited',
+  'block/logRemoved',
 ]
 
 /** What v7 added: commitments that come round on a schedule. */
@@ -292,28 +292,53 @@ describe('the v4 schema', () => {
     expect(migratePersisted(v5, 5)).toEqual(v5)
   })
 
-  it("drops a block's note or correction it cannot read, and trims what it keeps", () => {
+  it("drops a block's log or correction it cannot read, and trims what it keeps", () => {
     const events = [
-      { type: 'block/noted', at: 1, id: 'n', text: '   ' },
-      { type: 'block/noted', at: 2, text: 'no id' },
-      { type: 'block/noted', at: 3, id: 'n', text: 7 },
-      { type: 'block/noted', at: 4, id: 'n', text: '  kept  ' },
-      { type: 'block/noteEdited', at: 5, blockId: 'b', noteId: 'n', text: '' },
-      { type: 'block/noteEdited', at: 6, blockId: 'b', text: 'no note' },
-      { type: 'block/noteEdited', at: 7, blockId: 'b', noteId: 'n', text: ' fixed ' },
-      { type: 'block/noteRemoved', at: 8, noteId: 'n' },
-      { type: 'block/noteRemoved', at: 9, blockId: 'b', noteId: 'n' },
+      { type: 'block/logged', at: 1, id: 'n', text: '   ' },
+      { type: 'block/logged', at: 2, text: 'no id' },
+      { type: 'block/logged', at: 3, id: 'n', text: 7 },
+      { type: 'block/logged', at: 4, id: 'n', text: '  kept  ' },
+      { type: 'block/logEdited', at: 5, blockId: 'b', logId: 'n', text: '' },
+      { type: 'block/logEdited', at: 6, blockId: 'b', text: 'no log' },
+      { type: 'block/logEdited', at: 7, blockId: 'b', logId: 'n', text: ' fixed ' },
+      { type: 'block/logRemoved', at: 8, logId: 'n' },
+      { type: 'block/logRemoved', at: 9, blockId: 'b', logId: 'n' },
     ]
     expect(migratePersisted({ events, dayKey: null }, SCHEMA_VERSION).events).toEqual([
-      { type: 'block/noted', at: 4, id: 'n', text: 'kept' },
-      { type: 'block/noteEdited', at: 7, blockId: 'b', noteId: 'n', text: 'fixed' },
-      { type: 'block/noteRemoved', at: 9, blockId: 'b', noteId: 'n' },
+      { type: 'block/logged', at: 4, id: 'n', text: 'kept' },
+      { type: 'block/logEdited', at: 7, blockId: 'b', logId: 'n', text: 'fixed' },
+      { type: 'block/logRemoved', at: 9, blockId: 'b', logId: 'n' },
     ])
   })
 
   it('reads a v6 log exactly as it was, rather than discarding it on upgrade', () => {
     const v6 = { events: EVERY.filter((e) => !isV7(e)), dayKey: today }
     expect(migratePersisted(v6, 6)).toEqual(v6)
+  })
+
+  it('reads a v7 log exactly as it was, rather than discarding it on upgrade', () => {
+    const v7 = { events: EVERY, dayKey: today }
+    expect(migratePersisted(v7, 7)).toEqual(v7)
+  })
+
+  it("reads a block's log under the names it had before v8, from storage and from a file", () => {
+    const legacy = [
+      { type: 'block/noted', at: 4, id: 'n', text: 'Schema done' },
+      { type: 'block/noteEdited', at: 7, blockId: 'b', noteId: 'n', text: 'Schema checked' },
+      { type: 'block/noteRemoved', at: 9, blockId: 'b', noteId: 'n' },
+    ]
+    const current = [
+      { type: 'block/logged', at: 4, id: 'n', text: 'Schema done' },
+      { type: 'block/logEdited', at: 7, blockId: 'b', logId: 'n', text: 'Schema checked' },
+      { type: 'block/logRemoved', at: 9, blockId: 'b', logId: 'n' },
+    ]
+    expect(migratePersisted({ events: legacy, dayKey: null }, 7).events).toEqual(current)
+    // Whatever version is stamped beside them: no current event has these names.
+    expect(migratePersisted({ events: legacy, dayKey: null }, SCHEMA_VERSION).events).toEqual(
+      current,
+    )
+    const file = JSON.stringify({ version: 6, dayKey: null, events: legacy })
+    expect(readImport(file, 10).events.slice(0, 3)).toEqual(current)
   })
 
   it('drops an event whose instants no date can hold, rather than failing to load', () => {

@@ -8,8 +8,6 @@
  * store itself — the running block, and the actions that write into it — so a
  * host only says where they go.
  *
- * The interface says "log", the code says "note": `BlockNote` explains why.
- *
  * **The counter is noticing, not a score.** It says how many, never whether
  * that is good, and nothing else in Mono reads it — not the cat, not the room,
  * not the postcard. A number something else rewarded you for keeping low would
@@ -17,9 +15,9 @@
  * what it is for. Only the last urge can be taken back, because a mis-tap is
  * noticed the moment it happens.
  *
- * **Notes can be corrected afterwards.** A mistype is often only seen later, on
- * the calendar, so a note's row edits and deletes it wherever it is drawn, in
- * the running block or one long finished. An edit keeps the minute the note
+ * **Logs can be corrected afterwards.** A mistype is often only seen later, on
+ * the calendar, so a log's row edits and deletes it wherever it is drawn, in
+ * the running block or one long finished. An edit keeps the minute the log
  * was written.
  *
  * Nothing here takes focus by itself. In the mini window a focused control can
@@ -40,11 +38,11 @@ import {
   revealOnHover,
 } from './ui'
 import { formatClock } from '@/domain/time'
-import type { BlockNote } from '@/domain/types'
+import type { BlockLog } from '@/domain/types'
 import { useSession } from '@/store/session'
 
-/** A note is a sentence or two about the block; long enough for that, no more. */
-export const NOTE_MAX_LENGTH = 500
+/** A log is a sentence or two about the block; long enough for that, no more. */
+export const LOG_MAX_LENGTH = 500
 
 /** The running block, or null while none is. */
 const useRunningBlock = () =>
@@ -150,7 +148,7 @@ export function LogComposer({ compact = false }: { compact?: boolean }) {
   if (!block) return null
   if (writing) return <LogField compact={compact} onDone={() => setWriting(false)} />
 
-  const count = block.notes.length
+  const count = block.logs.length
   return (
     <>
       <GhostButton
@@ -183,12 +181,12 @@ export function LogComposer({ compact = false }: { compact?: boolean }) {
  * the block, and should look it.
  */
 function LogField({ compact = false, onDone }: { compact?: boolean; onDone: () => void }) {
-  const noteBlock = useSession((s) => s.noteBlock)
+  const logBlock = useSession((s) => s.logBlock)
   const [draft, setDraft] = useState('')
 
   const save = () => {
     if (draft.trim() === '') return
-    noteBlock(draft)
+    logBlock(draft)
     setDraft('')
     onDone()
   }
@@ -213,7 +211,7 @@ function LogField({ compact = false, onDone }: { compact?: boolean; onDone: () =
           }}
           aria-label="Log"
           placeholder="How is it going?"
-          maxLength={NOTE_MAX_LENGTH}
+          maxLength={LOG_MAX_LENGTH}
           size={1}
           autoFocus
           className={`${fieldClass} ${compact ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-sm'}`}
@@ -239,42 +237,42 @@ function LogField({ compact = false, onDone }: { compact?: boolean; onDone: () =
 }
 
 /**
- * The three columns a note is drawn in — its minute, its words, and its ✎ and
+ * The three columns a log is drawn in — its minute, its words, and its ✎ and
  * bin — so the actions line up under one another however long each log is,
  * just past the longest one, rather than trailing each line at a different
  * place or waiting at the far edge.
  */
-const NOTE_COLUMNS = 'grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2'
+const LOG_COLUMNS = 'grid-cols-[auto_minmax(0,1fr)_auto] gap-x-2'
 
-/** The edits under way on one surface, by note id. */
-export type NoteDrafts = {
+/** The edits under way on one surface, by log id. */
+export type LogDrafts = {
   drafts: ReadonlyMap<string, string>
-  /** Start, change or end (`null`) the edit of one note. */
-  setDraft: (noteId: string, draft: string | null) => void
+  /** Start, change or end (`null`) the edit of one log. */
+  setDraft: (logId: string, draft: string | null) => void
 }
 
 /**
- * Where a surface keeps its edits under way, by note id: the stage's list,
+ * Where a surface keeps its edits under way, by log id: the stage's list,
  * or one block's marks on the calendar or the strip.
  *
- * Held by the surface rather than by the row drawing the note, because on the
+ * Held by the surface rather than by the row drawing the log, because on the
  * calendar a row's place is not its own: neighbours share a mark only while
  * the block cannot hold them apart (`stackRuns`), and a mark regrouped by a
- * note deleted beside it draws the same note under a new parent. A draft held
- * by the row went with it. Held here, the edit is found again by its note's
+ * log deleted beside it draws the same log under a new parent. A draft held
+ * by the row went with it. Held here, the edit is found again by its log's
  * id, and its field takes the focus back as it is drawn again.
  *
- * A note never comes back once deleted, so a draft left behind by one deleted
+ * A log never comes back once deleted, so a draft left behind by one deleted
  * elsewhere is never drawn again; the surface's own lifetime — and the
  * session's, where the host keys it by `generation` — bounds the rest.
  */
-export function useNoteDrafts(): NoteDrafts {
+export function useLogDrafts(): LogDrafts {
   const [drafts, setDrafts] = useState<ReadonlyMap<string, string>>(() => new Map())
-  const setDraft = useCallback((noteId: string, draft: string | null) => {
+  const setDraft = useCallback((logId: string, draft: string | null) => {
     setDrafts((current) => {
       const next = new Map(current)
-      if (draft === null) next.delete(noteId)
-      else next.set(noteId, draft)
+      if (draft === null) next.delete(logId)
+      else next.set(logId, draft)
       return next
     })
   }, [])
@@ -282,14 +280,14 @@ export function useNoteDrafts(): NoteDrafts {
 }
 
 /**
- * The running block's notes, oldest first, each one correctable, under their
+ * The running block's logs, oldest first, each one correctable, under their
  * heading. Nothing at all until there is one: a heading over nothing read as
  * a list that had failed to load.
  */
-export function NoteList() {
+export function LogList() {
   const block = useRunningBlock()
-  const edits = useNoteDrafts()
-  if (!block || block.notes.length === 0) return null
+  const edits = useLogDrafts()
+  if (!block || block.logs.length === 0) return null
 
   // One grid for the whole list, each row a subgrid of it, so the columns are
   // the list's rather than each row's.
@@ -298,11 +296,11 @@ export function NoteList() {
       <SectionHeading>Logs</SectionHeading>
       <ul
         aria-label="Logs in this block"
-        className={`mt-1.5 grid w-fit max-w-md gap-y-1 ${NOTE_COLUMNS}`}
+        className={`mt-1.5 grid w-fit max-w-md gap-y-1 ${LOG_COLUMNS}`}
       >
-        {block.notes.map((note) => (
-          <li key={note.id} className="group/row col-span-3 grid grid-cols-subgrid items-baseline">
-            <NoteRow blockId={block.id} note={note} edits={edits} />
+        {block.logs.map((log) => (
+          <li key={log.id} className="group/row col-span-3 grid grid-cols-subgrid items-baseline">
+            <LogRow blockId={block.id} log={log} edits={edits} />
           </li>
         ))}
       </ul>
@@ -311,27 +309,27 @@ export function NoteList() {
 }
 
 /**
- * The notes one mark stands for, with their ✎ and bin always showing: the card
- * the calendar and the mini window's strip open from a note's mark. Usually
- * one note; several where a block too short to hold its notes apart lets
+ * The logs one mark stands for, with their ✎ and bin always showing: the card
+ * the calendar and the mini window's strip open from a log's mark. Usually
+ * one log; several where a block too short to hold its logs apart lets
  * neighbours share a mark (`stackRuns`), oldest first. The card is already
  * the thing pointed at, so hiding the actions until a second hover would only
- * make the reader hunt for them. Its edits are its host's (`useNoteDrafts`).
+ * make the reader hunt for them. Its edits are its host's (`useLogDrafts`).
  */
-export function NoteCard({
+export function LogCard({
   blockId,
-  notes,
+  logs,
   edits,
 }: {
   blockId: string
-  notes: readonly BlockNote[]
-  edits: NoteDrafts
+  logs: readonly BlockLog[]
+  edits: LogDrafts
 }) {
   return (
-    <div className={`grid items-baseline gap-y-1.5 ${NOTE_COLUMNS}`}>
-      {notes.map((note) => (
-        <Fragment key={note.id}>
-          <NoteRow blockId={blockId} note={note} edits={edits} showActions />
+    <div className={`grid items-baseline gap-y-1.5 ${LOG_COLUMNS}`}>
+      {logs.map((log) => (
+        <Fragment key={log.id}>
+          <LogRow blockId={blockId} log={log} edits={edits} showActions />
         </Fragment>
       ))}
     </div>
@@ -339,31 +337,31 @@ export function NoteCard({
 }
 
 /**
- * One note as three cells of its host's grid (`NOTE_COLUMNS`): its minute, its
+ * One log as three cells of its host's grid (`LOG_COLUMNS`): its minute, its
  * words, and a ✎ and a delete. In a list the actions wait for the pointer, as
  * every row's actions do here, and the host puts `group/row` on the row.
  *
- * The edit is its host's, by the note's id (`useNoteDrafts`), so it outlasts
+ * The edit is its host's, by the log's id (`useLogDrafts`), so it outlasts
  * the row when the row is drawn again somewhere else. Saving words that have
  * not changed closes the field and writes nothing: an edit nobody made is not
  * an edit.
  */
-function NoteRow({
+function LogRow({
   blockId,
-  note,
+  log,
   edits,
   showActions = false,
 }: {
   blockId: string
-  note: BlockNote
-  edits: NoteDrafts
+  log: BlockLog
+  edits: LogDrafts
   showActions?: boolean
 }) {
-  const editNote = useSession((s) => s.editNote)
-  const removeNote = useSession((s) => s.removeNote)
-  const draft = edits.drafts.get(note.id) ?? null
-  const edit = (next: string | null) => edits.setDraft(note.id, next)
-  const time = formatClock(note.at)
+  const editLog = useSession((s) => s.editLog)
+  const removeLog = useSession((s) => s.removeLog)
+  const draft = edits.drafts.get(log.id) ?? null
+  const edit = (next: string | null) => edits.setDraft(log.id, next)
+  const time = formatClock(log.at)
 
   if (draft !== null) {
     return (
@@ -375,12 +373,12 @@ function NoteRow({
             value={draft}
             onChange={edit}
             onSave={() => {
-              if (draft.trim() !== note.text) editNote(blockId, note.id, draft)
+              if (draft.trim() !== log.text) editLog(blockId, log.id, draft)
               edit(null)
             }}
             onCancel={() => edit(null)}
             textClass="text-xs"
-            maxLength={NOTE_MAX_LENGTH}
+            maxLength={LOG_MAX_LENGTH}
           />
         </div>
       </>
@@ -391,17 +389,17 @@ function NoteRow({
     <>
       <span className="tnum shrink-0 text-xs text-muted">{time}</span>
       {/* A long log wraps under its own first line. */}
-      <span className="min-w-0 text-sm wrap-anywhere text-body">{note.text}</span>
+      <span className="min-w-0 text-sm wrap-anywhere text-body">{log.text}</span>
       {/* Level with the first line, not the middle of a wrapped log. */}
       <span className={`-my-1 flex shrink-0 self-start ${showActions ? '' : revealOnHover}`}>
-        <IconButton label={`Edit log at ${time}`} hint="Edit" onClick={() => edit(note.text)}>
+        <IconButton label={`Edit log at ${time}`} hint="Edit" onClick={() => edit(log.text)}>
           <EditGlyph />
         </IconButton>
         <IconButton
           label={`Delete log at ${time}`}
           hint="Delete"
           danger
-          onClick={() => removeNote(blockId, note.id)}
+          onClick={() => removeLog(blockId, log.id)}
         >
           <DeleteIcon />
         </IconButton>

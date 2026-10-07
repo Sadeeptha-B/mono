@@ -1,17 +1,17 @@
 /**
- * A block's urges and notes, drawn at the minutes they happened: an urge as a
- * dot in the block's own tone, a note as a small bright rounded bar. On the
+ * A block's urges and logs, drawn at the minutes they happened: an urge as a
+ * dot in the block's own tone, a log as a small bright rounded bar. On the
  * calendar they run down the block's right edge; on the mini window's strip
  * (`SegmentGlance`), along it. `marks.ts` decides exactly where.
  *
  * One column for both. They were first split across the two edges, urges as
- * ticks on the right and notes as dots on the left, which read as damage to
- * the block's border rather than as marks on it. Notes are held apart so each
+ * ticks on the right and logs as dots on the left, which read as damage to
+ * the block's border rather than as marks on it. Logs are held apart so each
  * can be pointed at, and neighbours share a mark — drawn as a small stack of
  * bars — where the block is too short to hold them apart; urges sit at their
- * own minutes, under the notes. `marks.ts` says why.
+ * own minutes, under the logs. `marks.ts` says why.
  *
- * Both open a card on hover, the same card. A note is something to read and
+ * Both open a card on hover, the same card. A log is something to read and
  * sometimes to put right, so its bar is a control and its card holds the log's
  * edit and delete — that one log, or the few sharing its mark, not the block's
  * whole log, which on a long block would be a wall of text standing on the
@@ -42,9 +42,9 @@ import {
   stackRuns,
   type Box,
 } from './marks'
-import { NoteCard, useNoteDrafts, type NoteDrafts } from '../BlockLog'
+import { LogCard, useLogDrafts, type LogDrafts } from '../BlockLog'
 import { formatClock } from '@/domain/time'
-import type { BlockNote, Interval, Ms, TimelineEntry } from '@/domain/types'
+import type { BlockLog, Interval, Ms, TimelineEntry } from '@/domain/types'
 import { useSession } from '@/store/session'
 
 /** Keeps a mark off the block's rounded corners. */
@@ -56,19 +56,19 @@ const MARK_CENTRE_PX = 8
 /** What a block's own text keeps clear of, on the right, when it carries marks. */
 export const MARK_LANE_PX = 18
 
-/** What was written into a block: its id, to correct a note by, and the two lists. */
-export type Written = { blockId: string; notes: readonly BlockNote[]; urges: readonly Ms[] }
+/** What was written into a block: its id, to correct a log by, and the two lists. */
+export type Written = { blockId: string; logs: readonly BlockLog[]; urges: readonly Ms[] }
 
 /**
- * The notes and urges of a block on the axis, running or over, or null when
+ * The logs and urges of a block on the axis, running or over, or null when
  * there are none — or when the entry is not a block at all.
  */
 export function writtenIn(entry: TimelineEntry): Written | null {
   if ((entry.kind !== 'past' && entry.kind !== 'active') || entry.segment.kind !== 'block') {
     return null
   }
-  const { id, notes, urges } = entry.segment
-  return notes.length > 0 || urges.length > 0 ? { blockId: id, notes, urges } : null
+  const { id, logs, urges } = entry.segment
+  return logs.length > 0 || urges.length > 0 ? { blockId: id, logs, urges } : null
 }
 
 /**
@@ -78,26 +78,26 @@ export function writtenIn(entry: TimelineEntry): Written | null {
  * cut, as the calendar cuts the block's box.
  */
 export function writtenWithin(written: Written, whole: Interval, shown: Interval): Written | null {
-  const notes = written.notes.filter((note) => drawnWithin(note.at, whole, shown))
+  const logs = written.logs.filter((log) => drawnWithin(log.at, whole, shown))
   const urges = written.urges.filter((at) => drawnWithin(at, whole, shown))
-  if (notes.length === written.notes.length && urges.length === written.urges.length) {
+  if (logs.length === written.logs.length && urges.length === written.urges.length) {
     return written
   }
-  return notes.length > 0 || urges.length > 0 ? { ...written, notes, urges } : null
+  return logs.length > 0 || urges.length > 0 ? { ...written, logs, urges } : null
 }
 
 /** "2 logs · 1 urge", leaving out whichever there are none of. */
-export function countsOf({ notes, urges }: Written, separator: string): string {
+export function countsOf({ logs, urges }: Written, separator: string): string {
   const count = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`
   return [
-    ...(notes.length > 0 ? [count(notes.length, 'log')] : []),
+    ...(logs.length > 0 ? [count(logs.length, 'log')] : []),
     ...(urges.length > 0 ? [count(urges.length, 'urge')] : []),
   ].join(separator)
 }
 
 /**
  * Which way a block's marks run: down a column on the calendar's block, or
- * along a row on the mini window's strip. Down a column a note's card opens
+ * along a row on the mini window's strip. Down a column a log's card opens
  * beside its mark, over the block; along a row, above or below it.
  */
 export type MarkAxis = 'column' | 'row'
@@ -114,19 +114,19 @@ type MarksProps = {
 }
 
 /**
- * A block's urges and notes at the minutes they happened, each opening its
+ * A block's urges and logs at the minutes they happened, each opening its
  * card on hover. `length` and `axis` say which surface: the calendar's block,
  * down its height, or the mini window's strip, along its width. `span` is the
  * stretch of time that length draws, which on the calendar is only the day's
  * side of a block cut at midnight; `written` is expected to hold only what
  * falls there (`writtenWithin`).
  *
- * The cards' edits under way are held here, above the marks, by note id
- * (`useNoteDrafts`): which mark a note is drawn on changes as neighbours are
+ * The cards' edits under way are held here, above the marks, by log id
+ * (`useLogDrafts`): which mark a log is drawn on changes as neighbours are
  * written or deleted, and an edit must not go with a mark. They are about one
  * session, so the whole of this starts again with the session's `generation`
  * — an import, or the turn of the day — as the stage does: kept, an edit begun
- * before an import could be saved over the imported note that took its id.
+ * before an import could be saved over the imported log that took its id.
  */
 export function Marks(props: MarksProps) {
   const generation = useSession((s) => s.generation)
@@ -134,23 +134,23 @@ export function Marks(props: MarksProps) {
 }
 
 function SessionMarks({ written, span, length, axis, tone, dim }: MarksProps) {
-  const edits = useNoteDrafts()
+  const edits = useLogDrafts()
   const inner = Math.max(0, length - MARK_INSET_PX * 2)
 
-  // Grouped when the notes or the room change, not on every tick of the clock.
-  const { notes, runs, offsets } = useMemo(() => {
-    const notes = [...written.notes].sort((x, y) => x.at - y.at)
-    const at = notes.map((note) => note.at)
+  // Grouped when the logs or the room change, not on every tick of the clock.
+  const { logs, runs, offsets } = useMemo(() => {
+    const logs = [...written.logs].sort((x, y) => x.at - y.at)
+    const at = logs.map((log) => log.at)
     const runs = stackRuns(at, span.start, span.end, inner, MARK_GAP_PX)
     const firsts = runs.map((run) => at[run.first]!)
-    return { notes, runs, offsets: markOffsets(firsts, span.start, span.end, inner, MARK_GAP_PX) }
-  }, [written.notes, span.start, span.end, inner])
+    return { logs, runs, offsets: markOffsets(firsts, span.start, span.end, inner, MARK_GAP_PX) }
+  }, [written.logs, span.start, span.end, inner])
 
   const place = (offset: number) => placeMark(offset + MARK_INSET_PX, length, axis)
 
-  // In three layers, whatever is pointed at: urges, then notes' targets above
-  // them, then an open card above both. Where an urge and a note meet, the
-  // note is the one a pointer finds — it is the mark with something to do —
+  // In three layers, whatever is pointed at: urges, then logs' targets above
+  // them, then an open card above both. Where an urge and a log meet, the
+  // log is the one a pointer finds — it is the mark with something to do —
   // and opening a card, the urge's included, never changes which that is.
   return (
     <>
@@ -166,12 +166,12 @@ function SessionMarks({ written, span, length, axis, tone, dim }: MarksProps) {
         />
       ))}
       {runs.map((run, i) => {
-        const members = notes.slice(run.first, run.last + 1)
+        const members = logs.slice(run.first, run.last + 1)
         return (
-          <NoteMark
+          <LogMark
             key={members[0]!.id}
             blockId={written.blockId}
-            notes={members}
+            logs={members}
             edits={edits}
             place={place(offsets[i]!)}
             beside={axis === 'column'}
@@ -183,7 +183,7 @@ function SessionMarks({ written, span, length, axis, tone, dim }: MarksProps) {
   )
 }
 
-/** Where one mark goes, and an urge's one-line card. A note's card is placed when it opens. */
+/** Where one mark goes, and an urge's one-line card. A log's card is placed when it opens. */
 type MarkPlace = {
   /** A zero-width line through the mark, which holds it and its card. */
   anchor: { className: string; style: CSSProperties }
@@ -231,8 +231,8 @@ function placeMark(offset: number, length: number, axis: MarkAxis): MarkPlace {
  * nothing to do with a past urge — only the last can be taken back, and that
  * is the counter's — so it takes no focus, and the block's own title already
  * carries the count for anything not pointing. Its target stays in the lowest
- * layer even while its card is open, so moving on from it to a note beside it
- * reaches the note.
+ * layer even while its card is open, so moving on from it to a log beside it
+ * reaches the log.
  */
 function UrgeMark({
   at,
@@ -266,24 +266,24 @@ function UrgeMark({
 }
 
 /**
- * One note's bar, and the note itself on hover or focus, to read in full and
+ * One log's bar, and the log itself on hover or focus, to read in full and
  * to edit or delete — or, where neighbours share the mark, a small stack of
  * bars and each of them in turn, oldest first.
  *
  * The card touches the bar, so the pointer can travel from one into the other
- * without crossing a gap that would close it. It stays open while any note in
+ * without crossing a gap that would close it. It stays open while any log in
  * it is being edited, whatever the pointer does — a field that vanished
  * because the hand drifted off it would lose the edit — and says so with
  * `data-open`, which raises its block above its neighbours. Hover rather than
- * a click is deliberate: Mono is used at a desk, and reading a note should
+ * a click is deliberate: Mono is used at a desk, and reading a log should
  * cost no more than pointing at it.
  *
  * Where the card goes is worked out as it opens and kept up while it is open
  * (`useOpenCard`).
  */
-function NoteMark({
+function LogMark({
   blockId,
-  notes,
+  logs,
   edits,
   place,
   beside,
@@ -291,8 +291,8 @@ function NoteMark({
 }: {
   blockId: string
   /** Oldest first; never empty. */
-  notes: readonly BlockNote[]
-  edits: NoteDrafts
+  logs: readonly BlockLog[]
+  edits: LogDrafts
   place: MarkPlace
   beside: boolean
   dim: boolean
@@ -300,16 +300,16 @@ function NoteMark({
   const anchor = useRef<HTMLDivElement>(null)
   const target = useRef<HTMLButtonElement>(null)
   const card = useRef<HTMLDivElement>(null)
-  const editing = notes.some((note) => edits.drafts.has(note.id))
+  const editing = logs.some((log) => edits.drafts.has(log.id))
   const opening = useOpenCard(anchor, target, card, beside, editing)
-  const first = formatClock(notes[0]!.at)
-  const last = formatClock(notes.at(-1)!.at)
-  const stacked = notes.length > 1
+  const first = formatClock(logs[0]!.at)
+  const last = formatClock(logs.at(-1)!.at)
+  const stacked = logs.length > 1
 
   return (
     <div
       ref={anchor}
-      className={`group/note ${place.anchor.className}`}
+      className={`group/log ${place.anchor.className}`}
       style={place.anchor.style}
       {...opening}
     >
@@ -317,7 +317,7 @@ function NoteMark({
       <button
         ref={target}
         type="button"
-        aria-label={stacked ? `${notes.length} logs, ${first} to ${last}` : `Log at ${first}`}
+        aria-label={stacked ? `${logs.length} logs, ${first} to ${last}` : `Log at ${first}`}
         className={`z-10 grid h-3.5 w-5 place-items-center rounded-full focus-visible:outline-2 focus-visible:outline-bright ${place.target.className}`}
         style={place.target.style}
       >
@@ -337,17 +337,17 @@ function NoteMark({
         {...(editing ? { 'data-open': '' } : {})}
         className={[
           'absolute z-20 overflow-y-auto rounded-md border border-muted/70 bg-surface-raised px-2 py-1.5 shadow-lg',
-          editing ? 'block' : 'hidden group-focus-within/note:block group-hover/note:block',
+          editing ? 'block' : 'hidden group-focus-within/log:block group-hover/log:block',
         ].join(' ')}
       >
-        <NoteCard blockId={blockId} notes={notes} edits={edits} />
+        <LogCard blockId={blockId} logs={logs} edits={edits} />
       </div>
     </div>
   )
 }
 
 /**
- * A note's card while it is open, kept where it can be seen; returns the
+ * A log's card while it is open, kept where it can be seen; returns the
  * handlers its mark listens with.
  *
  * Open is one state, however it came about: pointed at, focus inside it — a
@@ -419,7 +419,7 @@ function useOpenCard(
   }
 }
 
-/** How wide a note's card is, and how tall before it scrolls, where there is room. */
+/** How wide a log's card is, and how tall before it scrolls, where there is room. */
 const CARD_SIZE = { width: 224, height: 288 }
 
 /** Place `card`, inside `anchor`, by the room around `target` (`placeCard`). */

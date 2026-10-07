@@ -1,23 +1,23 @@
 /**
- * Where a block's notes and urges are drawn, down its height on the calendar
+ * Where a block's logs and urges are drawn, down its height on the calendar
  * or along the mini window's strip.
  *
  * Each goes at the minute it happened, measured against the block's own span,
  * because the calendar is an axis and a mark anywhere else would be a claim
- * about a different minute. The judgement is in the notes. An hour is 96
- * pixels, so a minute is 1.6 of them, and two notes written a minute apart
+ * about a different minute. The judgement is in the logs. An hour is 96
+ * pixels, so a minute is 1.6 of them, and two logs written a minute apart
  * would be one mark — the second impossible to point at, and pointing at a
- * note's mark is how it is read and corrected. So notes are pushed apart to
+ * log's mark is how it is read and corrected. So logs are pushed apart to
  * at least `minGap` (`markOffsets`), and where a block is too short to hold
  * them all that far apart, the nearest neighbours share one mark until the
  * rest fit (`stackRuns`). Pushing further cannot help a block that is simply
- * full, and letting marks overlap buried a note under the next one.
+ * full, and letting marks overlap buried a log under the next one.
  *
  * Urges take no part in that. Nothing is done with a past urge, so it needs no
  * room to be pointed at: it is drawn at its own minute (`offsetAt`), under
- * any note there, and a burst of them reads as the burst it was.
+ * any log there, and a burst of them reads as the burst it was.
  *
- * And where a note's card opens (`placeCard`): the side of its mark with room
+ * And where a log's card opens (`placeCard`): the side of its mark with room
  * for it, inside whatever it is seen through, which its host measures.
  *
  * Pure and DOM-free, and the variations are tested beside it.
@@ -53,18 +53,18 @@ export function offsetAt(at: Ms, start: Ms, end: Ms, height: number): number {
   return Math.min(height, Math.max(0, offset))
 }
 
-/** Notes sharing one mark: indexes into the list, `first` to `last` inclusive. */
+/** Logs sharing one mark: indexes into the list, `first` to `last` inclusive. */
 export type Run = { first: number; last: number }
 
 /**
- * The marks a block's notes are drawn as: one per note where `height` holds
+ * The marks a block's logs are drawn as: one per log where `height` holds
  * them all at least `minGap` apart, and otherwise as few runs of neighbours
- * sharing a mark as it takes to fit. The two notes nearest each other — the
+ * sharing a mark as it takes to fit. The two logs nearest each other — the
  * end of one run and the start of the next, in pixels — join first, the
- * earlier pair on a tie, so a cluster is grouped before notes that stand
+ * earlier pair on a tie, so a cluster is grouped before logs that stand
  * apart are. The instants are expected oldest first, as a block keeps them.
  *
- * A run is drawn at its first note (`markOffsets` of each run's first
+ * A run is drawn at its first log (`markOffsets` of each run's first
  * instant), which holds them at `minGap` because there are no more runs than
  * fit.
  */

@@ -14,7 +14,7 @@ describe('where a block draws its marks', () => {
   })
 
   it('keeps marks from outside the span inside the block', () => {
-    // A note written in the moment after the block ended, or a clock that
+    // A log written in the moment after the block ended, or a clock that
     // stepped back, still belongs to this block and is drawn at its edge.
     expect(markOffsets([-MINUTE, 50 * MINUTE], START, END, HEIGHT, 8)).toEqual([0, 72])
   })
@@ -65,14 +65,14 @@ describe('which marks a block drawn only in part carries', () => {
   })
 })
 
-describe('notes too many for their block', () => {
+describe('logs too many for their block', () => {
   // A 20-minute block, as the calendar draws one less its corners: room for
   // three marks at the gap a pointer needs.
   const SHORT = 20 * MINUTE
   const ROOM = 26
   const GAP = 10
 
-  it('keeps one mark per note while they fit', () => {
+  it('keeps one mark per log while they fit', () => {
     const runs = stackRuns([0, 5 * MINUTE, 10 * MINUTE], START, SHORT, ROOM, GAP)
     expect(runs).toEqual([
       { first: 0, last: 0 },
@@ -100,7 +100,7 @@ describe('notes too many for their block', () => {
     ])
   })
 
-  it('draws every run at its first note, apart, within the block', () => {
+  it('draws every run at its first log, apart, within the block', () => {
     const minutes = [0, 0, 0, 1, 1, 2, 2, 2].map((m) => m * MINUTE)
     const runs = stackRuns(minutes, START, SHORT, ROOM, GAP)
     expect(runs.length).toBeLessThanOrEqual(3)

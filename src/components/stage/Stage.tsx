@@ -13,7 +13,7 @@
  * answer. They open in place on the calendar now.
  */
 
-import { LogComposer, NoteList, UrgeCounter } from '../BlockLog'
+import { LogComposer, LogList, UrgeCounter } from '../BlockLog'
 import { BlockTasks } from '../BlockTasks'
 import { FocusTimer } from '../FocusTimer'
 import { BlockCompletePanel, BreakDurationPanel } from './BreakPanels'
@@ -209,7 +209,7 @@ export function Stage(props: Props) {
           <div className="grid gap-x-8 sm:grid-cols-2">
             <div>{active?.kind === 'block' && <BlockTasks taskIds={active.taskIds} />}</div>
             <div>
-              <NoteList />
+              <LogList />
             </div>
             <div className="mt-3 max-w-md">
               <LogComposer />

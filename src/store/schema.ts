@@ -78,8 +78,8 @@ export type ExportedShape = PersistedShape & { version: number; tasks?: Exported
  * reads as it was written, its linked tasks becoming today's because linking
  * now implies choosing.
  *
- * v6 added what is written into a running block: its notes and urges, and the
- * corrections to a note. A v5 build would drop all of them and read the day as
+ * v6 added what is written into a running block: its logs and urges, and the
+ * corrections to a log. A v5 build would drop all of them and read the day as
  * though nothing had been written, so it is a bump for the same reason. No
  * existing event changed; a block from an older log simply has none of either.
  *
@@ -88,8 +88,14 @@ export type ExportedShape = PersistedShape & { version: number; tasks?: Exported
  * morning as a day with nothing fixed, so it is a bump. No existing event
  * changed shape; a commitment gained an optional `recurringId`, absent on
  * everything written before series existed.
+ *
+ * v8 is the first bump to rename events: a block's log was written as
+ * `block/noted`, `block/noteEdited` and `block/noteRemoved` with a `noteId`,
+ * and is now `block/logged`, `block/logEdited` and `block/logRemoved` with a
+ * `logId`. Older names are read on every path, whatever the version stamped
+ * beside them (`renameLegacyLogEvent`), since no newer event can carry them.
  */
-export const SCHEMA_VERSION = 7
+export const SCHEMA_VERSION = 8
 
 /**
  * Read an export. Throws only when the file is not a Mono export, or comes
@@ -123,7 +129,8 @@ export function readImport(
 
   const raw = parsed.events.filter(isEventShaped)
   // Only a v1 file has `dayEndsAt` to rewrite. Every later version is read as
-  // it is, because no later bump changed an existing event.
+  // it is: no later bump changed an existing event's shape, and v8's renames
+  // are read by `sanitiseImportedEvent` under either name.
   const migrated = version < 2 ? raw.map(migrateDayEndsAt) : raw
   const events = migrated.map(sanitiseImportedEvent).filter(isPresent)
 
@@ -145,11 +152,18 @@ export type ImportedFile = ReturnType<typeof readImport>
  * through into this one.
  */
 export function migratePersisted(persisted: unknown, from: number): PersistedShape {
-  // Every bump since v3 only added things, so any of those logs is read
-  // exactly as a current one. This branch is the whole migration, and without
-  // it the fall-through below would throw every existing log away on upgrade.
+  // Every bump since v3 only added things, or renamed events that
+  // `sanitiseImportedEvent` reads under either name, so any of those logs is
+  // read exactly as a current one. This branch is the whole migration, and
+  // without it the fall-through below would throw every existing log away on
+  // upgrade.
   if (
-    (from === SCHEMA_VERSION || from === 6 || from === 5 || from === 4 || from === 3) &&
+    (from === SCHEMA_VERSION ||
+      from === 7 ||
+      from === 6 ||
+      from === 5 ||
+      from === 4 ||
+      from === 3) &&
     isPersisted(persisted)
   ) {
     return {
@@ -246,7 +260,33 @@ const isEventShaped = (v: unknown): v is MonoEvent =>
 
 const isPresent = <T,>(value: T | null): value is T => value !== null
 
-function sanitiseImportedEvent(event: MonoEvent): MonoEvent | null {
+const LEGACY_LOG_EVENTS: Readonly<Record<string, MonoEvent['type']>> = {
+  'block/noted': 'block/logged',
+  'block/noteEdited': 'block/logEdited',
+  'block/noteRemoved': 'block/logRemoved',
+}
+
+/**
+ * A block's log under the names it was written with before v8, read as the
+ * event it now is. Not gated on a version: a hand-edited file or a blob from a
+ * tab still running an older build can stamp anything, and no current event
+ * can carry these names, so rewriting them is never wrong. Without it they
+ * would fall through `sanitiseImportedEvent` as unknown types, and a day's
+ * logs would vanish on the upgrade.
+ */
+function renameLegacyLogEvent(event: MonoEvent): MonoEvent {
+  const { type, noteId, ...rest } = event as unknown as Record<string, unknown>
+  const renamed = LEGACY_LOG_EVENTS[type as string]
+  if (renamed === undefined) return event
+  return {
+    ...rest,
+    type: renamed,
+    ...(noteId === undefined ? {} : { logId: noteId }),
+  } as unknown as MonoEvent
+}
+
+function sanitiseImportedEvent(input: MonoEvent): MonoEvent | null {
+  const event = renameLegacyLogEvent(input)
   const raw = event as Record<string, unknown>
   switch (event.type) {
     case 'settings/changed': {
@@ -322,27 +362,27 @@ function sanitiseImportedEvent(event: MonoEvent): MonoEvent | null {
       return purpose === null ? null : { type: event.type, at: event.at, purpose }
     }
 
-    case 'block/noted': {
+    case 'block/logged': {
       const id = sanitiseString(raw.id)
       const text = sanitiseText(raw.text)
       return id === null || text === null ? null : { type: event.type, at: event.at, id, text }
     }
 
-    case 'block/noteEdited': {
+    case 'block/logEdited': {
       const blockId = sanitiseString(raw.blockId)
-      const noteId = sanitiseString(raw.noteId)
+      const logId = sanitiseString(raw.logId)
       const text = sanitiseText(raw.text)
-      return blockId === null || noteId === null || text === null
+      return blockId === null || logId === null || text === null
         ? null
-        : { type: event.type, at: event.at, blockId, noteId, text }
+        : { type: event.type, at: event.at, blockId, logId, text }
     }
 
-    case 'block/noteRemoved': {
+    case 'block/logRemoved': {
       const blockId = sanitiseString(raw.blockId)
-      const noteId = sanitiseString(raw.noteId)
-      return blockId === null || noteId === null
+      const logId = sanitiseString(raw.logId)
+      return blockId === null || logId === null
         ? null
-        : { type: event.type, at: event.at, blockId, noteId }
+        : { type: event.type, at: event.at, blockId, logId }
     }
 
     case 'block/urged':

@@ -486,7 +486,7 @@ function Block({
 
   // Two boxes rather than one. The block clips its own text to its own height,
   // which is what sizes its list of tasks to a short block; the marks and a
-  // note's card sit on its edges and have to be drawn outside it, so they
+  // log's card sit on its edges and have to be drawn outside it, so they
   // belong to a wrapper that does not clip. The wrapper keeps the marks'
   // layers to itself (`isolate`), and rises above its neighbours while the
   // pointer or focus is in it or a card in it is open for an edit, so an open

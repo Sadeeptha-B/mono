@@ -33,7 +33,7 @@
  * `awayDetected` outranks every phase and jumps straight to `reconciling`.
  * `focusing` also accepts `abandonBlock` — there is no pause, deliberately;
  * see `docs/decisions.md` — and the three things written *into* a running
- * block, `noteBlock`, `countUrge` and `takeBackUrge`, which stay where they are
+ * block, `logBlock`, `countUrge` and `takeBackUrge`, which stay where they are
  * and only append. Only `focusing` takes them: at `blockComplete` the segment
  * is still active, but the block is over and nobody is sitting in it.
  * `startDeciding` gives the purpose prompt a few minutes to work out what
@@ -109,7 +109,7 @@ export type Action =
   | { type: 'timerElapsed'; at: Ms }
   | { type: 'abandonBlock'; at: Ms }
   /** Write a line into the running block. A blank one is refused. */
-  | { type: 'noteBlock'; at: Ms; text: string }
+  | { type: 'logBlock'; at: Ms; text: string }
   /** Count one urge to leave the task. */
   | { type: 'countUrge'; at: Ms }
   /** Take back the running block's last urge. Nothing to take back, nothing happens. */
@@ -204,12 +204,12 @@ export function transition(
           events: [{ type: 'block/abandoned', at: action.at }],
         }
       }
-      if (action.type === 'noteBlock') {
+      if (action.type === 'logBlock') {
         const text = action.text.trim()
         if (text === '' || session.active?.kind !== 'block') return stay(phase)
         return {
           phase,
-          events: [{ type: 'block/noted', at: action.at, id: deps.newId(), text }],
+          events: [{ type: 'block/logged', at: action.at, id: deps.newId(), text }],
         }
       }
       if (action.type === 'countUrge') {
