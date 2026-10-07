@@ -164,6 +164,8 @@ describe('timerReading', () => {
     blockKind: 'deep' as const,
     purpose: 'Write',
     taskIds: [],
+    notes: [],
+    urges: [],
     startedAt: at(14),
     endsAt: at(14, 45),
   }

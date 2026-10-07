@@ -497,6 +497,8 @@ describe('whether a block is actually running', () => {
     blockKind: 'deep',
     purpose: 'ship it',
     taskIds: [],
+    notes: [],
+    urges: [],
     startedAt: at(9),
     endsAt: at(9, 45),
   }
@@ -544,5 +546,84 @@ describe('whether a block is actually running', () => {
         expect(wantsAmbience(phase, active)).toBe(isBlockRunning(phase, active))
       }
     }
+  })
+})
+
+describe('writing into a running block', () => {
+  const started: Action[] = [
+    { type: 'startBlock', at: at(14), blockKind: 'deep' },
+    { type: 'setPurpose', at: at(14), purpose: 'Write the migration', taskIds: ['task'] },
+  ]
+
+  it('keeps notes and urges on the block, and carries them into history', () => {
+    const { phase, session } = run([
+      ...started,
+      { type: 'noteBlock', at: at(14, 5), text: '  Schema done  ' },
+      { type: 'countUrge', at: at(14, 10) },
+      { type: 'countUrge', at: at(14, 12) },
+      { type: 'takeBackUrge', at: at(14, 12) },
+      { type: 'noteBlock', at: at(14, 20), text: 'Stuck on the foreign key' },
+      { type: 'timerElapsed', at: at(14, 45) },
+      { type: 'takeBreak', at: at(14, 45) },
+    ])
+
+    expect(phase.name).toBe('choosingBreak')
+    const block = session.history.at(-1)
+    expect(block).toMatchObject({
+      kind: 'block',
+      urges: [at(14, 10)],
+      notes: [
+        { at: at(14, 5), text: 'Schema done' },
+        { at: at(14, 20), text: 'Stuck on the foreign key' },
+      ],
+    })
+  })
+
+  it('gives each note its own id', () => {
+    const { session } = run([
+      ...started,
+      { type: 'noteBlock', at: at(14, 5), text: 'one' },
+      { type: 'noteBlock', at: at(14, 5), text: 'two' },
+    ])
+    const ids = session.active?.kind === 'block' ? session.active.notes.map((n) => n.id) : []
+    expect(new Set(ids).size).toBe(2)
+  })
+
+  it('refuses a blank note, and a take-back with nothing to take back, without a word in the log', () => {
+    const { events } = run([
+      ...started,
+      { type: 'noteBlock', at: at(14, 5), text: '   ' },
+      { type: 'takeBackUrge', at: at(14, 6) },
+    ])
+    expect(events.map((e) => e.type)).toEqual(['block/started'])
+  })
+
+  it('takes nothing once the block is over, though it is not banked yet', () => {
+    const { phase, events } = run([
+      ...started,
+      { type: 'timerElapsed', at: at(14, 45) },
+      { type: 'noteBlock', at: at(14, 46), text: 'Late thought' },
+      { type: 'countUrge', at: at(14, 46) },
+    ])
+    expect(phase.name).toBe('blockComplete')
+    expect(events.map((e) => e.type)).toEqual(['block/started'])
+  })
+
+  it('takes nothing on a break or while idle', () => {
+    const { events } = run([
+      { type: 'noteBlock', at: at(13), text: 'Before anything' },
+      { type: 'countUrge', at: at(13) },
+      ...started,
+      { type: 'timerElapsed', at: at(14, 45) },
+      { type: 'takeBreak', at: at(14, 45) },
+      { type: 'confirmBreak', at: at(14, 45), durationMin: 10 },
+      { type: 'countUrge', at: at(14, 50) },
+      { type: 'noteBlock', at: at(14, 50), text: 'On a break' },
+    ])
+    expect(events.map((e) => e.type)).toEqual([
+      'block/started',
+      'block/completed',
+      'break/started',
+    ])
   })
 })

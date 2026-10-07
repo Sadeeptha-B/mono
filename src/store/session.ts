@@ -167,6 +167,21 @@ type SessionStore = {
    */
   linkTask: (taskId: string, intentionId: string | null) => void
 
+  /**
+   * Write a line into the running block, count an urge, or take the last one
+   * back. Through the machine, so all three are refused outside `focusing`.
+   */
+  noteBlock: (text: string) => void
+  countUrge: () => void
+  takeBackUrge: () => void
+  /**
+   * Correct or delete a note, in the running block or one already over. Not
+   * through the machine: a mistype is worth fixing whatever is on the stage,
+   * as an intention is renamed whatever is on it.
+   */
+  editNote: (blockId: string, noteId: string, text: string) => void
+  removeNote: (blockId: string, noteId: string) => void
+
   /** Roll the day over if the calendar day changed. Safe to call every tick. */
   checkDayRollover: (now: Ms) => void
   /**
@@ -279,6 +294,18 @@ export const useSession = create<SessionStore>()(
 
       linkTask: (taskId, intentionId) =>
         get().append({ type: 'intention/taskLinked', at: Date.now(), taskId, intentionId }),
+
+      noteBlock: (text) => get().dispatch({ type: 'noteBlock', at: Date.now(), text }),
+
+      countUrge: () => get().dispatch({ type: 'countUrge', at: Date.now() }),
+
+      takeBackUrge: () => get().dispatch({ type: 'takeBackUrge', at: Date.now() }),
+
+      editNote: (blockId, noteId, text) =>
+        get().append({ type: 'block/noteEdited', at: Date.now(), blockId, noteId, text }),
+
+      removeNote: (blockId, noteId) =>
+        get().append({ type: 'block/noteRemoved', at: Date.now(), blockId, noteId }),
 
       checkDayRollover: (now) => {
         const today = dayKey(now)

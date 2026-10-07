@@ -32,10 +32,13 @@
  *
  * `awayDetected` outranks every phase and jumps straight to `reconciling`.
  * `focusing` also accepts `abandonBlock` — there is no pause, deliberately;
- * see `docs/decisions.md`. `startDeciding` gives the purpose prompt a few
- * minutes to work out what matters, and is the one transition that stays in
- * the same phase: it is a timer on the question, like today's
- * question's, and records nothing. It replaced the priorities block, a real
+ * see `docs/decisions.md` — and the three things written *into* a running
+ * block, `noteBlock`, `countUrge` and `takeBackUrge`, which stay where they are
+ * and only append. Only `focusing` takes them: at `blockComplete` the segment
+ * is still active, but the block is over and nobody is sitting in it.
+ * `startDeciding` gives the purpose prompt a few minutes to work out what
+ * matters, and is the one transition that stays in the same phase: it is a
+ * timer on the question, like today's question's, and records nothing. It replaced the priorities block, a real
  * block that took plan time and armed site blocking for not knowing yet.
  */
 
@@ -105,6 +108,12 @@ export type Action =
   | { type: 'startDeciding'; at: Ms }
   | { type: 'timerElapsed'; at: Ms }
   | { type: 'abandonBlock'; at: Ms }
+  /** Write a line into the running block. A blank one is refused. */
+  | { type: 'noteBlock'; at: Ms; text: string }
+  /** Count one urge to leave the task. */
+  | { type: 'countUrge'; at: Ms }
+  /** Take back the running block's last urge. Nothing to take back, nothing happens. */
+  | { type: 'takeBackUrge'; at: Ms }
   | { type: 'takeBreak'; at: Ms }
   | { type: 'skipBreak'; at: Ms; nextBlockKind: BlockKind }
   | { type: 'confirmBreak'; at: Ms; durationMin: number }
@@ -194,6 +203,26 @@ export function transition(
           phase: { name: 'idle' },
           events: [{ type: 'block/abandoned', at: action.at }],
         }
+      }
+      if (action.type === 'noteBlock') {
+        const text = action.text.trim()
+        if (text === '' || session.active?.kind !== 'block') return stay(phase)
+        return {
+          phase,
+          events: [{ type: 'block/noted', at: action.at, id: deps.newId(), text }],
+        }
+      }
+      if (action.type === 'countUrge') {
+        if (session.active?.kind !== 'block') return stay(phase)
+        return { phase, events: [{ type: 'block/urged', at: action.at }] }
+      }
+      if (action.type === 'takeBackUrge') {
+        // Refused here as well as in the reducer, so a stale click on a control
+        // about to disable itself appends nothing rather than a no-op event.
+        if (session.active?.kind !== 'block' || session.active.urges.length === 0) {
+          return stay(phase)
+        }
+        return { phase, events: [{ type: 'block/urgeTakenBack', at: action.at }] }
       }
       return stay(phase)
     }

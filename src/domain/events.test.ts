@@ -519,3 +519,98 @@ describe('the tasks a block is for', () => {
     expect(state.active).toMatchObject({ kind: 'block', taskIds: [] })
   })
 })
+
+describe("a block's notes and urges", () => {
+  const start: MonoEvent = {
+    type: 'block/started',
+    at: at(14),
+    id: 'b1',
+    blockKind: 'deep',
+    endsAt: at(14, 45),
+    purpose: 'Write the migration',
+    taskIds: ['t'],
+  }
+  const noted = (id: string, minute: number, text: string): MonoEvent => ({
+    type: 'block/noted',
+    at: at(14, minute),
+    id,
+    text,
+  })
+
+  it('are dropped with no block running, and on a break', () => {
+    const state = replay([
+      noted('n1', 0, 'Nothing running'),
+      { type: 'block/urged', at: at(13) },
+      { type: 'break/started', at: at(13), id: 'rest', endsAt: at(13, 10) },
+      noted('n2', 1, 'On a break'),
+      { type: 'block/urged', at: at(13, 1) },
+    ])
+    expect(state.active).toMatchObject({ kind: 'break' })
+    expect(state.history).toEqual([])
+  })
+
+  it('go into history with the block however it closes', () => {
+    const written = [noted('n1', 5, 'Schema done'), { type: 'block/urged', at: at(14, 6) } as const]
+    const closings: MonoEvent[] = [
+      { type: 'block/completed', at: at(14, 45) },
+      { type: 'block/abandoned', at: at(14, 20) },
+      // A malformed log that starts something over the top still keeps them.
+      { type: 'break/started', at: at(14, 20), id: 'rest', endsAt: at(14, 30) },
+    ]
+    for (const closing of closings) {
+      const block = replay([start, ...written, closing]).history[0]
+      expect(block).toMatchObject({
+        notes: [{ id: 'n1', text: 'Schema done' }],
+        urges: [at(14, 6)],
+      })
+    }
+  })
+
+  it('take back only the last urge, and nothing when there is none', () => {
+    const state = replay([
+      start,
+      { type: 'block/urgeTakenBack', at: at(14, 1) },
+      { type: 'block/urged', at: at(14, 2) },
+      { type: 'block/urged', at: at(14, 3) },
+      { type: 'block/urgeTakenBack', at: at(14, 3) },
+    ])
+    expect(state.active).toMatchObject({ urges: [at(14, 2)] })
+  })
+
+  it('correct a note in the running block, keeping the minute it was written', () => {
+    const state = replay([
+      start,
+      noted('n1', 5, 'Shcema done'),
+      { type: 'block/noteEdited', at: at(14, 30), blockId: 'b1', noteId: 'n1', text: ' Schema done ' },
+    ])
+    expect(state.active).toMatchObject({
+      notes: [{ id: 'n1', at: at(14, 5), text: 'Schema done' }],
+    })
+  })
+
+  it('correct and delete a note in a block already over', () => {
+    const state = replay([
+      start,
+      noted('n1', 5, 'Shcema done'),
+      noted('n2', 9, 'Wrong block'),
+      { type: 'block/completed', at: at(14, 45) },
+      { type: 'block/noteEdited', at: at(15), blockId: 'b1', noteId: 'n1', text: 'Schema done' },
+      { type: 'block/noteRemoved', at: at(15), blockId: 'b1', noteId: 'n2' },
+    ])
+    expect(state.history[0]).toMatchObject({
+      notes: [{ id: 'n1', at: at(14, 5), text: 'Schema done' }],
+    })
+  })
+
+  it('change nothing for a correction aimed at nothing, or a blank one', () => {
+    const before = replay([start, noted('n1', 5, 'Schema done')])
+    const misses: MonoEvent[] = [
+      { type: 'block/noteEdited', at: at(15), blockId: 'b1', noteId: 'n1', text: '   ' },
+      { type: 'block/noteEdited', at: at(15), blockId: 'b1', noteId: 'missing', text: 'x' },
+      { type: 'block/noteEdited', at: at(15), blockId: 'other', noteId: 'n1', text: 'x' },
+      { type: 'block/noteRemoved', at: at(15), blockId: 'b1', noteId: 'missing' },
+      { type: 'block/noteRemoved', at: at(15), blockId: 'other', noteId: 'n1' },
+    ]
+    for (const miss of misses) expect(reduce(before, miss)).toBe(before)
+  })
+})
