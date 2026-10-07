@@ -60,7 +60,7 @@ import { useMemo } from 'react'
 import { unlockAudio } from '@/ambient/audio'
 import { GroupedTasks } from '../GroupedTasks'
 import { QuestionClock } from '../QuestionClock'
-import { TodayList } from '../TodayList'
+import { TodayList, type IntentionRename } from '../TodayList'
 import { useTodayBacklog } from '../useTodayBacklog'
 import { StagePrompt } from '../ui'
 import { formatDuration } from '@/domain/time'
@@ -80,6 +80,8 @@ export function TodayPanel({
   planned,
   newIntention,
   onNewIntention,
+  renaming,
+  onRenaming,
 }: {
   now: Ms
   eyebrow: string
@@ -93,6 +95,9 @@ export function TodayPanel({
   /** The new intention's title while its field is open, held across the switch. */
   newIntention: string | null
   onNewIntention: (title: string | null) => void
+  /** An intention being renamed, held across the switch for the same reason. */
+  renaming: IntentionRename | null
+  onRenaming: (rename: IntentionRename | null) => void
 }) {
   const backlog = useTodayBacklog()
   const addToToday = useSession((s) => s.addToToday)
@@ -134,6 +139,8 @@ export function TodayPanel({
               heading="Today's tasks"
               newIntention={newIntention}
               onNewIntention={onNewIntention}
+              renaming={renaming}
+              onRenaming={onRenaming}
               empty="Pick tasks from All Tasks, or add your own there."
             />
           </section>

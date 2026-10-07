@@ -306,6 +306,33 @@ test('a block keeps running while the tasks page is open', async ({ page }) => {
   await expect(stage(page).getByRole('button', { name: 'End early' })).toBeVisible()
 })
 
+test('a pick-up in Today and one on the board are never both in hand', async ({ page }) => {
+  // Regression: each kept its own, and the two status bars stood in one place.
+  await openMono(page)
+  await openTasks(page)
+  await addTo(page, 'Work', 'Login form')
+  await addTo(page, 'Work', 'Rate limiting')
+  await main(page).getByRole('button', { name: 'Login form for today', exact: true }).click()
+  const today = main(page).getByRole('region', { name: 'Today', exact: true })
+  const moving = page.getByRole('status').filter({ hasText: 'Moving' })
+  const boardMove = main(page).getByRole('button', {
+    name: 'Move Rate limiting to Personal',
+    exact: true,
+  })
+
+  await today.getByRole('button', { name: 'Move Login form', exact: true }).click()
+  await expect(moving).toContainText('Login form')
+  await inbox(page, 'Work').getByRole('button', { name: 'Move Rate limiting', exact: true }).click()
+  await expect(moving).toHaveCount(1)
+  await expect(moving).toContainText('Rate limiting')
+  await expect(boardMove).toBeVisible()
+
+  await today.getByRole('button', { name: 'Move Login form', exact: true }).click()
+  await expect(moving).toHaveCount(1)
+  await expect(moving).toContainText('Login form')
+  await expect(boardMove).toHaveCount(0)
+})
+
 const epic = (page: Page, title: string) =>
   main(page).getByRole('region', { name: `Epic: ${title}` })
 const outcome = (page: Page, title: string) =>

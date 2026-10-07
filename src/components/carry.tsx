@@ -25,12 +25,17 @@
  * play would hand the old move back the moment it returned, with nobody having
  * picked it up. That is adjusted during render rather than in an effect, so the
  * stale move is never painted.
+ *
+ * Two surfaces on one page share a hand (`useCarryHand`): taking a task up with
+ * one puts down whatever the other held, so there is one status bar and one
+ * set of `Move here` at a time.
  */
 
 import {
   createContext,
   useContext,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -74,6 +79,14 @@ export const Carry = createContext<CarryContext>({
   landed: { current: null },
 })
 
+/** Which of several carries on a page holds the task in hand. */
+export type CarryHand = { holder: string | null; take: (carrier: string) => void }
+
+export function useCarryHand(): CarryHand {
+  const [holder, take] = useState<string | null>(null)
+  return useMemo(() => ({ holder, take }), [holder])
+}
+
 /**
  * One surface's carry, for its `Carry.Provider`. The three functions are read
  * by identity, so a caller keeps them stable — they change with the backlog or
@@ -83,18 +96,27 @@ export function useCarryState({
   find,
   takes,
   move,
+  hand,
 }: {
-  /** The task by id as the surface now holds it, or undefined once it has left. */
-  find: (taskId: string) => Item | undefined
+  /**
+   * The task by id as the surface now holds it, or undefined once it has left;
+   * asked with how it was taken up, since a surface may hold a drag and a
+   * pick-up to different terms.
+   */
+  find: (taskId: string, by: CarryMode) => Item | undefined
   /** Whether a task would go to `target`. */
   takes: (task: Item, target: string) => boolean
   move: (task: Item, target: string) => void
+  /** Shared with the page's other carries, so only one holds a task at once. */
+  hand?: CarryHand | undefined
 }): CarryContext {
   const [carrying, setCarrying] = useState<{ id: string; by: CarryMode } | null>(null)
   const [over, setOver] = useState<string | null>(null)
   const landed = useRef<string | null>(null)
+  const me = useId()
 
-  const heldTask = carrying ? find(carrying.id) : undefined
+  const mine = hand === undefined || hand.holder === me
+  const heldTask = carrying && mine ? find(carrying.id, carrying.by) : undefined
   if (carrying && !heldTask) {
     setCarrying(null)
     setOver(null)
@@ -111,6 +133,7 @@ export function useCarryState({
       over,
       hover: setOver,
       pickUp: (task, by) => {
+        hand?.take(me)
         setCarrying({ id: task.id, by })
         setOver(null)
       },
@@ -125,7 +148,7 @@ export function useCarryState({
       },
       landed,
     }
-  }, [heldTask, carrying, over, takes, move])
+  }, [heldTask, carrying, over, takes, move, hand, me])
 
   // Escape puts a picked-up task back down. A drag has its own Escape.
   const picked = carry.held?.by === 'pick'
@@ -187,7 +210,7 @@ export function DropZone({
       }}
       className={`rounded-xl outline-offset-4 ${
         lit
-          ? 'bg-surface/60 outline-2 outline-deep'
+          ?'bg-surface/60 outline-2 outline-deep'
           : open
             ? 'outline-1 outline-muted/70 outline-dashed'
             : ''

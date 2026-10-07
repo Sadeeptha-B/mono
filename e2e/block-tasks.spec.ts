@@ -337,6 +337,34 @@ test('a task written on the prompt can be filed straight into an outcome', async
   ).toContainText('Remember me')
 })
 
+test('a task taken out of today leaves the block, and choosing it again does not tick it', async ({
+  page,
+}) => {
+  // Regression: the tick was hidden while its task was out of today, and came
+  // back, with Start enabled, as soon as the task was chosen again.
+  await toPurposePrompt(page)
+  await addBlockTask(page, 'Reply to Priya')
+  await expect(startButton(page)).toBeEnabled()
+
+  await todayView(page)
+    .getByRole('button', { name: 'Take Reply to Priya out of today', exact: true })
+    .click()
+  await expect(chosen(page)).not.toContainText('Reply to Priya')
+  await expect(startButton(page)).toBeDisabled()
+
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await page
+    .getByRole('main')
+    .getByRole('button', { name: 'Reply to Priya for today', exact: true })
+    .click()
+  await page.getByRole('link', { name: 'Back to today' }).click()
+  await expect(todayView(page)).toContainText('Reply to Priya')
+  await expect(
+    blockBacklog(page).getByRole('checkbox', { name: 'Reply to Priya' }),
+  ).not.toBeChecked()
+  await expect(startButton(page)).toBeDisabled()
+})
+
 test('a ticked task deleted in another tab cannot start the block', async ({ page, context }) => {
   await toPurposePrompt(page)
   await addBlockTask(page, 'Doomed')
@@ -397,6 +425,19 @@ test('a rename in the backlog closes when its task goes, and does not come back 
   await expect(panel.getByRole('checkbox', { name: 'Login form' })).toBeVisible()
   await expect(editor).toHaveCount(0)
   await expect(find).toBeFocused()
+
+  // The same when the task is finished in another tab: a done row has no
+  // rename, and reopening it here does not bring the old draft back.
+  await panel.getByRole('button', { name: 'More for task Login form', exact: true }).press('Enter')
+  await panel.getByRole('button', { name: 'Edit task Login form', exact: true }).press('Enter')
+  await editor.fill('Another stale draft')
+  await other.getByRole('main').getByLabel('Login form done', { exact: true }).click()
+  await expect(panel.getByRole('checkbox', { name: 'Login form' })).toHaveCount(0)
+  await expect(editor).toHaveCount(0)
+  await panel.getByRole('button', { name: 'More for task Login form', exact: true }).press('Enter')
+  await panel.getByRole('button', { name: 'Reopen task Login form', exact: true }).press('Enter')
+  await expect(panel.getByRole('checkbox', { name: 'Login form' })).toBeVisible()
+  await expect(editor).toHaveCount(0)
 })
 
 test('a rename changed under it by another tab keeps the keyboard where it belongs', async ({

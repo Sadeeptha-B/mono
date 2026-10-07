@@ -58,8 +58,9 @@
  *
  * Those two fields are editors, and they keep the rule every editor in Mono
  * keeps: one whose subject vanishes closes, before paint. A rename lasts only
- * while its task is drawn and a new task's field only while its place is,
- * whether a search hid it or an update from another tab took it. The fields
+ * while its task is drawn open — a done row has no rename — and a new task's
+ * field only while its place is drawn, whether a search hid it or an update
+ * from another tab took it. The fields
  * are held up here by id, above the rows they edit, so without the rule the
  * state outlived the row, and when the task came back — its epic reopened, the
  * search cleared — the old editor came back with it.
@@ -205,11 +206,11 @@ export const TaskBrowser = memo(function TaskBrowser({
   // An editor whose subject is no longer drawn closes — see the header.
   // Adjusted during render, so the stale editor is never painted and never
   // mounts again on its own.
-  if (renaming && !drawsTask(shown, renaming.taskId)) setRenaming(null)
+  if (renaming && drawnTask(shown, renaming.taskId)?.status !== 'open') setRenaming(null)
   if (adding && !drawsPlace(shown, adding.parentId)) setAdding(null)
   if (renamingPlace && !drawsPlace(shown, renamingPlace.id)) setRenamingPlace(null)
   if (confirming !== null && !drawsPlace(shown, confirming)) setConfirming(null)
-  if (menu !== null && !drawsPlace(shown, menu) && !drawsTask(shown, menu)) setMenu(null)
+  if (menu !== null && !drawsPlace(shown, menu) && !drawnTask(shown, menu)) setMenu(null)
 
   const root = useRef<HTMLDivElement>(null)
   const search = useRef<HTMLInputElement>(null)
@@ -846,9 +847,14 @@ function PlaceTools({
   )
 }
 
-/** Whether this tree, as drawn, has a row for the task. */
-const drawsTask = (nodes: readonly TaskTreeNode[], taskId: string): boolean =>
-  nodes.some((node) => node.tasks.some((t) => t.id === taskId) || drawsTask(node.children, taskId))
+/** The task as this tree draws it, or undefined when it has no row. */
+const drawnTask = (nodes: readonly TaskTreeNode[], taskId: string): Item | undefined => {
+  for (const node of nodes) {
+    const task = node.tasks.find((t) => t.id === taskId) ?? drawnTask(node.children, taskId)
+    if (task) return task
+  }
+  return undefined
+}
 
 /** Whether this tree, as drawn, has the place. */
 const drawsPlace = (nodes: readonly TaskTreeNode[], placeId: string): boolean =>

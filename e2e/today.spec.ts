@@ -157,6 +157,94 @@ test('All Tasks keeps the backlog: tasks are finished and reopened there', async
   await expect(tree).toBeVisible()
 })
 
+test("the column's switch keeps what was being typed in either view", async ({ page }) => {
+  // Regression: the switch unmounted the view it hid, and a draft in it went.
+  await openMono(page)
+  await goToStage(page, 'Today')
+  const column = page.getByRole('group', { name: 'Show in this column' })
+  const tree = todayBrowser(page)
+  await addTaskIn(tree, 'Work')
+  const task = tree.getByLabel('New task in Work', { exact: true })
+  await task.fill('Half a task')
+
+  await column.getByRole('button', { name: 'Today' }).click()
+  await page.getByRole('complementary').getByRole('button', { name: 'Hours', exact: true }).click()
+  const end = page.getByRole('complementary').getByLabel('Hours 1 end', { exact: true })
+  await end.fill('22:00')
+
+  await column.getByRole('button', { name: 'All Tasks' }).click()
+  await expect(task).toHaveValue('Half a task')
+  await column.getByRole('button', { name: 'Today' }).click()
+  await expect(end).toHaveValue('22:00')
+})
+
+test('an intention half renamed is still being renamed after another question', async ({
+  page,
+}) => {
+  // Regression: the rename was held by today's list, which the question
+  // draws only while it is on screen, and it came back as the old name.
+  await openMono(page)
+  await goToStage(page, 'Today')
+  await addIntention(page, 'Admin')
+  await intention(page, 'Admin').getByRole('button', { name: 'Rename intention Admin' }).click()
+  const rename = stage(page).getByLabel('Rename intention Admin', { exact: true })
+  await rename.fill('Calls and invoices')
+
+  await goToStage(page, 'Hours')
+  await expect(rename).toHaveCount(0)
+  await goToStage(page, 'Today')
+  await expect(rename).toHaveValue('Calls and invoices')
+})
+
+test('a task picked up in today is put down when it leaves today, its question closes, or the day turns', async ({
+  page,
+}) => {
+  await openMono(page)
+  await goToStage(page, 'Today')
+  await addTodayTask(page, 'Reply to Priya')
+  await addTodayTask(page, 'Call the bank')
+  await addIntention(page, 'Admin')
+  const moving = page.getByRole('status').filter({ hasText: 'Moving' })
+  const grip = (title: string) =>
+    todayList(page).getByRole('button', { name: `Move ${title}`, exact: true })
+
+  // Its row has gone, so the move goes too, and choosing it again is not
+  // picking it up again.
+  await grip('Reply to Priya').click()
+  await expect(moving).toBeVisible()
+  await todayList(page).getByRole('button', { name: 'Take Reply to Priya out of today' }).click()
+  await expect(moving).toHaveCount(0)
+  await todayBrowser(page).getByRole('checkbox', { name: 'Reply to Priya' }).check()
+  await expect(moving).toHaveCount(0)
+  await expect(todayList(page).getByRole('button', { name: 'Move here' })).toHaveCount(0)
+
+  // Anywhere to put it down is drawn only while a question chooses tasks, so
+  // the move ends with the question: for another question, and when the day
+  // starts, rather than asking for a `Move here` into the block.
+  await grip('Call the bank').click()
+  await expect(moving).toBeVisible()
+  await goToStage(page, 'Hours')
+  await expect(moving).toHaveCount(0)
+  await goToStage(page, 'Today')
+  await grip('Call the bank').click()
+  await expect(moving).toBeVisible()
+  await start(page).click()
+  await expect(moving).toHaveCount(0)
+  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+  await expect(moving).toHaveCount(0)
+  await stage(page).getByRole('button', { name: 'Not yet' }).click()
+
+  // Held at midnight, it is not carried into the next day.
+  await goToStage(page, 'Today')
+  await grip('Call the bank').click()
+  await expect(moving).toBeVisible()
+  await page.clock.setSystemTime(new Date(2026, 7, 21, 8, 0, 0))
+  await page.clock.fastForward('00:02')
+  await expect(moving).toHaveCount(0)
+  await goToStage(page, 'Today')
+  await expect(stage(page).getByRole('button', { name: 'Move here' })).toHaveCount(0)
+})
+
 test('areas, epics and outcomes are kept from All Tasks, from the popup of their ⋯', async ({
   page,
 }) => {
@@ -176,11 +264,15 @@ test('areas, epics and outcomes are kept from All Tasks, from the popup of their
   await expect(more('SC Prefix')).toHaveCSS('opacity', '0')
   await tree.getByText('SC Prefix', { exact: true }).hover()
   await expect(more('SC Prefix')).toHaveCSS('opacity', '1')
-  const below = tree.getByText('New Item', { exact: true })
-  const before = (await below.boundingBox())!.y
+  // Measured from the row above rather than from the viewport, which the
+  // column's scroller can move by a pixel as the popup opens.
+  const gap = async () =>
+    (await tree.getByText('New Item', { exact: true }).boundingBox())!.y -
+    (await tree.getByText('SC Prefix', { exact: true }).boundingBox())!.y
+  const before = await gap()
   await more('SC Prefix').click()
   await expect(popup('SC Prefix')).toHaveCSS('position', 'absolute')
-  expect((await below.boundingBox())!.y).toBe(before)
+  expect(await gap()).toBeCloseTo(before, 0)
 
   // A press outside closes it.
   await page.getByRole('heading', { name: 'What are you working on today?' }).click()

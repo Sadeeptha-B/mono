@@ -123,20 +123,23 @@ export function DayCalendar({
     [timeline, now],
   )
 
-  // Bring the current hour into view once, on mount. Doing this on every tick
-  // would yank the view back while the user is scrolling around their day.
+  // Bring the current hour into view once, the first time the column is laid
+  // out. Doing this on every tick would yank the view back while the user is
+  // scrolling around their day. Not on mount: mounted behind All Tasks (`App`)
+  // the column has no size, and nothing to scroll, until it is shown.
   //
   // A no-op when the column is not its own scroller, which is exactly right on
   // a narrow screen: the page opens at the top, where the stage is, and the day
   // is what you scroll down to. Nothing to branch on — an element that does not
   // overflow ignores `scrollTop`.
+  const broughtIntoView = useRef(false)
   useEffect(() => {
     const el = scroller.current
-    if (!el) return
+    if (broughtIntoView.current || !el || el.clientHeight === 0) return
+    broughtIntoView.current = true
     const offset = ((now - rangeStart) / HOUR_MS) * HOUR_PX
     el.scrollTop = Math.max(0, offset - el.clientHeight / 3)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  })
 
   const nowOffset = TOP_PAD_PX + ((now - rangeStart) / HOUR_MS) * HOUR_PX
   const nowVisible = now >= rangeStart && now <= rangeEnd
