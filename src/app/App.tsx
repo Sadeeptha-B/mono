@@ -389,6 +389,9 @@ export function App() {
     () => pickedInPlay(blockPick, todayBacklog.offered, session.today),
     [blockPick, todayBacklog.offered, session.today],
   )
+  // A tick whose task has left is let go for good, during render, so the task
+  // coming back does not bring the tick back with it — see `blockPick.ts`.
+  if (blockSelected.length !== blockPick.length) setBlockPick(blockSelected)
   // A task ticked for the block is chosen for today as it is ticked: the block
   // is the day doing it. Unticking leaves it today's. Read from the store
   // rather than closed over, so the handler stays stable across the tick.
@@ -726,8 +729,10 @@ export function App() {
         </header>
 
         {/* One hand for carrying tasks around both columns, so a task can be
-            dragged from All Tasks onto one of today's intentions on the stage. */}
-        <TodayCarry>
+            dragged from All Tasks onto one of today's intentions on the stage.
+            It lasts as long as the question choosing tasks, which is as long as
+            anywhere to put one down is drawn. */}
+        <TodayCarry scope={`${store.generation}:${choosingFor}`}>
           <div className="grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[1fr_22rem]">
             <main className="mono-scroll min-w-0 flex flex-col rounded-2xl border border-line bg-surface p-5 sm:p-8 lg:min-h-0 lg:overflow-y-auto">
               {/* The clock and the companion share a line, and on a phone they
@@ -846,14 +851,22 @@ export function App() {
               </div>
             </main>
 
-            {choosingFor !== null && columnView === 'tasks' ? (
-              <AllTasksPane
-                choosingFor={choosingFor}
-                blockSelected={blockSelected}
-                onBlockTick={tickForBlock}
-                switcher={columnSwitch}
-              />
-            ) : (
+            {/* The switch hides a view rather than unmounting it, so a draft in
+                either — a task half written, an hour half changed — is there
+                when it is switched back. All Tasks goes when its question
+                closes, and with the session, as the stage's drafts do. */}
+            {choosingFor !== null && (
+              <div className={columnView === 'tasks' ? 'contents' : 'hidden'}>
+                <AllTasksPane
+                  key={`${store.generation}:${choosingFor}`}
+                  choosingFor={choosingFor}
+                  blockSelected={blockSelected}
+                  onBlockTick={tickForBlock}
+                  switcher={columnSwitch}
+                />
+              </div>
+            )}
+            <div className={columnView === 'day' ? 'contents' : 'hidden'}>
               <DayCalendar
                 {...(choosingFor !== null ? { switcher: columnSwitch } : {})}
                 timeline={timeline}
@@ -871,7 +884,7 @@ export function App() {
                 onRemoveBreak={store.removeBreak}
                 onRemoveCommitment={store.removeCommitment}
               />
-            )}
+            </div>
           </div>
         </TodayCarry>
       </div>

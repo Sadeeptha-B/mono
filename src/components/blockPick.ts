@@ -30,8 +30,10 @@ export function tickTasks(pick: BlockPick, ids: readonly string[], on: boolean):
  * or taken out of today with its × — and its row goes with it; the tick must
  * too, or Start would stay enabled for a block recording a task nobody can
  * see on the prompt. Every tick chooses its task for today, so the second
- * test only bites when one is taken out again. Derived rather than pruned, so
- * every reader gets the same answer.
+ * test only bites when one is taken out again. `App` lets go of whatever this
+ * filters out, for good: hidden only while away, a tick came back with its
+ * task when it was chosen again, reopened or restored, with nobody having
+ * ticked it.
  */
 export function pickedInPlay(
   pick: BlockPick,

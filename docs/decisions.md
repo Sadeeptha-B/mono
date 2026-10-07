@@ -198,7 +198,7 @@ only make a clock fresher, never wrong. The extension is handed one absolute
 | Replacing the backlog is all or nothing | With a working database: disk first, then memory, then broadcast, and if the disk refuses, nothing has changed — the day is not replaced either. Edits are refused while one is in flight, backups run one at a time, export waits for hydration, and a file whose records do not fit together is refused whole. It is not one transaction across both stores: with no usable database the import lands in memory with the warning held up, and the day log saved afterwards can still be refused like any session write. The order and its edges are in `backup.ts` and `tasks.ts`. This replaced an "owed import" design in which every new code path needed its own guard. |
 | No Web Lock around disk work | The database's own checks have to hold for browsers without locks anyway, and a lock removed no guard. `schedule()` is where one would go. |
 | Two tabs are supported only with `BroadcastChannel` | Without it a tab shows what it loaded until reloaded. The disk still refuses anything that would undo a delete or overwrite a newer copy. |
-| A task moves by the browser's own drag and drop, with a pick-up beside it | Motion's drag follows the pointer but knows nothing about what it is over, so drop targets, hit-testing and edge scrolling would all have been hand-written, and its drag features loaded for one page. The native drag has those and is poor on touch and without a pointer, which the grip's pick-up and `Move here` cover. Both share one carry state, so they agree on which columns take a task. It replaced a select of every place in each row. Today's list carries tasks between intentions with the same gesture (`carry.tsx`); each surface says only which places take a task and what putting it down writes. |
+| A task moves by the browser's own drag and drop, with a pick-up beside it | Motion's drag follows the pointer but knows nothing about what it is over, so drop targets, hit-testing and edge scrolling would all have been hand-written, and its drag features loaded for one page. The native drag has those and is poor on touch and without a pointer, which the grip's pick-up and `Move here` cover. Both share one carry state, so they agree on which columns take a task. It replaced a select of every place in each row. Today's list carries tasks between intentions with the same gesture (`carry.tsx`); each surface says only which places take a task and what putting it down writes. Where two surfaces share a page they share one hand (`useCarryHand`): their status bars stood in one place, and a second pick-up hid the first one's controls. |
 | A day is answered with tasks; intentions are optional names for some of them | Intentions were written first, title then tasks, and a title written before anything was scoped came out as the name of an epic or outcome the backlog already had. So the day chooses its tasks, and an intention is a name given afterwards to some of them, narrower than an outcome or wider than an epic as the day needs. A vague day writes a vague task, which is cheap and files itself in an area's inbox. |
 | Today is a map in the log, not a field on the task | `today` maps each chosen task to its intention or `null`, so membership and grouping cannot disagree. It is a decision about one day, like the rest of the log: it resets at midnight with nothing to clear and replays like everything else. A `plannedFor` date on the task would be a stored schedule on long-lived records, needing a sweep at rollover and reconciling across tabs. Linking a task chooses it; unlinking leaves it chosen; removing an intention leaves its tasks today, under none. |
 | A task ticked for a block joins today as it is ticked | The block is the day doing it. Unticking, or `Not yet`, leaves it today's, as unlinking from an intention does, so a row never vanishes from under the box just unticked; × in today's list takes it out, and off the block with it. The reducer also adds a block's tasks to today on `block/started`, so a replayed log draws the same today. |
@@ -267,7 +267,7 @@ only make a clock fresher, never wrong. The extension is handed one absolute
 | An hour is the same height on every screen | A 45-minute block looking like 45 minutes is the reason the calendar is drawn against an axis at all. |
 | A component used on surfaces of different widths asks its container | `RegionShapeEditor` sits in a dialog, the calendar column and the stage at the same viewport width. A breakpoint would fix one of them and miss the others. |
 | Native time and number fields are framed, not padded, and stack on phones | iOS Safari's own controls ignore the box they are given (see *Traps*). A physical device is the authority; Chromium cannot reproduce the failure. |
-| The calendar's column trades the day for All Tasks while a question chooses tasks | While today's question or the purpose prompt is open the column opens on All Tasks, with a switch in its header back to the day; the hours and commitments questions never switch, since they are answered against the calendar. It keeps the stage to the answer, gives the backlog the column's height with no box scrolling inside the page, and puts the list being chosen from beside the list being built, so a task is dragged across rather than up. That is why `App` holds the drag (`TodayCarry`) and the block's ticks (`BlockPick`) around and above both columns. |
+| The calendar's column trades the day for All Tasks while a question chooses tasks | While today's question or the purpose prompt is open the column opens on All Tasks, with a switch in its header back to the day; the hours and commitments questions never switch, since they are answered against the calendar. It keeps the stage to the answer, gives the backlog the column's height with no box scrolling inside the page, and puts the list being chosen from beside the list being built, so a task is dragged across rather than up. That is why `App` holds the drag (`TodayCarry`) and the block's ticks (`BlockPick`) around and above both columns, the drag scoped to the question so that it ends when the places it goes are no longer drawn. The switch hides the other view rather than unmounting it, because each holds drafts — a task being written, an hour being changed — that a conditional threw away. |
 
 ### The guide
 
@@ -375,6 +375,22 @@ and the page's own Today section can both be in the document, with the same
 `New intention` field: specs scope it to the stage or to the page, and neither
 surface uses a fixed id.
 
+**Temporary state held by id is let go, not hidden.** A block's ticks, a
+carried task and a rename each name a task by id and outlive the row that drew
+them. Filtered out only while their task was away, each came back when it did
+— a tick re-armed Start, a rename brought back its old draft — with nobody
+having asked. So when the thing they need stops being true they are dropped for
+good, during render, and the test is that need rather than whether the id is
+still on screen: a done task is drawn but cannot be renamed, and a task picked
+up from today's list has lost its row when it leaves today. Session-scoped
+gestures also end at a new `generation`. The same mistake runs the other way
+too: state that lives with the component drawing it lasts as long as that
+component, not as long as the gesture. A rename held by today's list went
+when the opening question looked at another question, and a carry held around
+both columns asked for a `Move here` into a running block. So such state is
+held by whatever lasts exactly as long as the gesture, and a holder that
+outlasts it is told when it ends (`TodayCarry`'s `scope`).
+
 **Companion frame anchors fail silently.** Each pose hand-places where its face,
 markings, note and heart go. Get one wrong and the eyes float on the background
 or the markings hang off the flank — and the pose still looks deliberate enough
@@ -452,10 +468,11 @@ the companion's vitals, the backlog's projections — should stay keyed that way
   suggestion.** Today's tasks are drawn under the places they live in, so an
   order of their own would be a second arrangement to keep. Tomorrow would need
   a date on the task, which is the stored schedule today's map avoids. A
-  carried-over suggestion expires at the next reset, so dismissing it would be a
-  write that saves nobody anything.
+  carried-over suggestion expires at the next reset after a day that chooses
+  something, so dismissing it would be a write that saves nobody anything.
 - **No dragging from the backlog board into Today.** The board and today's list
-  carry tasks with separate hands; the sun on a row is how a task is chosen.
+  each put a task down only among their own places, sharing one hand so that
+  only one holds a task at a time; the sun on a row is how a task is chosen.
 - **No component tests.** Nothing mounts a component in vitest. Logic is tested
   there — the pure domain, the stores against a fake IndexedDB, the extension
   worker against a behavioral Chrome fake — and screens are tested in

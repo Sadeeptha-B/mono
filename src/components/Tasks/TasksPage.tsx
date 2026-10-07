@@ -36,7 +36,8 @@
  * its row and put down with the `Move here` that every other column then
  * offers. Only open tasks are carried, and every column on the page takes one,
  * because every column is a place a task can live. Today's list carries its
- * own tasks between intentions the same way, with its own hand: a task on the
+ * own tasks between intentions the same way, with its own targets but the
+ * board's hand, so picking up on one puts down the other: a task on the
  * board is not dragged into Today, it is chosen with the sun on its row.
  *
  * Every edit here is a backlog edit — the task store writes the one record it
@@ -71,8 +72,18 @@ import {
 
 import { HeaderMark } from '../HeaderMark'
 import { HeaderStatus } from '../HeaderStatus'
-import { Carry, CarryGrip, CarryStatus, DropZone, MoveHere, useCarriedRow, useCarryState } from '../carry'
-import { TodayCarry, TodayList } from '../TodayList'
+import {
+  Carry,
+  CarryGrip,
+  CarryStatus,
+  DropZone,
+  MoveHere,
+  useCarriedRow,
+  useCarryHand,
+  useCarryState,
+  type CarryHand,
+} from '../carry'
+import { TodayCarry, TodayList, useIntentionRename } from '../TodayList'
 import {
   ArchiveIcon,
   CheckIcon,
@@ -149,14 +160,16 @@ export function TasksPage({
   // fold check for a tick.
   const addFields = useMemo(() => ({ current: addField, claim: setAddField }), [addField])
 
-  // The board's hand: a task goes to any column but its own.
+  // The board's hand: a task goes to any column but its own. Shared with
+  // today's, so only one of the two holds a task at a time.
+  const hand = useCarryHand()
   const find = useCallback((taskId: string) => inPlayById.get(taskId), [inPlayById])
   const takes = useCallback((task: Item, parentId: string) => task.parentId !== parentId, [])
   const move = useCallback(
     (task: Item, parentId: string) => moveItem(task.id, parentId),
     [moveItem],
   )
-  const carry = useCarryState({ find, takes, move })
+  const carry = useCarryState({ find, takes, move, hand })
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink lg:h-dvh">
@@ -202,7 +215,7 @@ export function TasksPage({
                   records and keep what is typed in them. */}
               <section aria-label="Today" className="mt-8 border-t border-line pt-6">
                 <div className="max-w-3xl">
-                  <TodaySection key={generation} />
+                  <TodaySection key={generation} hand={hand} />
                 </div>
               </section>
 
@@ -263,14 +276,15 @@ export function TasksPage({
 /**
  * Today on this page: today's list with its intentions (`TodayList`). Tasks
  * are chosen with the sun on their rows below; carrying between intentions
- * has its own hand here, apart from the board's.
+ * has its own carry here, apart from the board's, sharing one hand with it.
  *
  * The intention field keeps the page's rule for add fields: opening it folds
  * any other that is empty, and opening another folds it while nothing has been
  * written in it.
  */
-function TodaySection() {
+function TodaySection({ hand }: { hand: CarryHand }) {
   const [intention, setIntention] = useState<string | null>(null)
+  const [renaming, setRenaming] = useIntentionRename()
   const formId = useId()
   const { current, claim } = useContext(AddFields)
   // Another field was opened: fold this one if nothing has been written in it.
@@ -279,7 +293,7 @@ function TodaySection() {
   }, [current, formId])
 
   return (
-    <TodayCarry>
+    <TodayCarry hand={hand}>
       <TodayList
         heading={
           <h2 className="text-xs font-medium tracking-widest text-muted uppercase">Today</h2>
@@ -290,6 +304,8 @@ function TodaySection() {
           if (next === null && current === formId) claim(null)
           setIntention(next)
         }}
+        renaming={renaming}
+        onRenaming={setRenaming}
         empty="Nothing chosen for today yet. Choose a task with the sun on its row below."
       />
     </TodayCarry>

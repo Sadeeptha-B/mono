@@ -47,15 +47,27 @@
  * not deciding against the work it named. Marking one done is the ring in
  * front of it (`IntentionDoneToggle`), by hand, and touches no task.
  *
- * The new intention's title is held by the caller, as the opening question
- * holds its other drafts, so moving between the questions loses nothing. A
- * rename is held here, by intention id, and closes before paint if the
+ * Both drafts — the new intention's title and a rename — are held by the
+ * caller, as the opening question holds its other drafts, so moving between
+ * the questions loses nothing: that question draws this list only while it is
+ * on screen. A rename held here went with the list, and came back as the old
+ * name. `useIntentionRename` holds one, and closes it before paint if its
  * intention goes — the rule every editor in Mono keeps.
  */
 
 import { useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
 
-import { Carry, CarryGrip, CarryStatus, DropZone, MoveHere, useCarriedRow, useCarryState } from './carry'
+import {
+  Carry,
+  CarryGrip,
+  CarryStatus,
+  DropZone,
+  MoveHere,
+  useCarriedRow,
+  useCarryState,
+  type CarryHand,
+  type CarryMode,
+} from './carry'
 import { GroupedTasks } from './GroupedTasks'
 import { DeleteIcon, DoneRingIcon } from './icons'
 import { useTodayBacklog } from './useTodayBacklog'
@@ -68,6 +80,22 @@ import { useSession } from '@/store/session'
 /** The place a task under no intention is carried to. Never an intention's id. */
 const NOT_GROUPED = ':not-grouped'
 
+/** An intention being renamed, and the name typed so far. */
+export type IntentionRename = { id: string; title: string }
+
+/**
+ * A rename of one of today's intentions, for whichever component outlives
+ * `TodayList` on its surface. Let go for good, during render, once its
+ * intention has gone; a new session's drafts go with the remount every host
+ * already keys on the generation.
+ */
+export function useIntentionRename() {
+  const intentions = useSession((s) => s.session.intentions)
+  const [renaming, setRenaming] = useState<IntentionRename | null>(null)
+  if (renaming && !intentions.some((i) => i.id === renaming.id)) setRenaming(null)
+  return [renaming, setRenaming] as const
+}
+
 /**
  * Carrying tasks into today's intentions, for `TodayList` and whatever is
  * drawn beside it inside this provider.
@@ -76,9 +104,28 @@ const NOT_GROUPED = ':not-grouped'
  * intention, it is grouped there, and chosen if it was not (`linkTask` implies
  * choosing); onto `Not grouped`, a task of today's leaves its intention and one
  * from the backlog is simply chosen. A task already where it is dropped is not
- * taken. One finished or gone while held is put down (see `carry.tsx`).
+ * taken. One finished or gone while held is put down (see `carry.tsx`), and so
+ * is a pick-up whose task leaves today: it was picked up from today's row,
+ * which has gone.
+ *
+ * A carry also ends with what it was begun in, which is not always this
+ * provider's own mount. `App` holds it around both columns for as long as the
+ * app is open, while the places a task goes are drawn only while a question
+ * chooses tasks; held past that, the status bar kept asking for a `Move here`
+ * nowhere on screen, into the block. So the caller names what the carry
+ * belongs to as `scope` — `App` the question and the session — and a change
+ * puts down whatever is in hand. A provider remounted with what it serves
+ * needs none.
  */
-export function TodayCarry({ children }: { children: ReactNode }) {
+export function TodayCarry({
+  children,
+  hand,
+  scope,
+}: {
+  children: ReactNode
+  hand?: CarryHand
+  scope?: string
+}) {
   const backlog = useTodayBacklog()
   const today = useSession((s) => s.session.today)
   const linkTask = useSession((s) => s.linkTask)
@@ -86,11 +133,13 @@ export function TodayCarry({ children }: { children: ReactNode }) {
 
   const taskById = backlog.task
   const find = useCallback(
-    (taskId: string) => {
+    (taskId: string, by: CarryMode) => {
       const task = taskById(taskId)
-      return task?.status === 'open' ? task : undefined
+      // Only today's rows have a grip; a drag may come from All Tasks.
+      const inPlace = by === 'drag' || isToday(today, taskId)
+      return task?.status === 'open' && inPlace ? task : undefined
     },
-    [taskById],
+    [taskById, today],
   )
   const takes = useCallback(
     (task: Item, target: string) =>
@@ -105,7 +154,13 @@ export function TodayCarry({ children }: { children: ReactNode }) {
     },
     [today, linkTask, addToToday],
   )
-  const carry = useCarryState({ find, takes, move })
+  const carry = useCarryState({ find, takes, move, hand })
+  // Adjusted during render, so the stale bar is never painted.
+  const [seenScope, setSeenScope] = useState(scope)
+  if (seenScope !== scope) {
+    setSeenScope(scope)
+    carry.putDown()
+  }
 
   return (
     <Carry.Provider value={carry}>
@@ -118,12 +173,17 @@ export function TodayCarry({ children }: { children: ReactNode }) {
 export function TodayList({
   newIntention,
   onNewIntention,
+  renaming,
+  onRenaming,
   empty,
   heading,
 }: {
   /** The new intention's title while its field is open, or null while folded. */
   newIntention: string | null
   onNewIntention: (title: string | null) => void
+  /** The rename in progress, from `useIntentionRename`. */
+  renaming: IntentionRename | null
+  onRenaming: (rename: IntentionRename | null) => void
   /** What an empty day says, which depends on where the ways in are. */
   empty: string
   /**
@@ -141,10 +201,6 @@ export function TodayList({
   const updateIntention = useSession((s) => s.updateIntention)
   const removeIntention = useSession((s) => s.removeIntention)
   const { held } = useContext(Carry)
-
-  // An intention being renamed, closed before paint if it has gone.
-  const [renaming, setRenaming] = useState<{ id: string; title: string } | null>(null)
-  if (renaming && !intentions.some((i) => i.id === renaming.id)) setRenaming(null)
 
   // Grouped per change to the day or the backlog, not per tick.
   const group = backlog.group
@@ -224,12 +280,12 @@ export function TodayList({
                 <RenameField
                   label={`Rename intention ${intention.title}`}
                   value={renaming.title}
-                  onChange={(title) => setRenaming({ id: intention.id, title })}
+                  onChange={(title) => onRenaming({ id: intention.id, title })}
                   onSave={() => {
                     updateIntention(intention.id, { title: renaming.title.trim() })
-                    setRenaming(null)
+                    onRenaming(null)
                   }}
-                  onCancel={() => setRenaming(null)}
+                  onCancel={() => onRenaming(null)}
                   textClass="text-[15px]"
                 />
               ) : (
@@ -251,7 +307,7 @@ export function TodayList({
                     )}
                   </h3>
                   <IconButton
-                    onClick={() => setRenaming({ id: intention.id, title: intention.title })}
+                    onClick={() => onRenaming({ id: intention.id, title: intention.title })}
                     label={`Rename intention ${intention.title}`}
                     hint="Rename"
                     className="-my-1"

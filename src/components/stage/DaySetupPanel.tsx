@@ -73,6 +73,7 @@ import {
 } from '../CommitmentFields'
 import { resolveHours, TodayHoursFields } from '../TodayHours'
 import { TodayPanel, type TodayTimer } from './TodayPanel'
+import { useIntentionRename } from '../TodayList'
 import { useTodayBacklog } from '../useTodayBacklog'
 import {
   nextSetupStage,
@@ -157,8 +158,9 @@ export function DaySetupPanel({
   const [seenStage, setSeenStage] = useState(stage)
   // Here rather than in today's panel for the commitment draft's reason: that
   // panel unmounts when you look at another question, and this does not.
-  // The new intention's title while its field is open.
+  // The new intention's title while its field is open, and a rename.
   const [newIntention, setNewIntention] = useState<string | null>(null)
+  const [renaming, setRenaming] = useIntentionRename()
   // Whether the day has anything chosen, for the one gate the questions keep.
   const chosen = useTodayBacklog().chosen.length
 
@@ -366,6 +368,8 @@ export function DaySetupPanel({
           planned={planned}
           newIntention={newIntention}
           onNewIntention={setNewIntention}
+          renaming={renaming}
+          onRenaming={setRenaming}
         />
       )}
 

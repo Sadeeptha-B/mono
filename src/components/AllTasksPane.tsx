@@ -10,7 +10,8 @@
  * Both open on All Tasks, since that is where their answers come from, and
  * the stage beside it already shows today's own list. Whatever is chosen by
  * hand holds until the question closes, and the column is the day again.
- * `App` owns which is showing.
+ * `App` owns which is showing, and hides the other rather than unmounting it,
+ * so a field half written in either is still there when it is switched back.
  *
  * What a tick means follows the question. On today's question it chooses the
  * task for today; on the purpose prompt it ticks the task for the block,
@@ -45,7 +46,7 @@
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
 import { TaskBrowser, type PlaceActions } from './TaskBrowser'
-import { TodayList } from './TodayList'
+import { TodayList, useIntentionRename } from './TodayList'
 import { useTodayBacklog } from './useTodayBacklog'
 import { liveDescendantsOf } from '@/domain/tasks'
 import { useSession } from '@/store/session'
@@ -86,6 +87,7 @@ export function AllTasksPane({
   const items = useTasks((s) => s.items)
   // A new intention's title while its field is open, on the purpose prompt.
   const [newIntention, setNewIntention] = useState<string | null>(null)
+  const [renaming, setRenaming] = useIntentionRename()
   // How much of the column today's list takes, on the purpose prompt.
   const [share, setShare] = useState(MIN_SHARE)
   const nameIntention = (title: string | null) => {
@@ -175,6 +177,8 @@ export function AllTasksPane({
               heading="Today's tasks"
               newIntention={newIntention}
               onNewIntention={nameIntention}
+              renaming={renaming}
+              onRenaming={setRenaming}
               empty="Nothing chosen for today yet. Tick a task above."
             />
           </section>
