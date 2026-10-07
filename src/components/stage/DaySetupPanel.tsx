@@ -74,7 +74,7 @@ import {
 import { resolveHours, TodayHoursFields } from '../TodayHours'
 import { RepeatIcon } from '../icons'
 import { TodayOnlyNote } from '../Timeline/SegmentEditor'
-import { RECURRING_HASH } from '@/hooks/useRoute'
+import { RoutineLink } from '../RoutineLink'
 import { TodayPanel, type TodayTimer } from './TodayPanel'
 import { useIntentionRename } from '../TodayList'
 import { useTodayBacklog } from '../useTodayBacklog'
@@ -292,11 +292,7 @@ export function DaySetupPanel({
               not be answered here again. Quiet, and under the question rather
               than in it: most mornings it is not what is being asked. */}
           <p className="-mt-2 mb-4 text-xs text-muted">
-            Same every week?{' '}
-            <a href={RECURRING_HASH} className="underline underline-offset-4 hover:text-bright">
-              Set it up once on Recurring
-            </a>
-            .
+            Set recurring commitments on <RoutineLink />.
           </p>
 
           {/* Named, because the stage strip below is a list too, and "the
@@ -374,6 +370,10 @@ export function DaySetupPanel({
             detail={hoursDetail(now, regions.length > 0, withinHours, nextRegionStart)}
           />
           <TodayHoursFields draft={hours} onDraft={onHours} now={now} />
+          {/* The other half of this answer: what every day starts from. */}
+          <p className="mt-3 text-xs text-muted">
+            Every day starts from your usual hours, kept on <RoutineLink />.
+          </p>
         </>
       ) : (
         <TodayPanel

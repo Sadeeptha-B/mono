@@ -1,7 +1,7 @@
 import { useRef, useState } from 'react'
 
 import { Dialog } from './prompts/Dialog'
-import { RegionShapeEditor } from './RegionShapeEditor'
+import { RoutineLink } from './RoutineLink'
 import { GhostButton, labelClass, MinutesInput } from './ui'
 import { parseBoundedMinutes } from './minutes'
 import { dayKey, formatClock } from '@/domain/time'
@@ -72,16 +72,14 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
         />
       </div>
 
-      <div className="mt-5">
-        <RegionShapeEditor
-          regions={settings.defaultRegions}
-          onChange={(defaultRegions) => set('defaultRegions', defaultRegions)}
-        />
-        <p className="mt-2 text-xs leading-relaxed text-muted">
-          This is the shape every day starts with. Changing a single day's hours on the
-          timeline only affects that day.
-        </p>
-      </div>
+      {/* The usual hours lived here until they moved beside the recurring
+          commitments, on the routine page: both are what every day starts
+          from, where everything else here is how Mono behaves. Somebody who
+          remembers them here is told where they went, and taken there. */}
+      <p className="mt-5 text-xs leading-relaxed text-muted">
+        Set your usual working hours and recurring commitments on{' '}
+        <RoutineLink onFollow={onClose} />.
+      </p>
 
       <fieldset className="mt-5">
         <legend className={labelClass}>How to fill free time</legend>

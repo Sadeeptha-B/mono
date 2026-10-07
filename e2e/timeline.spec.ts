@@ -11,6 +11,8 @@ import {
   startDay,
   addStandup,
   shapeDay,
+  openRoutine,
+  backToToday,
 } from './support/mono'
 
 const framedTime = (surface: ReturnType<typeof stage>, label: string) => {
@@ -404,9 +406,9 @@ test('saving the hours editor unchanged leaves the day following the default', a
   await expect(calendar(page).getByLabel('Hours 1 start', { exact: true })).toBeHidden()
 
   // Change the recurring shape. An uncustomised day has to follow it.
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await openRoutine(page)
   await page.getByLabel('Working hours 1 end', { exact: true }).fill('20:00')
-  await page.keyboard.press('Escape')
+  await backToToday(page)
 
   await expect(page.getByText(/Working until 8:00 PM/)).toBeVisible()
 })
@@ -424,9 +426,9 @@ test('a real edit in the hours editor still overrides the day', async ({ page })
   await expect(page.getByText(/Working until 4:00 PM/)).toBeVisible()
 
   // And now the day is genuinely customised, so the default no longer reaches it.
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await openRoutine(page)
   await page.getByLabel('Working hours 1 end', { exact: true }).fill('20:00')
-  await page.keyboard.press('Escape')
+  await backToToday(page)
 
   await expect(page.getByText(/Working until 4:00 PM/)).toBeVisible()
 })
@@ -485,8 +487,8 @@ test('a time field is never drawn narrower than it can render', async ({ page })
   // it clips `09:00 AM` to `09:00 A` — no wrap, no ellipsis, nothing in the
   // DOM to assert on. So the guard is arithmetic: measure what an unpadded
   // native control needs, then check what each working-hours surface actually
-  // gives its input. Settings on a phone is the tightest of the three, being a
-  // dialog inside a screen.
+  // gives its input. The routine page holds the recurring shape; the stage
+  // and the calendar's 22rem column hold today's.
   for (const width of [320, 360, 768]) {
     await page.setViewportSize({ width, height: 740 })
     await openMono(page)
@@ -503,13 +505,13 @@ test('a time field is never drawn narrower than it can render', async ({ page })
       return natural
     })
 
-    await page.getByRole('button', { name: 'Settings', exact: true }).click()
-    const settingsInput = page.getByLabel('Working hours 1 start')
-    await expect(settingsInput).toHaveCSS('padding-left', '0px')
-    const field = await settingsInput.boundingBox()
-    expect(field, `settings at ${width}`).not.toBeNull()
-    expect(field!.width, `settings at ${width}`).toBeGreaterThanOrEqual(needed - 1)
-    await page.keyboard.press('Escape')
+    await openRoutine(page)
+    const routineInput = page.getByLabel('Working hours 1 start')
+    await expect(routineInput).toHaveCSS('padding-left', '0px')
+    const field = await routineInput.boundingBox()
+    expect(field, `the routine page at ${width}`).not.toBeNull()
+    expect(field!.width, `the routine page at ${width}`).toBeGreaterThanOrEqual(needed - 1)
+    await backToToday(page)
 
     await goToStage(page, 'Hours')
     const stageField = await stage(page).getByLabel('Hours 1 start', { exact: true }).boundingBox()

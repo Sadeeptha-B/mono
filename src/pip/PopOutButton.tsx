@@ -1,5 +1,5 @@
 /**
- * The control that opens the mini window, in both headers.
+ * The control that opens the mini window, in every header.
  *
  * Renders nothing at all where the browser has no Document Picture-in-Picture,
  * which today means everything that is not Chromium. That is a deliberate
@@ -12,7 +12,8 @@
  */
 
 import { supportsMiniWindow, type MiniWindowControls } from './useMiniWindow'
-import { headerControlClass } from '@/components/ui'
+import { PopOutIcon } from '@/components/icons'
+import { headerIconClass } from '@/components/ui'
 
 export function PopOutButton({ mini }: { mini: MiniWindowControls }) {
   if (!supportsMiniWindow()) return null
@@ -23,14 +24,17 @@ export function PopOutButton({ mini }: { mini: MiniWindowControls }) {
     <button
       type="button"
       onClick={open ? mini.close : mini.open}
+      // Named for what a click does, which changes once the window is out;
+      // drawn lit while it is, so the icon also says that it is.
+      aria-label={open ? 'Close pop-out' : 'Pop out'}
       title={
         open
           ? 'Close the always-on-top window'
-          : 'Keep the timer on top of every other window'
+          : 'Pop out: keep the timer on top of every other window'
       }
-      className={headerControlClass}
+      className={`${headerIconClass} ${open ? 'bg-surface-raised text-bright' : ''}`}
     >
-      {open ? 'Close pop-out' : 'Pop out'}
+      <PopOutIcon className="size-4" />
     </button>
   )
 }

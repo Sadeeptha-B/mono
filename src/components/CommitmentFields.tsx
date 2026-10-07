@@ -3,7 +3,7 @@
  * either side of itself.
  *
  * Three places ask for one — the question the day opens with, the calendar's
- * composer, and the recurring page — and the first two used to be separate
+ * composer, and the routine page — and the first two used to be separate
  * copies of the same form with different labels. They can now be on screen at
  * the same time, so the ids are prefixed rather than fixed: two `id="commitment-time"` inputs would leave the
  * second label pointing at the first field.
@@ -123,7 +123,7 @@ export function readCommitment(
  *
  * What a series needs from the same fieldset. A series has no day attached —
  * its time stays "09:00" and is resolved onto each day it comes round on — so
- * the recurring page reads the draft through this and never goes near an
+ * the routine page reads the draft through this and never goes near an
  * instant. `readCommitment` is the other half, for a commitment on today.
  */
 export function readCommitmentShape(

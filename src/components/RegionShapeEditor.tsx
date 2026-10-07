@@ -7,10 +7,11 @@
  * silently fell back to midnight. A list of regions says the same thing
  * precisely, and says the interesting parts too.
  *
- * `label` exists because there are now two of these on screen at once: the
- * recurring shape in settings, and today's own hours on the stage or the
- * calendar. They edit different things, and rows called "Working hours 1 start"
- * in both places are ambiguous to a screen reader and to a test alike.
+ * `label` exists because there are two of these, and they were once on screen
+ * together: the recurring shape, now on the routine page, and today's own hours
+ * on the stage or the calendar. They edit different things, and rows called
+ * "Working hours 1 start" in both places are ambiguous to a screen reader and
+ * to a test alike.
  */
 
 import { useRef } from 'react'

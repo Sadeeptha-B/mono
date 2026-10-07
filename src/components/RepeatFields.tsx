@@ -2,7 +2,7 @@
  * How often a series comes round, as a form: the pattern, every how many,
  * which weekdays or which date, and from when until when.
  *
- * It sits under `CommitmentFields` on the recurring page, which asks what the
+ * It sits under `CommitmentFields` on the routine page, which asks what the
  * commitment is; this asks when it happens. Like that fieldset it holds no
  * state of its own beyond what the parent hands it, and reading it is a
  * separate pure step (`readRepeat`, `readSeries`), so the page can say whether

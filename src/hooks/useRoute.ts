@@ -1,8 +1,8 @@
 /**
  * The whole of Mono's routing.
  *
- * There are exactly four views — the day, the guide, the tasks, and the
- * recurring commitments — so this is a hash check rather than a router. The hash is deliberate: it survives a reload,
+ * There are exactly four views — the day, the tasks, the routine, and the
+ * guide — so this is a hash check rather than a router. The hash is deliberate: it survives a reload,
  * it can be opened in a second tab, and the header entries are real links, so
  * middle-click and "open in new tab" behave the way people expect of a
  * document.
@@ -14,11 +14,11 @@
 
 import { useSyncExternalStore } from 'react'
 
-export type Route = 'day' | 'guide' | 'tasks' | 'recurring'
+export type Route = 'day' | 'guide' | 'tasks' | 'routine'
 
 export const GUIDE_HASH = '#/guide'
 export const TASKS_HASH = '#/tasks'
-export const RECURRING_HASH = '#/recurring'
+export const ROUTINE_HASH = '#/routine'
 export const DAY_HASH = '#/'
 
 const subscribe = (listener: () => void): (() => void) => {
@@ -35,7 +35,7 @@ export function useRoute(): Route {
     ? 'guide'
     : hash === TASKS_HASH
       ? 'tasks'
-      : hash === RECURRING_HASH
-        ? 'recurring'
+      : hash === ROUTINE_HASH
+        ? 'routine'
         : 'day'
 }

@@ -19,7 +19,6 @@ import {
 } from 'react'
 
 import { coerceBoundedMinutes } from './minutes'
-import { GUIDE_HASH, RECURRING_HASH, TASKS_HASH, type Route } from '@/hooks/useRoute'
 
 export const fieldClass =
   'min-w-0 w-full max-w-full rounded-lg border border-muted/70 bg-ink px-3.5 py-2.5 text-bright placeholder:text-muted/90 focus:border-deep focus:outline-none'
@@ -28,47 +27,15 @@ export const labelClass =
   'mb-1.5 block text-xs font-medium tracking-wide text-muted uppercase'
 
 /**
- * The controls in the top-right of a view: Tasks, Guide, Settings, Back to
- * today.
- *
- * Shared because there are four headers — the day, the tasks page, the
- * recurring page and the guide — and they carry the same controls. Two copies of this string drifted
- * apart once already.
+ * A tool in the header, drawn as an icon: the room, the pop-out, the guide and
+ * settings. Borderless and quiet at rest, so four of them read as a cluster
+ * rather than a row of buttons, with the name each one cannot show carried by
+ * its `aria-label` and shown on hover by its `title`. Shared because every view
+ * draws the same header (`AppHeader`), and the room and pop-out controls live
+ * in their own modules.
  */
-export const headerControlClass =
-  'rounded-lg border border-muted/70 px-3 py-1.5 text-xs text-body transition hover:bg-surface-raised hover:text-bright'
-
-/**
- * Tasks, Recurring and Guide, the same links in every header.
- *
- * Each page used to leave out its own link, which made the header change shape
- * from one page to the next and left no way from the guide to the tasks without
- * going back to the day first. The page you are on keeps its link, marked as
- * the current page rather than removed, so the row reads the same everywhere.
- * Real links, so either can be opened in its own tab and survives a reload like
- * the document it is.
- */
-export function PageLinks({ current }: { current: Route }) {
-  const link = (route: Route, href: string, name: string) => {
-    const here = route === current
-    return (
-      <a
-        href={href}
-        {...(here ? { 'aria-current': 'page' as const } : {})}
-        className={`${headerControlClass} ${here ? 'border-bright/60 text-bright' : ''}`}
-      >
-        {name}
-      </a>
-    )
-  }
-  return (
-    <>
-      {link('tasks', TASKS_HASH, 'Tasks')}
-      {link('recurring', RECURRING_HASH, 'Recurring')}
-      {link('guide', GUIDE_HASH, 'Guide')}
-    </>
-  )
-}
+export const headerIconClass =
+  'inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-surface-raised hover:text-bright focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bright'
 
 /**
  * The pencil on an editable block, pointing left.

@@ -26,7 +26,11 @@ export function HeaderMark({ phase, home }: { phase: Phase; home: boolean }) {
   const mark = (
     <>
       <PixelCat phase={phase} progress={null} variant="mark" className="h-7 w-11" decorative />
-      <span className="text-sm font-medium tracking-widest text-body uppercase">Mono</span>
+      {/* The word gives way on a phone, where the cat says it alone and the
+          header has room for its places and tools on one row. */}
+      <span className="hidden text-sm font-medium tracking-widest text-body uppercase sm:inline">
+        Mono
+      </span>
     </>
   )
 

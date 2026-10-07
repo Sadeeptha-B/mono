@@ -11,6 +11,8 @@ import {
   shapeDay,
   startBlock,
   importSession,
+  openRoutine,
+  backToToday,
 } from './support/mono'
 
 /** Just before midnight, so the tab can be left open across the day boundary. */
@@ -135,9 +137,9 @@ test('the hours question follows the recurring shape until it is edited', async 
   await goToStage(page, 'Hours')
   await expect(stage(page).getByLabel('Hours 1 end', { exact: true })).toHaveValue('18:00')
 
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await openRoutine(page)
   await page.getByLabel('Working hours 1 end', { exact: true }).fill('16:00')
-  await page.keyboard.press('Escape')
+  await backToToday(page)
 
   await expect(stage(page).getByLabel('Hours 1 end', { exact: true })).toHaveValue('16:00')
 
@@ -156,9 +158,9 @@ test('an edited hours draft is left alone when the default shape changes', async
   await goToStage(page, 'Hours')
   await stage(page).getByLabel('Hours 1 end', { exact: true }).fill('22:00')
 
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await openRoutine(page)
   await page.getByLabel('Working hours 1 end', { exact: true }).fill('16:00')
-  await page.keyboard.press('Escape')
+  await backToToday(page)
 
   await expect(stage(page).getByLabel('Hours 1 end', { exact: true })).toHaveValue('22:00')
 

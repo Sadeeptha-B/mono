@@ -58,7 +58,7 @@ src/domain/      pure: types, event log, planner, state machine, time, vitals
 src/store/       the only place that reads the clock, makes ids, persists
 src/hooks/       the ticker, reconciliation, notifications
 src/ambient/     rooms, procedural sound, theme, controls, shared scene geometry
-src/components/  the two panels, the stage prompts, the guide, the tasks and recurring pages, the companion
+src/components/  the two panels, the stage prompts, the guide, the tasks and routine pages, the companion
 src/pip/         the always-on-top mini window
 src/contract/    the one type the browser extension shares with the app
 src/blocking/    publishing what the session is doing, for the extension
@@ -134,11 +134,17 @@ inside without changing it, and deleting one, or an area, deletes its subtree.
 The stage sees today's tasks and the tasks a block is for, and lets you write
 or find one there; filing and tidying happens on the page, away from the timer.
 
-The **recurring page** at `#/recurring` is where commitments that come round on
-a schedule are written once: every weekday, Tuesdays and Thursdays, the first of
-the month. Each one is derived onto the days it falls on rather than copied into
-them, the way today's hours follow the default shape, and the day can move or
-skip its own occurrence without touching the series.
+The **routine page** at `#/routine` is what an ordinary day looks like: the usual
+working hours, and the commitments that come round on a schedule — every
+weekday, Tuesdays and Thursdays, the first of the month — written once. Each day
+derives its own hours and occurrences from it rather than having them copied
+in, and can change its own without touching the routine. It is reached from
+Settings and from the day's questions about hours and commitments rather than
+from the header.
+
+The header itself is places on the left — **Today** and **Tasks**, the two views
+a day moves between — and tools as icons on the right: the room's swatch, the
+pop-out, the guide and Settings, each named on hover.
 
 Session state is a fold over an append-only event log
 ([src/domain/events.ts](src/domain/events.ts)). The log is persisted and the
@@ -209,7 +215,7 @@ shaped around:
   shows it, to edit or delete. The count is noticing, not a score: nothing else
   in Mono reads it.
 - **Recurring commitments come round by themselves.** A series written on the
-  recurring page appears among the commitments of every day it falls on.
+  routine page appears among the commitments of every day it falls on.
   Editing or removing it on the day changes that day only; changing the series
   reaches every day still following it, but never anything of it that has
   already begun.
@@ -219,8 +225,8 @@ shaped around:
 
 ## Working hours
 
-Settings holds the recurring daily shape — a list of stretches, `09:00-18:00` by
-default. Every day starts seeded from it. Editing a day's hours — from the
+The routine page holds the recurring daily shape — a list of stretches,
+`09:00-18:00` by default. Every day starts seeded from it. Editing a day's hours — from the
 opening question, or from the calendar's `Hours` afterwards — overrides that day
 only; the midnight reset drops the override so tomorrow starts from the default
 again.

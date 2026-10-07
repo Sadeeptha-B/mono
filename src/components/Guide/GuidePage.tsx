@@ -26,15 +26,12 @@
 
 import { useMemo, type ReactNode } from 'react'
 
-import { HeaderMark } from '../HeaderMark'
-import { StorageWarning } from '../StorageWarning'
+import { AppHeader } from '../AppHeader'
 import { HeaderStatus } from '../HeaderStatus'
-import { EditGlyph, headerControlClass, PageLinks } from '../ui'
-import { PopOutButton } from '@/pip/PopOutButton'
+import { EditGlyph } from '../ui'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
 import type { TimerMode } from '@/domain/time'
 import { useSession } from '@/store/session'
-import { RoomMenu } from '@/ambient/RoomMenu'
 import type { ActiveSegment, Ms, Settings } from '@/domain/types'
 import { ambienceLabel, ROOMS } from '@/ambient/rooms'
 
@@ -80,21 +77,16 @@ export function GuidePage({
           because it carries the timer, and reading about focus should not
           quietly cost you the block you are in. */}
       <header className="sticky top-0 z-20 shrink-0 border-b border-line bg-ink px-4 py-3 sm:px-6 lg:static">
-        <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
-          <HeaderMark phase={phase} home={false} />
-
-          <div className="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
-            {/* A page invites you to stay, so whatever the timer would be
-                saying stays in sight — including when it is waiting on you. */}
-            <StorageWarning onOpenSettings={onOpenSettings} />
-            <HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />
-            <RoomMenu idPrefix="guide-header" />
-            <PopOutButton mini={mini} />
-            <PageLinks current="guide" />
-            <button type="button" onClick={onOpenSettings} className={headerControlClass}>
-              Settings
-            </button>
-          </div>
+        <div className="mx-auto max-w-5xl">
+          {/* A page invites you to stay, so whatever the timer would be
+              saying stays in sight — including when it is waiting on you. */}
+          <AppHeader
+            current="guide"
+            phase={phase}
+            mini={mini}
+            onOpenSettings={onOpenSettings}
+            status={<HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />}
+          />
         </div>
       </header>
 
@@ -289,6 +281,12 @@ function sectionsFor(settings: Settings): Section[] {
     intentionMinutes: intending,
     plannerPolicy: policy,
   } = settings
+  // Quoted rather than written down, like the block lengths: the guide says
+  // what the routine page says today.
+  const usualHours =
+    settings.defaultRegions.length === 0
+      ? 'no hours at all'
+      : settings.defaultRegions.map((r) => `${r.start}–${r.end}`).join(' and ')
   return [
     {
       id: 'idea',
@@ -323,6 +321,12 @@ function sectionsFor(settings: Settings): Section[] {
             the top of either, because a decision about the day is unanswerable with the
             day covered up. Settings is the one exception, and the only thing here you
             are not answering in the middle of something.
+          </P>
+          <P>
+            Across the top, <Em>Today</Em> and <Em>Tasks</Em> are the two places a day
+            moves between. The icons on the right are tools: the room's own colour opens
+            the room and its sound, then the pop-out, this guide, and Settings — point at
+            any of them for its name.
           </P>
           <P>
             The row of dots under the timer is where in the day you are — hover one to
@@ -475,9 +479,9 @@ function sectionsFor(settings: Settings): Section[] {
             beside the question.
           </P>
           <P>
-            <Em>Working hours</Em> are the only time Mono is allowed to plan in.
-            Settings holds the recurring shape every day starts from — 09:00–18:00
-            unless you change it. The opening question and <Em>Hours</Em> on the
+            <Em>Working hours</Em> are the only time Mono is allowed to plan in. The{' '}
+            <Em>Routine</Em> page holds the shape every day starts from, currently{' '}
+            {usualHours}; Settings, and the question itself, link to it. The opening question and <Em>Hours</Em> on the
             calendar both change today only; tomorrow starts from the default again,
             and confirming the shape unchanged leaves today following it.
           </P>
@@ -532,7 +536,8 @@ function sectionsFor(settings: Settings): Section[] {
           <P>
             A standup every weekday, a swim on Tuesdays and Thursdays, a review on the
             first of the month: anything fixed on a schedule is written once, on the{' '}
-            <Em>Recurring</Em> page in the header, rather than every morning. It takes
+            <Em>Routine</Em> page beside your usual hours, rather than every morning.
+            The commitments question links to it, and so does Settings. It takes
             the same fields as any commitment, the time either side included, and then
             how often — every weekday, every few days, on chosen weekdays every week or
             every other week, or on a date every month or every few. A date a month does
@@ -901,9 +906,10 @@ function sectionsFor(settings: Settings): Section[] {
             How long the question of what you are working on today runs before it stops
             and offers to go again. Currently {intending} minutes.
           </Setting>
-          <Setting name="Working hours">
-            The recurring shape every day starts from. Editing a single day from the
-            calendar does not touch this.
+          <Setting name="Routine">
+            Linked from Settings rather than in it: the working hours every day
+            starts from, currently {usualHours}, and the commitments that repeat. Editing a
+            single day from the calendar does not touch either.
           </Setting>
           <Setting name="How to fill free time">
             The ranking policy described above. Currently{' '}

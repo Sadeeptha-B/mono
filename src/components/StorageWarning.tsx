@@ -8,7 +8,7 @@
  * the log, so the day is complete in memory and complete nowhere else.
  *
  * A chip in the header rather than a banner over the day. It has to be visible
- * from wherever you are — both headers carry it — and it has to lead somewhere
+ * from wherever you are — every header carries it — and it has to lead somewhere
  * that can do something about it, which is Settings, where Export lives. The
  * full explanation is there, beside that button; a header has room for the
  * fact and not the argument.
