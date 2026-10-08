@@ -115,8 +115,8 @@
  * be stepped several places in a run. That is the tree's own carry, held here
  * (`useCarryState`) apart from the one around it: a task's drag is both at
  * once, so it can still be let go on one of today's intentions, and whichever
- * takes it, the other lets go when the drag ends. What putting it down writes
- * is the caller's, as every other action here is.
+ * takes it, the other lets go when it lands (`useCarryState`). What putting it
+ * down writes is the caller's, as every other action here is.
  */
 
 import {
@@ -338,7 +338,9 @@ export const TaskBrowser = memo(function TaskBrowser({
   /** The task being renamed, if any, and its title as typed. */
   const [renaming, setRenaming] = useState<{ taskId: string; title: string } | null>(null)
   const [query, setQuery] = useState('')
-  const shown = narrow(tree, query.trim().toLowerCase())
+  // Per tree and search, not per render: the order below is read from it.
+  const needle = query.trim().toLowerCase()
+  const shown = useMemo(() => narrow(tree, needle), [tree, needle])
   // An editor whose subject is no longer drawn closes — see the header.
   // Adjusted during render, so the stale editor is never painted and never
   // mounts again on its own.
@@ -351,7 +353,14 @@ export const TaskBrowser = memo(function TaskBrowser({
   // Putting the tree in order: its own carry — see the header. A place moves
   // only among its own siblings, a task anywhere a task can go, and neither to
   // where it already stands.
-  const order = useMemo(() => orderRows(tree), [tree])
+  //
+  // The lists are the rows as shown, a search included, so a step passes the
+  // next row on screen, an arrow is disabled at the end of what is drawn, and
+  // no line is drawn where letting go would change nothing visible. Read from
+  // the whole tree, a step under a search passed a row it hid and nothing on
+  // screen moved. Where the record lands among everything, hidden rows and
+  // put-away ones included, stays the store's (`placeAmong`).
+  const order = useMemo(() => orderRows(shown), [shown])
   const findRow = useCallback((id: string) => order.rows.get(id), [order])
   const fitsRow = useCallback(
     (row: OrderRow, { parent, kind, before }: Slot) =>
@@ -376,6 +385,7 @@ export const TaskBrowser = memo(function TaskBrowser({
   // The carry around the tree, which takes a task — or everything open in an
   // epic or outcome — into one of today's intentions.
   const outer = useContext(Carry)
+  // The whole of a place, not what a search leaves of it: its box takes all of it.
   const openUnder = useMemo(() => openTasksBeneath(tree), [tree])
   const selectedSet = useMemo(() => new Set(selected), [selected])
   /** A step through its own list, from a `⋯`, with the focus kept on the arrow pressed. */
@@ -860,7 +870,8 @@ function TaskOption({
   steps: Steps | undefined
 }) {
   // Carried into today's intentions by the carry around the tree, and in the
-  // tree by its own; each lets go when the drag ends, whichever took it.
+  // tree by its own; each lets go when the drop lands, whichever took it,
+  // or when the drag ends on nothing.
   const { dragProps } = useCarriedRow(task, draggable)
   const both = reorder
     ? {

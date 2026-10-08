@@ -523,6 +523,24 @@ describe('ordering', () => {
     expect(tab.useTasks.getState().items).toBe(before)
   })
 
+  it('files a Later where it was let go even when the siblings must be numbered again to make room', async () => {
+    const tab = await openTab(factory)
+    const work = workOf(tab)
+    // Equal orders, as two tabs adding at once leave them.
+    const tied = [
+      { ...taskIn(work, 'A'), order: 0 },
+      { ...taskIn(work, 'B'), order: 1 },
+      { ...taskIn(work, 'C'), order: 1 },
+    ]
+    await tab.useTasks.getState().replaceAll({ areas: tab.useTasks.getState().areas, items: tied })
+    const { addLater, fileLater } = tab.useTasks.getState()
+
+    fileLater(addLater('Before C')!, work, 'c')
+    expect(titlesUnder(tab, work)).toEqual(['A', 'B', 'Before C', 'C'])
+    await settle()
+    expect(titlesUnder(await openTab(factory), work)).toEqual(['A', 'B', 'Before C', 'C'])
+  })
+
   it('files a Later before a sibling when asked, and last otherwise', async () => {
     const { tab, work, b } = await threeTasks()
     const { addLater, fileLater } = tab.useTasks.getState()

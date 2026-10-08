@@ -234,6 +234,29 @@ export function useCarryState<T extends Carried>({
     return () => document.removeEventListener('keydown', onKey)
   }, [picked, putDown])
 
+  // A drag is over when it is let go on something that takes it, whichever
+  // carry that was. One drag can be held by two carries at once — All Tasks'
+  // own, for its order, and today's around it, for the intentions — and only
+  // the one it is let go on puts itself down. The other used to wait for the
+  // row's \`dragend\`, which never arrives when the drop has moved that row
+  // somewhere else: React has unmounted it, and an event on a detached node
+  // reaches no handler. So the other carry went on holding a drag that was
+  // over, offering \`Chosen today\` for it, and a later drop there chose it.
+  // Heard on the document after the drop's own handlers, so the carry that
+  // takes the drop writes first; \`dragend\` still covers a drag let go on
+  // nothing, whose row has not moved.
+  const dragging = carry.held?.by === 'drag'
+  useEffect(() => {
+    if (!dragging) return
+    const onDrop = () => {
+      setCarrying(null)
+      setOver(null)
+      setAimed(null)
+    }
+    document.addEventListener('drop', onDrop)
+    return () => document.removeEventListener('drop', onDrop)
+  }, [dragging])
+
   return carry
 }
 
@@ -501,8 +524,9 @@ export function useCarriedRow(task: Carried, draggable = true) {
 
 /**
  * The grip on a carried row: six dots, and the button that picks the task up
- * or puts it back. A row mounts afresh where it was moved to; the one a pick-up
- * just put down takes focus here, so the keyboard ends where the task did.
+ * or puts it back. The one a pick-up just put down — the row it lands as,
+ * which may be drawn afresh or already there — takes focus here, so the
+ * keyboard ends where the task did.
  */
 export function CarryGrip({
   task,
@@ -520,11 +544,15 @@ export function CarryGrip({
   const { held, pickUp, putDown, landed } = useContext(Carry)
   const picked = held?.task.id === task.id && held.by === 'pick'
   const grip = useRef<HTMLButtonElement>(null)
+  // After every render, not only on mounting: what a pick-up lands under may
+  // be a row already drawn — a heading in an intention that held some of a
+  // place's tasks already — which does not mount again, and the `Move here`
+  // that had the focus has gone, leaving it on the page.
   useEffect(() => {
     if (landed.current !== task.id) return
     landed.current = null
     grip.current?.focus()
-  }, [landed, task.id])
+  })
   const stepped = useRefocus(grip)
 
   return (

@@ -727,3 +727,92 @@ test("a task's × in today's list shows on hover or focus, not at rest", async (
   await remove.press('Enter')
   await expect(todayList(page)).not.toContainText('Reply to Priya')
 })
+
+test('a task dragged to another place in All Tasks leaves nothing in hand once it lands', async ({
+  page,
+}) => {
+  await openMono(page)
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await addOnTasksPage(page, 'task', 'Work', 'Loose end')
+  await page.getByRole('link', { name: 'Back to today' }).click()
+  await goToStage(page, 'Today')
+  const tree = todayBrowser(page)
+
+  // Onto Personal's own row, where it goes last. Its row in Work is gone by the
+  // time the drag ends, so nothing it would have said at the end is heard.
+  const from = (await tree.getByText('Loose end', { exact: true }).boundingBox())!
+  await page.mouse.move(from.x + 5, from.y + 5)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 15, from.y + 10, { steps: 5 })
+  const to = (await tree.getByText('Personal', { exact: true }).boundingBox())!
+  await page.mouse.move(to.x + 5, to.y + 5, { steps: 10 })
+  await page.mouse.up()
+
+  const personal = tree.locator('li[data-slot="area"]').filter({ hasText: 'Area: Personal' })
+  await expect(personal).toContainText('Loose end')
+  // Today's carry let go too: no place offers itself for a drag that is over,
+  // and the task was never chosen.
+  await expect(todayList(page).getByRole('region', { name: 'Chosen today' })).toHaveCount(0)
+  await expect(tree.getByRole('checkbox', { name: 'Loose end' })).not.toBeChecked()
+})
+
+test("a step from a row's ⋯ moves it past the next row shown, while a search hides others", async ({
+  page,
+}) => {
+  await openMono(page)
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  for (const title of ['Match A', 'Hidden', 'Match B']) {
+    await addOnTasksPage(page, 'task', 'Work', title)
+  }
+  await page.getByRole('link', { name: 'Back to today' }).click()
+  await goToStage(page, 'Today')
+  const tree = todayBrowser(page)
+  const tasks = tree.locator('li[data-slot="task"]')
+
+  await tree.getByLabel('Find a task in Tasks for today').fill('Match')
+  await expect(tasks).toHaveText([/Match A/, /Match B/])
+  await tree.getByText('Match A', { exact: true }).hover()
+  await tree.getByRole('button', { name: 'More for task Match A', exact: true }).click()
+  const down = tree.getByRole('button', { name: 'Move task Match A down', exact: true })
+  await down.click()
+  await expect(tasks).toHaveText([/Match B/, /Match A/])
+  // Last of what is shown, so it can go no further down here.
+  await expect(down).toHaveAttribute('aria-disabled', 'true')
+})
+
+test("a place's heading moved by the keyboard keeps the focus on the heading it lands under", async ({
+  page,
+}) => {
+  await openMono(page)
+  await buildLoginPages(page)
+  const tree = todayBrowser(page)
+  await tree.getByRole('checkbox', { name: 'All of Mono auth', exact: true }).check()
+  await addIntention(page, 'Auth')
+  const notGrouped = todayList(page).getByRole('region', { name: 'Not grouped' })
+  const grip = (where: typeof notGrouped, name: string) =>
+    where.getByRole('button', { name: `Move tasks in ${name}`, exact: true })
+
+  // Into an intention that already has a heading for the place: the heading
+  // there is the one already drawn, and it takes the focus.
+  await todayList(page).getByRole('button', { name: 'Move Login form', exact: true }).click()
+  await todayList(page).getByRole('button', { name: 'Move Login form to Auth', exact: true }).click()
+  await grip(notGrouped, 'Login pages').click()
+  await todayList(page)
+    .getByRole('button', { name: 'Move tasks in Login pages to Auth', exact: true })
+    .click()
+  await expect(grip(intention(page, 'Auth'), 'Login pages')).toBeFocused()
+
+  // Back, then with a finished task left behind under the epic itself: what
+  // moves is only the outcome's, so it lands under the outcome's heading.
+  await grip(intention(page, 'Auth'), 'Login pages').click()
+  await todayList(page)
+    .getByRole('button', { name: 'Move tasks in Login pages to no intention', exact: true })
+    .click()
+  await taskAction(tree, 'CSRF token', 'Mark task CSRF token done')
+  await grip(notGrouped, 'Mono auth').click()
+  await todayList(page)
+    .getByRole('button', { name: 'Move tasks in Mono auth to Auth', exact: true })
+    .click()
+  await expect(intention(page, 'Auth')).toContainText('Session cookie')
+  await expect(grip(intention(page, 'Auth'), 'Login pages')).toBeFocused()
+})

@@ -13,6 +13,7 @@ import {
   complete,
   groupTasks,
   defaultPurpose,
+  deepestHolding,
   drop,
   inboxOf,
   isGone,
@@ -180,6 +181,15 @@ describe('placeAmong', () => {
     expect(as(placeAmong(tight, 'c', 'b'))).toEqual({ a: 0, c: 1, b: 2 })
   })
 
+  it('numbers the siblings again at either end too, where one more or one less is the same number', () => {
+    // Orders this large only arrive in an edited file, which the importer
+    // accepts as finite; past 2^53, adding one changes nothing.
+    const huge = [{ id: 'a', order: 1e16 }]
+    expect(as(placeAmong(huge, 'b', null))).toEqual({ a: 0, b: 1 })
+    expect(as(placeAmong(huge, 'b', 'a'))).toEqual({ b: 0, a: 1 })
+    expect(as(placeAmong([{ id: 'a', order: -1e16 }], 'b', 'a'))).toEqual({ b: 0, a: 1 })
+  })
+
   it('keeps a record between its neighbours through many moves into the same gap', () => {
     let siblings = rows(0, 1)
     for (let i = 0; i < 200; i++) {
@@ -192,6 +202,35 @@ describe('placeAmong', () => {
       const at = siblings.findIndex((s) => s.id === id)
       expect(siblings[at + 1]!.id).toBe('b')
     }
+  })
+})
+
+describe('deepestHolding', () => {
+  const items = [
+    item('epic', 'epic', 'work'),
+    item('outcome', 'outcome', 'epic'),
+    item('form', 'task', 'outcome'),
+    item('cookie', 'task', 'outcome', { order: 1 }),
+    item('loose', 'task', 'epic', { order: 2 }),
+  ]
+  const tree = taskTree(items, [work])
+  const named = (ids: string[], within = ids) =>
+    deepestHolding(groupTasks(within, tree), ids)?.id ?? null
+
+  it('is the nearest place over all of them, past the places folded into one line', () => {
+    expect(named(['form', 'cookie'])).toBe('outcome')
+    expect(named(['form'])).toBe('outcome')
+    expect(named(['form', 'loose'])).toBe('epic')
+  })
+
+  it('is the place the group draws, not the one they were carried from', () => {
+    // Beside a task of the epic's own, the outcome's land under the outcome.
+    expect(named(['form', 'cookie'], ['form', 'cookie', 'loose'])).toBe('outcome')
+  })
+
+  it('is null when no place holds them all, or there is nothing to hold', () => {
+    expect(named(['form', 'elsewhere'], ['form'])).toBeNull()
+    expect(named([])).toBeNull()
   })
 })
 
