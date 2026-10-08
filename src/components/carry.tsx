@@ -69,11 +69,34 @@ import { useRefocus } from './ui'
 
 /**
  * What can be carried: a task, or on the tasks page something put down for
- * later, which is carried into the backlog to become a task there. The
- * gesture needs only something to find again and a title to say it is moving;
- * what putting it down writes is each surface's own (`move`).
+ * later, which is carried into the backlog to become a task there, or a place
+ * to put in order. The gesture needs only something to find again and a title
+ * to say it is moving; what putting it down writes is each surface's own
+ * (`move`).
+ *
+ * `id` is a key the carry compares and never reads into: for a record it is
+ * the record's id, and the surface finds it again by that. Where the id alone
+ * would not say what is carried, the row says so in `payload`, which the
+ * surface's `find` reads instead.
  */
-export type Carried = { id: string; title: string }
+export type Carried = { id: string; title: string; payload?: CarryPayload }
+
+/**
+ * What a carried row says about itself beyond a record's id. Both carry
+ * everything open in a place at once into one of today's intentions:
+ *
+ * - `place`: an epic's or outcome's row in All Tasks, which brings all of it.
+ * - `heading`: a place's heading in one group of today's list — an intention,
+ *   or none — which brings what it heads in that group, and no more. The same
+ *   place heads part of several groups, each a different handful of tasks.
+ *
+ * Typed rather than spelled into the id: a key built from parts had to be
+ * taken apart again to find them, and an id with the separator in it read as
+ * something else.
+ */
+export type CarryPayload =
+  | { kind: 'place'; placeId: string }
+  | { kind: 'heading'; group: string; placeId: string }
 
 /** How a task is being carried: under the pointer, or picked up to be put down. */
 export type CarryMode = 'drag' | 'pick'
@@ -150,11 +173,13 @@ export function useCarryState<T extends Carried>({
   hand,
 }: {
   /**
-   * The task by id as the surface now holds it, or undefined once it has left;
-   * asked with how it was taken up, since a surface may hold a drag and a
-   * pick-up to different terms.
+   * What was taken up as the surface now holds it — by its id, or by what its
+   * payload says — or undefined once it has left; asked with how it was taken
+   * up, since a surface may hold a drag and a pick-up to different terms.
+   * Asked again only when the carry or this function changes, so what it
+   * returns keeps its identity across the clock's tick.
    */
-  find: (taskId: string, by: CarryMode) => T | undefined
+  find: (carried: Carried, by: CarryMode) => T | undefined
   /** Whether a task would go to `target`. */
   takes: (task: T, target: string) => boolean
   /**
@@ -170,14 +195,17 @@ export function useCarryState<T extends Carried>({
   /** Shared with the page's other carries, so only one holds a task at once. */
   hand?: CarryHand | undefined
 }): CarryContext {
-  const [carrying, setCarrying] = useState<{ id: string; by: CarryMode } | null>(null)
+  const [carrying, setCarrying] = useState<{ carried: Carried; by: CarryMode } | null>(null)
   const [over, setOver] = useState<string | null>(null)
   const [aimed, setAimed] = useState<Slot | null>(null)
   const landed = useRef<string | null>(null)
   const me = useId()
 
   const mine = hand === undefined || hand.holder === me
-  const heldTask = carrying && mine ? find(carrying.id, carrying.by) : undefined
+  const heldTask = useMemo(
+    () => (carrying && mine ? find(carrying.carried, carrying.by) : undefined),
+    [carrying, mine, find],
+  )
   if (carrying && !heldTask) {
     setCarrying(null)
     setOver(null)
@@ -197,7 +225,7 @@ export function useCarryState<T extends Carried>({
       hover: setOver,
       pickUp: (task, by) => {
         hand?.take(me)
-        setCarrying({ id: task.id, by })
+        setCarrying({ carried: task, by })
         setOver(null)
       },
       putDown,
@@ -238,12 +266,12 @@ export function useCarryState<T extends Carried>({
   // carry that was. One drag can be held by two carries at once — All Tasks'
   // own, for its order, and today's around it, for the intentions — and only
   // the one it is let go on puts itself down. The other used to wait for the
-  // row's \`dragend\`, which never arrives when the drop has moved that row
+  // row's `dragend`, which never arrives when the drop has moved that row
   // somewhere else: React has unmounted it, and an event on a detached node
   // reaches no handler. So the other carry went on holding a drag that was
-  // over, offering \`Chosen today\` for it, and a later drop there chose it.
+  // over, offering `Chosen today` for it, and a later drop there chose it.
   // Heard on the document after the drop's own handlers, so the carry that
-  // takes the drop writes first; \`dragend\` still covers a drag let go on
+  // takes the drop writes first; `dragend` still covers a drag let go on
   // nothing, whose row has not moved.
   const dragging = carry.held?.by === 'drag'
   useEffect(() => {
@@ -506,20 +534,37 @@ export function MoveHere({ target, name }: { target: string; name: string }) {
  * passes `draggable: false`, so that selecting its text selects text.
  */
 export function useCarriedRow(task: Carried, draggable = true) {
-  const { held, pickUp, putDown } = useContext(Carry)
-  const picked = held?.task.id === task.id && held.by === 'pick'
-  const dragProps: HTMLAttributes<HTMLElement> & { draggable: boolean } = {
-    draggable,
+  const carry = useContext(Carry)
+  const picked = carry.held?.task.id === task.id && carry.held.by === 'pick'
+  const dragProps = { draggable, ...dragInto([[carry, task]], task.title) }
+  return { picked, dragProps }
+}
+
+/**
+ * The handlers for a row whose drag is taken up by several carries at once,
+ * each with what it carries: All Tasks' row is in the tree's carry, to be put
+ * in order, and in today's around it, to be let go on an intention. Each puts
+ * itself down when the drag ends on nothing; a drop on something is the
+ * document's `drop`, heard by every carry holding a drag (`useCarryState`).
+ * This is the one place a drag is given more than one hand, so that a row
+ * held twice says so here rather than in its own handlers.
+ */
+export function dragInto(
+  carries: readonly (readonly [CarryContext, Carried])[],
+  title: string,
+): Pick<HTMLAttributes<HTMLElement>, 'onDragStart' | 'onDragEnd'> {
+  return {
     onDragStart: (e) => {
       e.dataTransfer.effectAllowed = 'move'
       // Firefox starts no drag without data, and a title is what a drag
       // carried out of the page would sensibly drop as.
-      e.dataTransfer.setData('text/plain', task.title)
-      pickUp(task, 'drag')
+      e.dataTransfer.setData('text/plain', title)
+      for (const [carry, carried] of carries) carry.pickUp(carried, 'drag')
     },
-    onDragEnd: putDown,
+    onDragEnd: () => {
+      for (const [carry] of carries) carry.putDown()
+    },
   }
-  return { picked, dragProps }
 }
 
 /**
