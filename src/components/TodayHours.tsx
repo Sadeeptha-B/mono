@@ -107,9 +107,10 @@ export function hoursToSave(
  * because clearing what someone is in the middle of typing is its own bug.
  *
  * A draft that *has* been typed into is cleared by the session generation. For
- * the calendar's composer that happens by remounting this hook; the copy `App`
- * holds for the opening question outlives every remount there is, so it says so
- * itself through `reset`. Both halves of that rule live in `App`.
+ * the calendar's composer that happens by remounting this hook; the copy held
+ * for the opening question outlives every remount there is, so it is not this
+ * hook's but the day's workspace's (`app/workspace.ts`), which clears it on a
+ * new generation and whenever the calendar's editor takes the hours over.
  *
  * `edited` is the same state the draft is built from, handed back raw. Callers
  * that only fill in fields want `draft`; the one that has to know whether the

@@ -15,6 +15,8 @@
  * and this moment in it. Each is adjusted during render against something that
  * says the moment has moved on — the session `generation`, and the phase —
  * rather than in an effect that would paint the stale answer for a frame first.
+ * What is held about where the user is in the day, and every rule that lets
+ * some of it go, is one pure module beside this one (`workspace.ts`).
  * The timer face is a view preference and deliberately survives both changes;
  * a reload starts it at remaining time again.
  */
@@ -29,28 +31,17 @@ import { AppHeader } from '@/components/AppHeader'
 import { Stage } from '@/components/stage/Stage'
 import { StageCarousel } from '@/components/stage/StageCarousel'
 import {
-  FIRST_SETUP_STAGE,
   dayDoneFor,
   setupReachable,
   stageFor,
   type SetupStageId,
 } from '@/components/stage/stages'
 import { DayCalendar } from '@/components/Timeline/DayCalendar'
-import {
-  AllTasksPane,
-  ColumnSwitch,
-  type ChoosingFor,
-  type ColumnView,
-} from '@/components/AllTasksPane'
-import { emptyBlockPick, pickedInPlay, tickTasks, type BlockPick } from '@/components/blockPick'
+import { AllTasksPane, ColumnSwitch, type ColumnView } from '@/components/AllTasksPane'
+import { pickedInPlay } from '@/components/blockPick'
 import { TodayCarry } from '@/components/TodayList'
 import { useTodayBacklog } from '@/components/useTodayBacklog'
-import {
-  hoursToSave,
-  resolveHours,
-  useHoursDraft,
-  withIds,
-} from '@/components/TodayHours'
+import { hoursToSave, resolveHours, toWallClock, withIds } from '@/components/TodayHours'
 import { GhostButton, PrimaryButton } from '@/components/ui'
 import type { Composer } from '@/components/Timeline/SegmentEditor'
 
@@ -77,8 +68,16 @@ import {
 } from '@/store/session'
 import { isToday } from '@/domain/today'
 import { playChime, unlockAudio } from '@/ambient/audio'
-import type { TodayTimer } from '@/components/stage/TodayPanel'
-import { minutesToMs, type BlockKind, type Ms } from '@/domain/types'
+import type { BlockKind, DefaultRegion, Ms } from '@/domain/types'
+import {
+  choosingFor as choosingForStage,
+  columnView as viewOfColumn,
+  initialWorkspace,
+  reduce,
+  settle,
+  setupOpen as isSetupOpen,
+  type WorkspaceEvent,
+} from './workspace'
 
 /**
  * The pieces of the app that are not in the bundle that opens it.
@@ -209,46 +208,29 @@ export function App() {
   const guide = useDeferred(() => import('@/components/Guide/GuidePage'))
   const tasksPage = useDeferred(() => import('@/components/Tasks/TasksPage'))
   const routinePage = useDeferred(() => import('@/components/Routine/RoutinePage'))
-  const [composer, setComposer] = useState<Composer | null>(null)
-  const [setupStage, setSetupStage] = useState<SetupStageId>(FIRST_SETUP_STAGE)
-  // The opening questions, re-opened after the day was already shaped. It is
-  // where the user is looking rather than anything about the day, so it lives
-  // here and not in the log — `day/shaped` records being asked, and coming back
-  // to change an answer is not being asked again.
-  const [revisitingSetup, setRevisitingSetup] = useState(false)
-  const [seenGeneration, setSeenGeneration] = useState(() => store.generation)
-  /**
-   * Today's question's timer, as two instants.
-   *
-   * Beside `setupStage` because it is the same kind of thing: about where the
-   * user is in setting up the day, not a fact about the day. It is never
-   * written to the log — see `TodayPanel` for why it is not a block — and a
-   * reload simply starts the question's time again, as it re-asks any other
-   * question.
-   *
-   * `null` until it has run once this session. It starts by itself only the
-   * first time today's question is shown on an unshaped day; after that,
-   * and on any re-visit, only from its own button.
-   */
-  const [todayTimer, setTodayTimer] = useState<TodayTimer | null>(null)
-  /**
-   * Which view the right column shows, chosen by hand, and for which question.
-   * Only ever set while a question that chooses tasks is open, and forgotten
-   * when it closes; otherwise the column follows the question's default — see
-   * `AllTasksPane`.
-   */
-  const [columnChoice, setColumnChoice] = useState<{ for: ChoosingFor; view: ColumnView } | null>(
-    null,
+  // Where the user is in the day, held above both columns: see `workspace.ts`
+  // for what it holds and every rule that lets some of it go.
+  const [storedWorkspace, setWorkspace] = useState(() =>
+    initialWorkspace(store.generation, store.phase.name),
   )
-  /**
-   * What the purpose prompt has ticked for its block, here rather than in the
-   * prompt because All Tasks in the other column ticks for it too. Emptied
-   * each time the prompt opens — see `blockPick.ts`.
-   */
-  const [blockPick, setBlockPick] = useState<BlockPick>(emptyBlockPick)
+  const act = (event: WorkspaceEvent) => setWorkspace((ws) => reduce(ws, event))
 
   const { phase, session } = store
   const todayBacklog = useTodayBacklog()
+  const dayShaped = session.shapedAt !== null
+
+  // Adjusted during render as React documents rather than in an effect, so a
+  // new session or phase never paints the old one's state for a frame first.
+  const ws = settle(storedWorkspace, {
+    generation: store.generation,
+    phase,
+    dayShaped,
+    now,
+    intentionMinutes: session.settings.intentionMinutes,
+    inPlay: (pick) => pickedInPlay(pick, todayBacklog.offered, session.today),
+  })
+  if (ws !== storedWorkspace) setWorkspace(ws)
+  const { setupStage, todayTimer, composer, blockPick } = ws
   const today = dayKey(now)
   const ambience = useAmbience({
     selection: session.settings.ambience,
@@ -276,7 +258,6 @@ export function App() {
     const pip = window.documentPictureInPicture?.window
     if (pip) paint(pip.document, session.settings.roomId)
   }, [session.settings.roomId])
-  const [seenPhase, setSeenPhase] = useState(phase.name)
   const regions = selectRegions(store, now)
   // Today's, series included: what every surface below shows and plans around.
   // The plan input reads the same list, so the two cannot disagree.
@@ -305,8 +286,9 @@ export function App() {
    * through wall clock on every tick, and losing the seconds off a region
    * boundary is not something to do by accident.
    */
-  const { draft: hoursDraft, onDraft: onHoursDraft, edited, reset: resetHours } =
-    useHoursDraft(regions)
+  const edited = ws.hours
+  const hoursDraft = edited ?? regions.map(toWallClock)
+  const onHoursDraft = (hours: DefaultRegion[]) => act({ type: 'draftHours', hours })
   const hoursPreview = useMemo(
     () => (edited === null ? undefined : withIds(resolveHours(now, edited))),
     [edited, now],
@@ -325,11 +307,10 @@ export function App() {
   const planned = countPlannedFocus(timeline)
   const withinHours = isWithinRegions(now, timeline.regions)
   const upNext = nextRegionStart(now, timeline.regions)
-  const dayShaped = session.shapedAt !== null
   // The stage shows the opening questions while they are unanswered, and again
   // whenever the user goes back to them. This has to be known before day-done:
   // an open question remains the stage even if its work region ends underneath it.
-  const setupOpen = !dayShaped || revisitingSetup
+  const setupOpen = isSetupOpen(ws, dayShaped)
   const dayDone = dayDoneFor({
     phase,
     setupOpen,
@@ -338,94 +319,29 @@ export function App() {
     hasRegions: timeline.regions.length > 0,
   })
 
-  // The session was replaced under us — midnight came round with the tab open,
-  // or a file was imported. The store resets its own state; this is the rest of
-  // it, which lives out here: which of the opening questions is on screen, and
-  // which calendar editor is expanded.
-  //
-  // Adjusted during render as React documents rather than in an effect, so the
-  // new session never paints the old one's state for a frame first.
-  if (seenGeneration !== store.generation) {
-    setSeenGeneration(store.generation)
-    setSetupStage(FIRST_SETUP_STAGE)
-    setRevisitingSetup(false)
-    setTodayTimer(null)
-    setComposer(null)
-    setColumnChoice(null)
-    setBlockPick(emptyBlockPick)
-    // The calendar's own drafts are cleared by remounting — the composers
-    // unmount with the editor, the stage panel is keyed on the generation. This
-    // one outlives both, so it is cleared by hand: hours typed at 23:59 are
-    // about yesterday, and previewing them onto the new day would be the same
-    // bug the calendar composers already had, one level up.
-    resetHours()
-  }
-
-  // Waking up across a block boundary is an interruption rather than a stage:
-  // `stageFor` returns null for it and the strip hides itself entirely, because
-  // nothing that happened while we were away is recorded until the question is
-  // answered. The calendar's editors were the one part of the UI that did not
-  // follow, and a composer still expanded beside that prompt is somewhere else
-  // for the answering click to land.
-  //
-  // On the transition into the phase rather than on the phase itself. Closing
-  // it whenever the phase *is* reconciling would shut a composer the user
-  // deliberately opened during one, half a frame after they pressed the button,
-  // and the header toggles would look broken.
-  if (seenPhase !== phase.name) {
-    setSeenPhase(phase.name)
-    if (phase.name === 'reconciling') setComposer(null)
-    // A new purpose prompt starts with nothing ticked.
-    if (phase.name === 'definingPurpose') setBlockPick(emptyBlockPick)
-  }
-
   const stage = stageFor(phase, setupOpen, setupStage)
 
   // The question choosing tasks, if one is open, or the block running: while
   // either is, the column can show All Tasks instead of the day, from its
-  // switch. The questions open on All Tasks, where their answers come from; a
-  // running block opens on the day, which is drawing it. A choice made by hand
-  // lasts until the question closes or the block ends, adjusted during render
-  // so a stale choice is never painted.
-  const choosingFor: ChoosingFor | null =
-    stage === 'today'
-      ? 'today'
-      : phase.name === 'definingPurpose'
-        ? 'block'
-        : phase.name === 'focusing'
-          ? 'focus'
-          : null
-  if (columnChoice !== null && columnChoice.for !== choosingFor) setColumnChoice(null)
-  const columnView: ColumnView =
-    choosingFor === null
-      ? 'day'
-      : columnChoice?.for === choosingFor
-        ? columnChoice.view
-        : choosingFor === 'focus'
-          ? 'day'
-          : 'tasks'
+  // switch (`columnView`).
+  const choosingFor = choosingForStage(stage, phase)
+  const columnView = viewOfColumn(ws, choosingFor)
   const showColumn = (view: ColumnView) => {
-    if (choosingFor !== null) setColumnChoice({ for: choosingFor, view })
+    if (choosingFor !== null) act({ type: 'showColumn', for: choosingFor, view })
   }
-  const blockSelected = useMemo(
-    () => pickedInPlay(blockPick, todayBacklog.offered, session.today),
-    [blockPick, todayBacklog.offered, session.today],
-  )
-  // A tick whose task has left is let go for good, during render, so the task
-  // coming back does not bring the tick back with it — see `blockPick.ts`.
-  if (blockSelected.length !== blockPick.length) setBlockPick(blockSelected)
+  const blockSelected = blockPick
   // A task ticked for the block is chosen for today as it is ticked: the block
   // is the day doing it. Unticking leaves it today's. Read from the store
   // rather than closed over, so the handler stays stable across the tick.
   const tickForBlock = useCallback((taskId: string, on: boolean) => {
     const { session, addToToday } = useSession.getState()
     if (on && !isToday(session.today, taskId)) addToToday(taskId)
-    setBlockPick((pick) => tickTasks(pick, [taskId], on))
+    setWorkspace((ws) => reduce(ws, { type: 'tickBlock', taskIds: [taskId], on }))
   }, [])
   // Everything open in an epic or outcome at once, the same way.
   const tickAllForBlock = useCallback((taskIds: readonly string[], on: boolean) => {
     if (on) useSession.getState().addAllToToday(taskIds)
-    setBlockPick((pick) => tickTasks(pick, taskIds, on))
+    setWorkspace((ws) => reduce(ws, { type: 'tickBlock', taskIds, on }))
   }, [])
   // While a block runs, All Tasks ticks for it: what it holds is the block's
   // own record rather than a pick, and the machine refuses anything that would
@@ -444,18 +360,9 @@ export function App() {
   )
   const columnSwitch = <ColumnSwitch view={columnView} onView={showColumn} />
 
+  // Its first start, on an unshaped day, is `settle`'s; these are the presses.
   const startTodayTimer = (at: Ms) =>
-    setTodayTimer({
-      startedAt: at,
-      endsAt: at + minutesToMs(session.settings.intentionMinutes),
-    })
-  // The first sight of today's question on a day not yet shaped starts
-  // its timer. During render, the way this component adjusts its other state,
-  // so the face never paints a frame with no time on it; reading `now` here is
-  // fine, it is only ever written once.
-  if (setupOpen && !dayShaped && setupStage === 'today' && todayTimer === null) {
-    startTodayTimer(now)
-  }
+    act({ type: 'startTodayTimer', at, minutes: session.settings.intentionMinutes })
   // A single boolean that flips once, which is what lets the chime be an effect
   // without `now` in its dependencies. Only while the questions are open: the
   // timer is about the question, and a chime arriving after the day has started
@@ -480,9 +387,7 @@ export function App() {
     // shown on an unshaped day, during render where no window can be asked
     // for — so this click, which is what shows it, asks instead.
     if (next === 'today' && !dayShaped && todayTimer === null) popOutForDeciding()
-    setSetupStage(next)
-    setRevisitingSetup(true)
-    if (next === 'hours' && composer?.kind === 'hours') setComposer(null)
+    act({ type: 'goToSetupStage', stage: next })
   }
 
   /**
@@ -498,13 +403,11 @@ export function App() {
   const finishSetup = () => {
     const next = hoursToSave(now, hoursDraft, regions)
     if (next) store.setRegions(next)
-    resetHours()
     if (!dayShaped) store.shapeDay()
-    setRevisitingSetup(false)
     // The timer was about getting the day started, and it has. Coming back to
     // today's tasks later is changing your mind, which gets a fresh round only
     // if you ask for one — not the tail end of the morning's.
-    setTodayTimer(null)
+    act({ type: 'finishSetup' })
   }
 
   const startBlock = (kind: BlockKind): void => {
@@ -587,21 +490,13 @@ export function App() {
    * the panel cannot close. `goToSetupStage` closes the composer for the same
    * reason in the other direction.
    */
-  const openComposer = (next: Composer | null) => {
-    if (next?.kind === 'hours') {
-      if (stage === 'hours') {
-        if (dayShaped) setRevisitingSetup(false)
-        else setSetupStage('commitments')
-      }
-      // The composer wins the edit, so the question's draft goes — including
-      // when the question was not the one on screen. It outlives the panel now
-      // and it is what the calendar is previewing, so leaving it would mean the
-      // composer saving 4pm and the timeline still drawing the 10pm nobody
-      // committed, waiting to be written by the next `Start the day`.
-      resetHours()
-    }
-    setComposer(next)
-  }
+  // The composer wins the edit, so the question's draft goes — including when
+  // the question was not the one on screen. It outlives the panel and it is
+  // what the calendar is previewing, so leaving it would mean the composer
+  // saving 4pm and the timeline still drawing the 10pm nobody committed,
+  // waiting to be written by the next `Start the day`.
+  const openComposer = (next: Composer | null) =>
+    act({ type: 'openComposer', composer: next, stage, dayShaped })
   const settings = (
     <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
   )
