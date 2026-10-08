@@ -6,8 +6,10 @@
  *
  * Every open task in play, under its area, epic and outcome (`taskTree`), each
  * with a checkbox; a place's `⋯` offers `+ Task`, which writes a new one
- * straight into it and ticks it. What a tick means is the caller's: chosen for
- * today, or ticked for this block. An epic or outcome has a box of its own
+ * straight into it and ticks it, unless the caller says not to (`tickWritten`).
+ * What a tick means is the caller's: chosen for today, or ticked for this
+ * block; where what is ticked can never be emptied (`keepsOne`), the last box
+ * stays ticked and says why. An epic or outcome has a box of its own
  * (`PlaceTick`), which ticks everything open beneath it at once
  * (`onToggleMany`), and its row can be dragged onto one of today's intentions
  * to carry all of it there; an area has neither, being a whole part of a life.
@@ -147,6 +149,7 @@ import {
   type Slot,
   type SlotKind,
 } from './carry'
+import { HoverNote } from './HoverNote'
 import { ArchiveIcon, CheckIcon, DeleteIcon, MoveIcon, ReopenIcon } from './icons'
 import { EditGlyph, IconButton, KeepField, revealOnHover } from './ui'
 import {
@@ -233,32 +236,55 @@ function PlaceTick({
   taskIds,
   selected,
   onToggle,
+  keepsOne,
 }: {
   name: string
   taskIds: readonly string[]
   selected: ReadonlySet<string>
   onToggle: (taskIds: readonly string[], on: boolean) => void
+  keepsOne: boolean
 }) {
   const box = useRef<HTMLInputElement>(null)
   const ticked = taskIds.filter((id) => selected.has(id)).length
   const all = taskIds.length > 0 && ticked === taskIds.length
   const some = ticked > 0 && !all
+  // Unticking it would leave nothing ticked: everything ticked is in it.
+  const locked = keepsOne && all && ticked === selected.size
   useEffect(() => {
     if (box.current) box.current.indeterminate = some
   }, [some])
   if (taskIds.length === 0) return <span aria-hidden="true" className="size-[13px] shrink-0" />
-  return (
+  const input = (describedBy: string | undefined) => (
     <input
       ref={box}
       type="checkbox"
       checked={all}
-      onChange={() => onToggle(taskIds, !all)}
+      onChange={() => {
+        if (!locked) onToggle(taskIds, !all)
+      }}
       aria-label={`All of ${name}`}
-      title={all ? 'Untick all of it' : 'Tick all of it'}
+      {...(locked ? { 'aria-disabled': true } : {})}
+      {...(describedBy ? { 'aria-describedby': describedBy } : {})}
+      {...(locked ? {} : { title: all ? 'Untick all of it' : 'Tick all of it' })}
       className="m-0 mt-[9.5px] size-[13px] shrink-0 accent-[var(--color-deep)]"
     />
   )
+  if (!keepsOne) return input(undefined)
+  return (
+    <HoverNote note={locked ? KEEPS_ONE_PLACE : null} className="flex shrink-0 self-start">
+      {input}
+    </HoverNote>
+  )
 }
+
+/**
+ * What a box that cannot be unticked says, while a running block holds it as
+ * its only task, or holds nothing else. The machine refuses it anyway; this is
+ * the reason, said where the press was made.
+ */
+const KEEPS_ONE = 'Every block is for at least one task. Tick another before letting this one go.'
+const KEEPS_ONE_PLACE =
+  'Every block is for at least one task. Tick another before letting all of this go.'
 
 /** The tree's carry takes nothing into a column; only between rows. */
 const takesNoColumn = () => false
@@ -292,6 +318,8 @@ export const TaskBrowser = memo(function TaskBrowser({
   elsewhere,
   draggable = false,
   onPlace,
+  tickWritten = true,
+  keepsOne = false,
 }: {
   /** What is being chosen, as the group's accessible name. */
   label: string
@@ -322,6 +350,18 @@ export const TaskBrowser = memo(function TaskBrowser({
   draggable?: boolean
   /** How to put the tree in order; without it, it cannot be. Stable across the tick. */
   onPlace?: PlaceInOrder
+  /**
+   * Whether a task written here is ticked as it is written: yes while
+   * choosing, since writing it is choosing it; no while a block runs, when
+   * what turns up is usually not for the block it turned up in.
+   */
+  tickWritten?: boolean
+  /**
+   * Whether what is ticked can never be emptied — a running block, which is
+   * always for at least one task. The box that would empty it stays ticked
+   * and says why on hover (`HoverNote`).
+   */
+  keepsOne?: boolean
 }) {
   /** The place something new is being written into, if any: what, and what is typed. */
   const [adding, setAdding] = useState<{
@@ -447,7 +487,7 @@ export const TaskBrowser = memo(function TaskBrowser({
       if (adding.kind === 'task') {
         const id = onAdd(adding.parentId, adding.title)
         if (id === null) return
-        onToggle(id, true)
+        if (tickWritten) onToggle(id, true)
       } else if (places.add(adding.parentId, adding.kind, adding.title) === null) {
         return
       }
@@ -573,6 +613,7 @@ export const TaskBrowser = memo(function TaskBrowser({
               taskIds={openUnder.get(node.id) ?? []}
               selected={selectedSet}
               onToggle={onToggleMany}
+              keepsOne={keepsOne}
             />
           )}
           {renamingPlace?.id === node.id ? (
@@ -715,8 +756,10 @@ export const TaskBrowser = memo(function TaskBrowser({
                 key={task.id}
                 task={task}
                 guides={guides(depth + 1)}
-                checked={selected.includes(task.id)}
-                onToggle={() => onToggle(task.id, !selected.includes(task.id))}
+                checked={selectedSet.has(task.id)}
+                onToggle={() => onToggle(task.id, !selectedSet.has(task.id))}
+                keepsOne={keepsOne}
+                locked={keepsOne && selectedSet.has(task.id) && selectedSet.size === 1}
                 menu={menu === task.id}
                 onMenu={() => toggleMenu(task.id)}
                 menuRef={openMenu}
@@ -839,6 +882,8 @@ function TaskOption({
   guides,
   checked,
   onToggle,
+  keepsOne,
+  locked,
   menu,
   onMenu,
   menuRef,
@@ -855,6 +900,10 @@ function TaskOption({
   guides: ReactNode
   checked: boolean
   onToggle: () => void
+  /** Whether the row can come to be the one that cannot be unticked, so it carries a note's host. */
+  keepsOne: boolean
+  /** Whether it is that one now (`KEEPS_ONE`). */
+  locked: boolean
   menu: boolean
   onMenu: () => void
   menuRef: RefObject<HTMLSpanElement | null>
@@ -873,6 +922,27 @@ function TaskOption({
   // tree by its own; each lets go when the drop lands, whichever took it,
   // or when the drag ends on nothing.
   const { dragProps } = useCarriedRow(task, draggable)
+  const label = (describedBy: string | undefined) => (
+    <label className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-2 py-1 text-sm text-body hover:text-bright">
+      <input
+        type="checkbox"
+        checked={checked}
+        onChange={() => {
+          if (!locked) onToggle()
+        }}
+        {...(locked ? { 'aria-disabled': true } : {})}
+        {...(describedBy ? { 'aria-describedby': describedBy } : {})}
+        // No margins of its own: the tick on a done row is this wide, and
+        // a browser's default margins put the two titles out of line.
+        className="m-0 size-[13px] shrink-0 translate-y-0.5 accent-[var(--color-deep)]"
+      />
+      <span className="min-w-0 wrap-break-word">
+        {task.title}
+        {/* A task belongs to one intention a day; the caller says which. */}
+        {elsewhere !== null && <span className="ml-1.5 text-xs text-muted">under {elsewhere}</span>}
+      </span>
+    </label>
+  )
   const both = reorder
     ? {
         ...dragProps,
@@ -894,23 +964,13 @@ function TaskOption({
     >
       <SlotMark edge={edge} />
       {guides}
-      <label className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-2 py-1 text-sm text-body hover:text-bright">
-        <input
-          type="checkbox"
-          checked={checked}
-          onChange={onToggle}
-          // No margins of its own: the tick on a done row is this wide, and
-          // a browser's default margins put the two titles out of line.
-          className="m-0 size-[13px] shrink-0 translate-y-0.5 accent-[var(--color-deep)]"
-        />
-        <span className="min-w-0 wrap-break-word">
-          {task.title}
-          {/* A task belongs to one intention a day; the caller says which. */}
-          {elsewhere !== null && (
-            <span className="ml-1.5 text-xs text-muted">under {elsewhere}</span>
-          )}
-        </span>
-      </label>
+      {keepsOne ? (
+        <HoverNote note={locked ? KEEPS_ONE : null} className="flex min-w-0 flex-1">
+          {label}
+        </HoverNote>
+      ) : (
+        label(undefined)
+      )}
       {/* Named "task" as well as by title: on the tasks page the backlog's own
           rows carry a Rename and a Delete for the same task. */}
       <More
