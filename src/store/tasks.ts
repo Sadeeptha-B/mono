@@ -235,9 +235,13 @@ type TaskStore = BacklogContents & {
    * task goes and the line is waiting again. Returns the task's id, or null
    * when the Later is let go or gone, or the parent cannot hold a task.
    *
-   * Lands before `beforeId` when that is given and there is room between it
-   * and the sibling above; otherwise last. A filing is judged as two records,
-   * and numbering the siblings again to make room would make it more.
+   * Lands before `beforeId` when that is given, as `placeItem` would put it,
+   * and last otherwise: the board draws a line where a drag of it would go,
+   * and it must go there. Where there is no room between two orders, the
+   * siblings are numbered again around it, as ordinary edits of their own
+   * written beside the filing rather than in it — the filing stays the two
+   * records it is judged as. Refused, it leaves them renumbered, which keeps
+   * their order and so changes nothing anyone can see.
    */
   fileLater: (id: string, parentId: string, beforeId?: string | null) => string | null
 }
@@ -498,14 +502,26 @@ export const useTasks = create<TaskStore>()((set, get) => {
       const version = nextVersion(record.updatedAt, at)
       if (version === null) return null
       const taskId = newId()
+      // Where it was let go; or last, when the sibling it was let go before has
+      // gone, or a sibling has no version left to make room with.
+      let order = nextOrder(items.filter((i) => i.parentId === parentId))
+      let room: Item[] = []
       const placed = placeAmong(childrenOf(parentId, items), taskId, beforeId)
-      const order =
-        placed?.size === 1
-          ? placed.get(taskId)!
-          : nextOrder(items.filter((i) => i.parentId === parentId))
+      if (placed) {
+        const others = new Map([...placed].filter(([sibling]) => sibling !== taskId))
+        const renumbered = others.size === 0 ? [] : reordered(items, others, at)
+        if (renumbered !== null) {
+          order = placed.get(taskId)!
+          room = renumbered
+        }
+      }
       const task = newItem({ id: taskId, kind: 'task', title: record.title, parentId, order }, at)
       const gone: Later = { ...record, deletedAt: at, updatedAt: version }
-      set((s) => ({ items: upsert(s.items, task), later: upsert(s.later, gone) }))
+      set((s) => ({
+        items: [...room, task].reduce((list: Item[], item) => upsert(list, item), s.items),
+        later: upsert(s.later, gone),
+      }))
+      for (const sibling of room) pending.items.set(sibling.id, sibling)
       pending.filings.set(record.id, { task, later: gone, waiting: record })
       void schedule(flush)
       return taskId

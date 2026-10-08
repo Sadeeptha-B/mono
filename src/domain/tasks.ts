@@ -603,6 +603,43 @@ export function groupTasks(
 }
 
 /**
+ * The deepest place in a grouped tree with every one of `taskIds` beneath it,
+ * or null when no place has them all. Of the headings `GroupedTasks` draws
+ * over them, the nearest: what a place's tasks carried into a group land
+ * under, and so where the keyboard's focus goes with them.
+ *
+ * Not the place they were carried from. A finished task left behind changes
+ * what the destination draws — an epic whose own done task stays put arrives
+ * as its outcome alone — and a group that already held some of the place's
+ * tasks draws its heading already. And never a place `GroupedTasks` folds into
+ * the line of the one beneath it: such a place holds nothing of its own and one
+ * place beneath, which has them all too, so the walk goes on past it.
+ */
+export function deepestHolding(
+  tree: readonly TaskTreeNode[],
+  taskIds: readonly string[],
+): TaskTreeNode | null {
+  if (taskIds.length === 0) return null
+  const wanted = new Set(taskIds)
+  const holdsAll = (node: TaskTreeNode): boolean => {
+    let found = 0
+    const count = (n: TaskTreeNode) => {
+      for (const task of n.tasks) if (wanted.has(task.id)) found += 1
+      n.children.forEach(count)
+    }
+    count(node)
+    return found === wanted.size
+  }
+  let place = tree.find(holdsAll) ?? null
+  while (place) {
+    const deeper = place.children.find(holdsAll)
+    if (!deeper) break
+    place = deeper
+  }
+  return place
+}
+
+/**
  * Every open task beneath each place of a tree, at any depth — an epic's own
  * and its outcomes' — by the place's id, in the tree's order. What ticking a
  * whole epic or outcome takes, and what carrying one into an intention
@@ -716,14 +753,25 @@ export function placeAmong(
 /**
  * An order strictly between two others, either of which may be absent: past
  * the end, before the start, or anywhere in an empty list. Null when there is
- * no number strictly between them.
+ * no number strictly between them, and `placeAmong` numbers the siblings again.
+ *
+ * Every candidate is checked, the ends as well as the middle. The importer
+ * takes any finite order, and past 2^53 one more or one less is the same
+ * number: an end taken on trust gave the record its neighbour's order, so it
+ * was drawn wherever the disk happened to read it.
  */
 function orderBetween(after: number | undefined, before: number | undefined): number | null {
-  if (after === undefined && before === undefined) return 0
-  if (before === undefined) return after! + 1
-  if (after === undefined) return before - 1
-  const middle = after + (before - after) / 2
-  return after < middle && middle < before ? middle : null
+  const candidate =
+    after === undefined && before === undefined
+      ? 0
+      : before === undefined
+        ? after! + 1
+        : after === undefined
+          ? before - 1
+          : after + (before - after) / 2
+  const clear =
+    (after === undefined || after < candidate) && (before === undefined || candidate < before)
+  return clear ? candidate : null
 }
 
 /**

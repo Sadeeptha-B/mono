@@ -76,7 +76,7 @@ import { GroupedTasks } from './GroupedTasks'
 import { DeleteIcon, DoneRingIcon } from './icons'
 import { useTodayBacklog } from './useTodayBacklog'
 import { EditGlyph, IconButton, KeepField, RenameField, revealOnHover } from './ui'
-import { openTasksBeneath, type Item, type TaskTreeNode } from '@/domain/tasks'
+import { deepestHolding, openTasksBeneath, type Item, type TaskTreeNode } from '@/domain/tasks'
 import { isToday, tasksOfIntention, ungroupedToday, type Today } from '@/domain/today'
 import type { Intention } from '@/domain/types'
 import { useSession } from '@/store/session'
@@ -199,6 +199,7 @@ export function TodayCarry({
   const addToToday = useSession((s) => s.addToToday)
 
   const taskById = backlog.task
+  const group = backlog.group
   const places = useMemo(() => placeIndex(backlog.pickerTree), [backlog.pickerTree])
   // A bundle is worked out once per change to the day or the backlog, so the
   // one in hand keeps its identity across the clock's tick.
@@ -230,15 +231,22 @@ export function TodayCarry({
     (carried: TodayCarried, target: string) => {
       if (isBundle(carried)) {
         linkTasks(carried.taskIds, target === NOT_GROUPED ? null : target)
-        // From the keyboard, focus follows to the place's heading where it landed.
-        const place = headingPlace(carried.id)
-        return place === null ? undefined : headingId(target, place)
+        // From the keyboard, focus follows to the heading they now sit under in
+        // the group they went to, as it is drawn there — read from the day as
+        // it is after the move, since that is what decides which heading it
+        // is: one already drawn, or a deeper one than they came from
+        // (`deepestHolding`).
+        const after = useSession.getState().session.today
+        const inGroup =
+          target === NOT_GROUPED ? ungroupedToday(after) : tasksOfIntention(target, after)
+        const landed = deepestHolding(group(inGroup), carried.taskIds)
+        return landed === null ? undefined : headingId(target, landed.id)
       }
       if (target !== NOT_GROUPED) linkTask(carried.id, target)
       else if (isToday(today, carried.id)) linkTask(carried.id, null)
       else addToToday(carried.id)
     },
-    [today, linkTask, linkTasks, addToToday],
+    [today, group, linkTask, linkTasks, addToToday],
   )
   const carry = useCarryState({ find, takes, move, hand })
   // Adjusted during render, so the stale bar is never painted.
