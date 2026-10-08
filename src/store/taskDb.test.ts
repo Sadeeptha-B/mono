@@ -207,6 +207,58 @@ describe('writing', () => {
   })
 })
 
+describe('renumbering', () => {
+  const at = (id: string, order: number, updatedAt = 1): Item => ({ ...task(id, id, updatedAt), order })
+  const orders = async (db: TaskDb) =>
+    Object.fromEntries((await db.readAll()).items.map((i) => [i.id, i.order]))
+
+  it('lands whole when every member may be written', async () => {
+    const db = await open(new IDBFactory())
+    await db.write({ items: [at('a', 0), at('b', 1), at('c', 1)] }, 0)
+
+    const result = await db.write({ renumbering: { areas: [], items: [at('c', 2, 2), at('d', 3, 2)] } }, 0)
+    expect(result).toMatchObject({ kind: 'written', renumberingRefused: false })
+    expect(await orders(db)).toEqual({ a: 0, b: 1, c: 2, d: 3 })
+  })
+
+  it('is refused whole when one member would be, handing back the disk copy of every member', async () => {
+    const db = await open(new IDBFactory())
+    await db.write({ items: [at('a', 0), at('b', 5), at('c', 5)] }, 0)
+    // Another tab's newer rename of B.
+    await db.write({ items: [{ ...at('b', 5, 9), title: 'B renamed' }] }, 0)
+
+    const result = await db.write(
+      { renumbering: { areas: [], items: [at('b', 1, 2), at('c', 3, 2), at('d', 2, 2)] } },
+      0,
+    )
+    expect(result).toMatchObject({ kind: 'written', renumberingRefused: true })
+    if (result.kind !== 'written') return
+    // The disk's copies of the members it has: B newer, C older than was sent.
+    expect(result.stale.items.map((i) => i.id).sort()).toEqual(['b', 'c'])
+    expect(await orders(db)).toEqual({ a: 0, b: 5, c: 5 })
+  })
+
+  it('refuses a filing that needed the room with it, keeping the line waiting', async () => {
+    const db = await open(new IDBFactory())
+    const line = later('l', 'Before C', 1)
+    await db.write({ items: [at('a', 0), at('b', 1), at('c', 1)], later: [line] }, 0)
+    await db.write({ items: [{ ...at('c', 1, 9), title: 'C renamed' }] }, 0)
+
+    const filed = { ...at('new', 2, 2), title: 'Before C' }
+    const result = await db.write(
+      {
+        renumbering: { areas: [], items: [at('c', 3, 2)] },
+        filings: [{ task: filed, later: { ...line, deletedAt: 2, updatedAt: 2 }, waiting: line, needsRoom: true }],
+      },
+      0,
+    )
+    expect(result).toMatchObject({ kind: 'written', refused: ['l'], renumberingRefused: true })
+    const disk = await db.readAll()
+    expect(disk.items.map((i) => i.id).sort()).toEqual(['a', 'b', 'c'])
+    expect(disk.later).toEqual([line])
+  })
+})
+
 describe('seeding', () => {
   it('seeds once, however many tabs open an empty database together', async () => {
     const factory = new IDBFactory()

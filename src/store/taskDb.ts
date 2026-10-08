@@ -64,6 +64,18 @@
  *   being filed is not lost by the refusal either. A filing whose task is
  *   already on disk has landed before, and writes nothing rather than being
  *   refused by its own tombstone.
+ * - **A renumbering lands whole or not at all.** Putting a record between two
+ *   siblings whose orders leave no room between them numbers the siblings
+ *   again (`placeAmong`): one decision, written as several records. Judged
+ *   one at a time, a sibling another tab had just renamed was refused with its
+ *   old order while the rest landed with their new ones, and the siblings came
+ *   out in an order nobody asked for. So a write's renumbering is judged as
+ *   one, each member by the rules above, against the disk as the write began:
+ *   if any member would be refused, none is written and the disk's copies of
+ *   all of them come back as `stale`, so the writer puts every one back as
+ *   the disk has it. A filing that needed room among its siblings
+ *   (`needsRoom`) is refused with it: its task's order was chosen for the
+ *   room.
  * - **A replacement invalidates everything written against what it replaced.**
  *   An import clears every store and bumps a *generation* kept in `meta`. Every
  *   write states the generation it was made against, and one made against an
@@ -101,12 +113,20 @@ export type BacklogContents = { areas: Area[]; items: Item[]; later: Later[] }
 /**
  * Something put down for later, made a task: the task, the Later's tombstone,
  * and the copy of the Later that was waiting, which is what stays if the
- * filing is refused. Written whole or not at all; see the header.
+ * filing is refused. Written whole or not at all; see the header. `needsRoom`
+ * when its task's order was chosen in the room the write's renumbering makes,
+ * so it lands only if that does.
  */
-export type Filing = { task: Item; later: Later; waiting: Later }
+export type Filing = { task: Item; later: Later; waiting: Later; needsRoom?: boolean }
 
-/** Records to write, and filings to judge whole. */
-export type Changes = Partial<BacklogContents> & { filings?: readonly Filing[] }
+/** Siblings numbered again to make room, and what was placed among them: judged whole. */
+export type Renumbering = { areas: Area[]; items: Item[] }
+
+/** Records to write, and filings and a renumbering to judge whole. */
+export type Changes = Partial<BacklogContents> & {
+  filings?: readonly Filing[]
+  renumbering?: Renumbering
+}
 
 /**
  * A whole backlog to replace this one with. Later may be left out, and then
@@ -128,6 +148,11 @@ export type WriteResult =
       stale: BacklogContents
       /** The Laters whose filings were refused, by id. Neither record was written. */
       refused: string[]
+      /**
+       * Whether the write's renumbering was refused, and none of it written.
+       * Absent from a write that carried none.
+       */
+      renumberingRefused?: boolean
     }
   /** The backlog was replaced since this tab last read it. Nothing was written. */
   | { kind: 'superseded' }
@@ -197,6 +222,7 @@ function wrap(db: IDBDatabase): TaskDb {
       run(db, 'readwrite', (tx, done) => {
         const stale: BacklogContents = { areas: [], items: [], later: [] }
         const refused: string[] = []
+        let renumberingRefused = false
         let superseded = false
 
         // Everything is chained off the generation read, so the check and the
@@ -211,12 +237,15 @@ function wrap(db: IDBDatabase): TaskDb {
           const puts: (() => void)[] = []
           const blockers = new Map<string, Area | Item>()
           const filings = changes.filings ?? []
+          const renumbering = changes.renumbering ?? { areas: [], items: [] }
           const writing = new Set(
             [
               ...(changes.areas ?? []),
               ...(changes.items ?? []),
               ...(changes.later ?? []),
               ...filings.flatMap((f) => [f.task, f.later]),
+              ...renumbering.areas,
+              ...renumbering.items,
             ].map((r) => r.id),
           )
           // Two rounds. Plain records first, each against the disk as the
@@ -294,7 +323,10 @@ function wrap(db: IDBDatabase): TaskDb {
                     // go, or reworded in another tab — it would make a task of
                     // what the line no longer says.
                     const moved = onDisk !== undefined && beats(onDisk, filing.waiting)
-                    if (!moved && blocker === null) {
+                    // Its task's order was chosen in the room the renumbering
+                    // makes; without it, the task would stand somewhere else.
+                    const roomless = filing.needsRoom === true && renumberingRefused
+                    if (!moved && blocker === null && !roomless) {
                       puts.push(() => {
                         items.put(filing.task)
                         later.put(filing.later)
@@ -312,13 +344,74 @@ function wrap(db: IDBDatabase): TaskDb {
             }
           }
 
+          // A renumbering: every member read and judged as a plain record would
+          // be, and one decision for all of them once the last has answered.
+          const judgeRenumbering = () => {
+            const members: [IDBObjectStore, Area | Item][] = [
+              ...renumbering.areas.map((a): [IDBObjectStore, Area | Item] => [tx.objectStore('areas'), a]),
+              ...renumbering.items.map((i): [IDBObjectStore, Area | Item] => [tx.objectStore('items'), i]),
+            ]
+            if (members.length === 0) return
+            plainOwed += 1
+            let owed = members.length
+            let clear = true
+            const onDisk: (Area | Item)[] = []
+            const found: (Area | Item)[] = []
+            const answered = () => {
+              owed -= 1
+              if (owed > 0) return
+              if (clear) {
+                for (const [store, record] of members) {
+                  puts.push(() => store.put(record))
+                  accepted.set(record.id, record)
+                }
+              } else {
+                renumberingRefused = true
+                for (const copy of onDisk) {
+                  if ('kind' in copy) stale.items.push(copy)
+                  else stale.areas.push(copy)
+                }
+                for (const blocker of found) blockers.set(blocker.id, blocker)
+              }
+              plainAnswered()
+            }
+            for (const [store, record] of members) {
+              store.get(record.id).onsuccess = (event) => {
+                const existing = (event.target as IDBRequest<Area | Item | undefined>).result
+                if (existing !== undefined) onDisk.push(existing)
+                if (existing !== undefined && beats(existing, record)) {
+                  clear = false
+                  return answered()
+                }
+                if (existing === undefined || !movesOut(existing, record)) return answered()
+                goneOnDisk(tx, (existing as Item).parentId, NOTHING_ACCEPTED, (blocker) => {
+                  if (blocker !== null) {
+                    clear = false
+                    found.push(blocker)
+                  }
+                  answered()
+                })
+              }
+            }
+          }
+
           judge(tx.objectStore('areas'), changes.areas ?? [], stale.areas, true)
           judge(tx.objectStore('items'), changes.items ?? [], stale.items, true)
           judge(tx.objectStore('later'), changes.later ?? [], stale.later, false)
+          judgeRenumbering()
           if (plainOwed === 0) judgeFilings()
         }
         tx.addEventListener('complete', () =>
-          done(superseded ? { kind: 'superseded' } : { kind: 'written', stale, refused }),
+          done(
+            superseded
+              ? { kind: 'superseded' }
+              : {
+                  kind: 'written',
+                  stale,
+                  refused,
+                  ...(changes.renumbering ? { renumberingRefused } : {}),
+                },
+          ),
         )
       }),
 
@@ -389,7 +482,10 @@ function wrap(db: IDBDatabase): TaskDb {
  * on commit order while each tab adopted broadcasts in arrival order, and the
  * two orders can disagree.
  */
-function beats<T extends { updatedAt: number; deletedAt?: number }>(existing: T, record: T): boolean {
+export function beats<T extends { updatedAt: number; deletedAt?: number }>(
+  existing: T,
+  record: T,
+): boolean {
   if (outranks(existing, record)) return true
   if (outranks(record, existing)) return false
   return !sameValue(existing, record)
@@ -456,7 +552,7 @@ function goneOnDisk(
  * contents every time it is read, and comparing it by reference made every
  * saved copy of such a Later differ from itself.
  */
-function sameValue(a: unknown, b: unknown): boolean {
+export function sameValue(a: unknown, b: unknown): boolean {
   if (a === b) return true
   if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
   if (Array.isArray(a) !== Array.isArray(b)) return false

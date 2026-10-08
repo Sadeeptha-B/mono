@@ -541,6 +541,218 @@ describe('ordering', () => {
     expect(titlesUnder(await openTab(factory), work)).toEqual(['A', 'B', 'Before C', 'C'])
   })
 
+  /** A, B, C and D under Work, B and C sharing an order. */
+  async function tiedSiblings() {
+    const tab = await openTab(factory)
+    const work = workOf(tab)
+    const items = [
+      { ...taskIn(work, 'A'), order: 0 },
+      { ...taskIn(work, 'B'), order: 5 },
+      { ...taskIn(work, 'C'), order: 5 },
+      { ...taskIn(work, 'D'), order: 6 },
+    ]
+    await tab.useTasks.getState().replaceAll({ areas: tab.useTasks.getState().areas, items })
+    return { tab, work, items }
+  }
+  /** Another tab's write this tab has not heard about yet, on the current backlog. */
+  async function writtenElsewhere(changes: Partial<BacklogContents>) {
+    const elsewhere = await openTaskDb(factory)
+    const { generation } = await elsewhere.readAll()
+    await elsewhere.write(changes, generation)
+    elsewhere.close()
+    return generation
+  }
+
+  describe('when another tab has just written one of the siblings being numbered again', () => {
+    const renamedB = (items: Item[]) => ({
+      ...items[1]!,
+      title: 'B renamed',
+      updatedAt: Date.now() + 60_000,
+    })
+
+    it('puts nothing in place, rather than half the siblings', async () => {
+      const { tab, work, items } = await tiedSiblings()
+      await writtenElsewhere({ items: [renamedB(items)] })
+
+      tab.useTasks.getState().placeItem('d', work, 'c')
+      await settle()
+      // Refused whole: D is back where it was, and nothing else moved.
+      expect(titlesUnder(tab, work)).toEqual(['A', 'B renamed', 'C', 'D'])
+      expect(titlesUnder(await openTab(factory), work)).toEqual(['A', 'B renamed', 'C', 'D'])
+    })
+
+    it('refuses a filing that needed the room, keeping the line waiting and the siblings as they were', async () => {
+      const { tab, work, items } = await tiedSiblings()
+      const line = tab.useTasks.getState().addLater('Before C')!
+      await settle()
+      await writtenElsewhere({ items: [renamedB(items)] })
+
+      tab.useTasks.getState().fileLater(line, work, 'c')
+      await settle()
+      expect(titlesUnder(tab, work)).toEqual(['A', 'B renamed', 'C', 'D'])
+      expect(waitingLater(tab.useTasks.getState().later).map((l) => l.title)).toEqual(['Before C'])
+      const reloaded = await openTab(factory)
+      expect(titlesUnder(reloaded, work)).toEqual(['A', 'B renamed', 'C', 'D'])
+      expect(waitingLater(reloaded.useTasks.getState().later).map((l) => l.title)).toEqual([
+        'Before C',
+      ])
+    })
+
+    it('leaves the siblings in their order when a filing is refused for its own reasons', async () => {
+      const { tab, work } = await tiedSiblings()
+      const line = tab.useTasks.getState().addLater('Before C')!
+      await settle()
+      // The line let go in another tab: the filing is refused, the room lands.
+      const waiting = tab.useTasks.getState().later.find((l) => l.id === line)!
+      await writtenElsewhere({
+        later: [{ ...waiting, letGoAt: Date.now(), updatedAt: Date.now() + 60_000 }],
+      })
+
+      tab.useTasks.getState().fileLater(line, work, 'c')
+      await settle()
+      expect(titlesUnder(tab, work)).toEqual(['A', 'B', 'C', 'D'])
+      expect(titlesUnder(await openTab(factory), work)).toEqual(['A', 'B', 'C', 'D'])
+    })
+
+    it('keeps an edit made while the refused renumbering was on its way, in its old place', async () => {
+      const { tab, work, items } = await tiedSiblings()
+      await writtenElsewhere({ items: [renamedB(items)] })
+      const held = holdNext('readwrite')
+
+      tab.useTasks.getState().placeItem('d', work, 'c')
+      await held.holding
+      tab.useTasks.getState().renameItem('c', 'C renamed here')
+      held.release()
+      await settle()
+      await settle()
+      expect(titlesUnder(tab, work)).toEqual(['A', 'B renamed', 'C renamed here', 'D'])
+      expect(titlesUnder(await openTab(factory), work)).toEqual([
+        'A',
+        'B renamed',
+        'C renamed here',
+        'D',
+      ])
+    })
+  })
+
+  /*
+   * A write that fails leaves everything owed for the next, and a placement
+   * made meanwhile is owed beside it. Whatever the renumbering then meets, an
+   * edit owed before it is still the user's, and a record is written once.
+   */
+  describe('when the disk refuses for a while, and then takes writes again', () => {
+    const renamedElsewhere = (items: Item[]) => ({
+      ...items[1]!,
+      title: 'B renamed',
+      updatedAt: Date.now() + 60_000,
+    })
+
+    it('keeps a task written while it refused, though the renumbering it was in is refused', async () => {
+      const { tab, work, items } = await tiedSiblings()
+      const refusing = refuseWrites()
+      tab.useTasks.getState().addItem({ kind: 'task', title: 'E', parentId: work })
+      tab.useTasks.getState().placeItem('d', work, 'c')
+      await settle()
+      refusing.mockRestore()
+      await writtenElsewhere({ items: [renamedElsewhere(items)] })
+
+      // Anything at all sends what is owed.
+      tab.useTasks.getState().renameItem('a', 'A again')
+      await settle()
+      await settle()
+      expect(titlesUnder(tab, work)).toContain('E')
+      expect(tab.useStorageHealth.getState().failures.tasks).toBeNull()
+      expect(titlesUnder(await openTab(factory), work)).toEqual(titlesUnder(tab, work))
+    })
+
+    it('keeps a rename made while it refused, though the renumbering it was in is refused', async () => {
+      const { tab, work, items } = await tiedSiblings()
+      const refusing = refuseWrites()
+      tab.useTasks.getState().renameItem('c', 'C renamed')
+      tab.useTasks.getState().placeItem('d', work, 'c')
+      await settle()
+      refusing.mockRestore()
+      await writtenElsewhere({ items: [renamedElsewhere(items)] })
+
+      tab.useTasks.getState().renameItem('a', 'A again')
+      await settle()
+      await settle()
+      // The drop did not happen; the rename did.
+      expect(titlesUnder(tab, work)).toEqual(['A again', 'B renamed', 'C renamed', 'D'])
+      expect(titlesUnder(await openTab(factory), work)).toEqual([
+        'A again',
+        'B renamed',
+        'C renamed',
+        'D',
+      ])
+    })
+
+    it('writes a filed task where it was last put, when a renumbering took it before the filing landed', async () => {
+      const { tab, work } = await tiedSiblings()
+      const line = tab.useTasks.getState().addLater('Filed')!
+      await settle()
+      const refusing = refuseWrites()
+      tab.useTasks.getState().fileLater(line, work, 'b')
+      // A before C, where B and C share an order: every sibling is numbered
+      // again, the filed task among them.
+      tab.useTasks.getState().placeItem('a', work, 'c')
+      expect(titlesUnder(tab, work)).toEqual(['Filed', 'B', 'A', 'C', 'D'])
+      await settle()
+      refusing.mockRestore()
+
+      tab.useTasks.getState().addLater('Anything')
+      await settle()
+      await settle()
+      expect(titlesUnder(tab, work)).toEqual(['Filed', 'B', 'A', 'C', 'D'])
+      expect(tab.useStorageHealth.getState().failures.tasks).toBeNull()
+      expect(titlesUnder(await openTab(factory), work)).toEqual(['Filed', 'B', 'A', 'C', 'D'])
+    })
+
+    it('lands a record where it was put last, after a renumbering had placed it', async () => {
+      const { tab, work } = await tiedSiblings()
+      const refusing = refuseWrites()
+      tab.useTasks.getState().placeItem('d', work, 'c')
+      expect(titlesUnder(tab, work)).toEqual(['A', 'B', 'D', 'C'])
+      // One write this time: there is room after C.
+      tab.useTasks.getState().placeItem('d', work, null)
+      expect(titlesUnder(tab, work)).toEqual(['A', 'B', 'C', 'D'])
+      await settle()
+      refusing.mockRestore()
+
+      tab.useTasks.getState().addLater('Anything')
+      await settle()
+      await settle()
+      expect(titlesUnder(tab, work)).toEqual(['A', 'B', 'C', 'D'])
+      expect(titlesUnder(await openTab(factory), work)).toEqual(['A', 'B', 'C', 'D'])
+    })
+
+    it("keeps the order it placed a sibling in when that sibling is edited again on another tab's copy", async () => {
+      const { tab, work, items } = await tiedSiblings()
+      const refusing = refuseWrites()
+      // A before C: B 0, A 1, C 2, D 3.
+      tab.useTasks.getState().placeItem('a', work, 'c')
+      expect(titlesUnder(tab, work)).toEqual(['B', 'A', 'C', 'D'])
+      await settle()
+      refusing.mockRestore()
+
+      // Another tab renames C, keeping the order it had, and says so.
+      const elsewhere = { ...items[2]!, title: 'C elsewhere', updatedAt: Date.now() + 60_000 }
+      const generation = await writtenElsewhere({ items: [elsewhere] })
+      refuseWrites()
+      announce({ type: 'changed', generation, areas: [], items: [elsewhere] })
+      await vi.waitFor(() => expect(titlesUnder(tab, work)).toContain('C elsewhere'))
+      vi.restoreAllMocks()
+
+      // Renamed again here, on top of that tab's copy: the renumbering still
+      // owes C its place, and lands whole.
+      tab.useTasks.getState().renameItem('c', 'C here')
+      await settle()
+      await settle()
+      expect(titlesUnder(tab, work)).toEqual(['B', 'A', 'C here', 'D'])
+      expect(titlesUnder(await openTab(factory), work)).toEqual(['B', 'A', 'C here', 'D'])
+    })
+  })
+
   it('files a Later before a sibling when asked, and last otherwise', async () => {
     const { tab, work, b } = await threeTasks()
     const { addLater, fileLater } = tab.useTasks.getState()

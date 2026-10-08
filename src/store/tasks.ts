@@ -22,16 +22,16 @@
  * said which generation is on disk.
  *
  * **Edits are optimistic.** Every action updates memory first and records what
- * it changed as pending, so a checkbox is never waiting on a disk. A flush
- * sends everything pending in one write; records that did not land stay
- * pending and go out with the next, and only a flush that leaves nothing
- * pending clears the storage warning. Anything edited before the load finished
- * is merged with what it read, by `outranks`, and written after it.
+ * it changed as owed (`owed.ts`), so a checkbox is never waiting on a disk. A
+ * flush sends everything owed in one write; records that did not land stay
+ * owed and go out with the next, and only a flush that leaves nothing owed
+ * clears the storage warning. Anything edited before the load finished is
+ * merged with what it read, by `outranks`, and written after it.
  *
- * **A pending edit never outlives a newer one.** `updatedAt` is a version, and
+ * **An owed edit never outlives a newer one.** `updatedAt` is a version, and
  * the disk refuses to put a record over a newer copy (`taskDb.ts`), handing
  * that copy back for this tab to adopt; a broadcast of a newer record drops
- * this tab's pending copy too. Broadcasts at this tab's generation are adopted
+ * this tab's owed copy too. Broadcasts at this tab's generation are adopted
  * the moment they arrive, so the next edit builds on the other tab's copy
  * rather than on the one it replaced, and judged again in their turn, which
  * repairs a reload that read the disk just before the other tab's write. An
@@ -45,7 +45,7 @@
  * moment an import is asked for until it settles: until then memory still
  * shows the backlog being replaced, and an edit to that could not be carried
  * onto the import correctly — it would bring back what the import left out,
- * or undo what it changed. Anything pending when the import lands was an edit
+ * or undo what it changed. Anything owed when the import lands was an edit
  * to the old backlog and goes with it.
  *
  * **A delete is final, and takes only the thing deleted.** It writes one
@@ -61,7 +61,7 @@
  *
  * **An import elsewhere voids this tab's unsaved work.** A broadcast from a
  * newer generation, or a write that comes back `superseded`, drops everything
- * pending and reloads from disk: those edits were made to a backlog that no
+ * owed and reloads from disk: those edits were made to a backlog that no
  * longer exists. A notice no newer than what this tab already holds changes
  * nothing. Either way, and for an import made here, `replaced` is bumped, so
  * drafts of the old backlog's records are let go rather than saved over the
@@ -72,6 +72,15 @@
  * takes whole or refuses whole (`taskDb.ts`). A refused filing is undone
  * here: the task goes, with any edit to it still owed, and the line is
  * waiting again, as the disk has it.
+ *
+ * **Numbering siblings again is one judgement too.** A placement with no room
+ * between two orders writes several records for one decision, owed as one
+ * `Renumbering` with every placement since the last flush, which the disk
+ * takes whole or refuses whole. Refused, each member goes back to where the
+ * disk has it, and keeps every other edit owed to it.
+ *
+ * Both are groups over records owed once each, by id, rather than copies of
+ * their own; `owed.ts` says why, and what each answer from the disk does.
  *
  * Every edit here is refused while an import lands. The adds say so by
  * returning null, and a field that empties itself once something is kept
@@ -97,7 +106,6 @@ import {
   nextVersion,
   openContainers,
   openTasksUnder,
-  outranks,
   placeAmong,
   reopen,
   stepTarget,
@@ -109,12 +117,12 @@ import {
 } from '@/domain/tasks'
 import type { Ms } from '@/domain/types'
 import { newId } from './ids'
+import { createOwed, merge, positionOf, upsert, type Position } from './owed'
 import { useStorageHealth } from './storageHealth'
 import {
   openTaskDb,
   type BacklogContents,
   type BacklogReplacement,
-  type Filing,
   type TaskDb,
   type WriteResult,
 } from './taskDb'
@@ -180,6 +188,16 @@ type TaskStore = BacklogContents & {
    * when nothing would change or the sibling aimed at is no longer there.
    */
   placeItem: (id: string, parentId: string, beforeId: string | null) => void
+  /*
+   * A placement that has to number its siblings again is one decision written
+   * as several records, and is owed as one renumbering, which the disk takes
+   * whole or refuses whole (`Renumbering`): judged a record at a time, a
+   * sibling another tab had just written was refused while the rest landed,
+   * and the siblings came out in an order nobody asked for. Refused, every
+   * member goes back to where the disk has it and the drop simply did not
+   * happen; a rename or anything else owed to a member still is.
+   */
+
   /**
    * One step earlier (`-1`) or later (`1`) through the list that draws it —
    * its parent's open tasks, or its open epics or outcomes — so a step from
@@ -238,10 +256,11 @@ type TaskStore = BacklogContents & {
    * Lands before `beforeId` when that is given, as `placeItem` would put it,
    * and last otherwise: the board draws a line where a drag of it would go,
    * and it must go there. Where there is no room between two orders, the
-   * siblings are numbered again around it, as ordinary edits of their own
-   * written beside the filing rather than in it — the filing stays the two
-   * records it is judged as. Refused, it leaves them renumbered, which keeps
-   * their order and so changes nothing anyone can see.
+   * siblings are numbered again around it, owed as a renumbering the disk
+   * takes whole or refuses whole, and the filing lands only if that does
+   * (`needsRoom`). Refused, everything stands as it stood and the line is
+   * waiting again; the room landing and the filing refused for its own
+   * reasons leaves the siblings renumbered whole, in the order they had.
    */
   fileLater: (id: string, parentId: string, beforeId?: string | null) => string | null
 }
@@ -253,24 +272,12 @@ type Message =
 
 let db: Promise<TaskDb> | null = null
 let channel: BroadcastChannel | null = null
-const pending = {
-  areas: new Map<string, Area>(),
-  items: new Map<string, Item>(),
-  later: new Map<string, Later>(),
-  /** Filings owed, by the Later's id: judged by the disk as one (`Filing`). */
-  filings: new Map<string, Filing>(),
-}
-const nothingPending = () =>
-  pending.areas.size === 0 &&
-  pending.items.size === 0 &&
-  pending.later.size === 0 &&
-  pending.filings.size === 0
-const clearPending = () => {
-  pending.areas.clear()
-  pending.items.clear()
-  pending.later.clear()
-  pending.filings.clear()
-}
+/**
+ * Everything this tab has changed and the disk does not hold yet: one copy per
+ * record, and the renumberings and filings among them that the disk judges
+ * whole (`owed.ts`).
+ */
+const owed = createOwed()
 /** The disk's generation as this tab last saw it. See `taskDb.ts`. */
 let generation = 0
 /** False until the first read has set `generation`; nothing flushes before. */
@@ -291,25 +298,39 @@ const importing = () => importsInFlight > 0
 export const useTasks = create<TaskStore>()((set, get) => {
   const putArea = (area: Area) => {
     set((s) => ({ areas: upsert(s.areas, area) }))
-    save({ areas: [area] })
+    owed.owe('areas', area)
+    void schedule(flush)
   }
   const putItem = (item: Item) => {
     set((s) => ({ items: upsert(s.items, item) }))
-    save({ items: [item] })
+    owed.owe('items', item)
+    void schedule(flush)
   }
-  // Several at once, as one change to memory and one flush: a reorder that
-  // numbers its siblings again.
-  const putItems = (written: readonly Item[]) => {
-    set((s) => ({ items: written.reduce((list: Item[], item) => upsert(list, item), s.items) }))
-    save({ items: [...written] })
-  }
-  const putAreas = (written: readonly Area[]) => {
-    set((s) => ({ areas: written.reduce((list: Area[], area) => upsert(list, area), s.areas) }))
-    save({ areas: [...written] })
+  // A placement written as one record is an edit like any other. One that
+  // numbered its siblings again is one decision in several records, owed as a
+  // renumbering for the disk to take whole or refuse whole (`owed.ts`), each
+  // remembering where it stood before, to go back to if the disk refuses it.
+  const place = (written: { areas?: readonly Area[]; items?: readonly Item[] }) => {
+    const areas = written.areas ?? []
+    const items = written.items ?? []
+    if (areas.length + items.length <= 1) {
+      for (const area of areas) putArea(area)
+      for (const item of items) putItem(item)
+      return
+    }
+    const before = positionsOf([...areas, ...items], get())
+    set((s) => ({
+      areas: areas.reduce((list: Area[], area) => upsert(list, area), s.areas),
+      items: items.reduce((list: Item[], item) => upsert(list, item), s.items),
+    }))
+    owed.place('areas', areas, before)
+    owed.place('items', items, before)
+    void schedule(flush)
   }
   const putLater = (later: Later) => {
     set((s) => ({ later: upsert(s.later, later) }))
-    save({ later: [later] })
+    owed.owe('later', later)
+    void schedule(flush)
   }
   // Both refuse an edit with no version to give it (`nextVersion`), before
   // anything changes, rather than write a record the importer would drop.
@@ -385,7 +406,7 @@ export const useTasks = create<TaskStore>()((set, get) => {
       const live = areas.filter(isLive).sort((a, b) => a.order - b.order)
       const orders = placeAmong(live, id, beforeId)
       const written = orders && reordered(live, orders, Date.now())
-      if (written) putAreas(written)
+      if (written) place({ areas: written })
     },
 
     shiftArea: (id, by) => {
@@ -431,7 +452,7 @@ export const useTasks = create<TaskStore>()((set, get) => {
       const written =
         orders &&
         reordered(items, orders, Date.now(), (i) => (i.id === id ? { ...i, parentId } : i))
-      if (written) putItems(written)
+      if (written) place({ items: written })
     },
 
     shiftItem: (id, by) => {
@@ -517,12 +538,14 @@ export const useTasks = create<TaskStore>()((set, get) => {
       }
       const task = newItem({ id: taskId, kind: 'task', title: record.title, parentId, order }, at)
       const gone: Later = { ...record, deletedAt: at, updatedAt: version }
+      const before = positionsOf(room, get())
       set((s) => ({
         items: [...room, task].reduce((list: Item[], item) => upsert(list, item), s.items),
         later: upsert(s.later, gone),
       }))
-      for (const sibling of room) pending.items.set(sibling.id, sibling)
-      pending.filings.set(record.id, { task, later: gone, waiting: record })
+      // The room goes as a renumbering, and the filing only lands if it does.
+      owed.place('items', room, before)
+      owed.file(task, gone, record, room.length > 0)
       void schedule(flush)
       return taskId
     },
@@ -614,7 +637,7 @@ async function load(): Promise<void> {
     }
     if (!landed) {
       stored = { ...stored, areas: seeds }
-      for (const seed of seeds) pending.areas.set(seed.id, seed)
+      for (const seed of seeds) owed.owe('areas', seed)
     }
   }
 
@@ -629,7 +652,7 @@ async function load(): Promise<void> {
     hydrated: true,
   })
   ready = true
-  if (!nothingPending()) void schedule(flush)
+  if (!owed.isEmpty()) void schedule(flush)
 }
 
 /** Close the database and the channel. For tests, which open one per case. */
@@ -639,14 +662,6 @@ export function closeTasks(): void {
   void db?.then((open) => open.close()).catch(() => undefined)
   db = null
   ready = false
-}
-
-/** Record these changes as owed to the disk, and flush when this tab's turn comes. */
-function save(changes: Partial<BacklogContents>): void {
-  for (const area of changes.areas ?? []) pending.areas.set(area.id, area)
-  for (const item of changes.items ?? []) pending.items.set(item.id, item)
-  for (const later of changes.later ?? []) pending.later.set(later.id, later)
-  void schedule(flush)
 }
 
 /**
@@ -661,12 +676,14 @@ function schedule<T>(work: () => Promise<T>): Promise<T> {
 }
 
 /**
- * Send every pending record to the disk, in one write.
+ * Send everything owed to the disk, in one write, and settle what it answers
+ * (`owed.ts`).
  *
- * Pending is keyed by id, so a record edited twice while the disk is refusing
- * is written once, in its latest form. Only records still identical to what was
- * sent are removed from pending afterwards — one edited again while this write
- * was in flight has to go out again.
+ * Owed by id, so a record edited twice while the disk is refusing is written
+ * once, in its latest form. Only what is still identical to what was sent is
+ * settled by the answer — one edited again while this write was in flight has
+ * to go out again. What a refusal hands back as an edit of its own — a rename
+ * owed beside a renumbering the disk refused — goes in the next write.
  */
 async function flush(): Promise<void> {
   if (!db || !ready) return
@@ -678,34 +695,12 @@ async function flush(): Promise<void> {
     return
   }
 
-  // A filing goes whole. It carries the latest edit to its task, made since it
-  // was filed, and stands in for any copy of its Later still owed — the
-  // waiting copy it holds is what the disk keeps if it is refused — so
-  // neither record also goes on its own, to be judged apart from it.
-  const owed = [...pending.filings.values()]
-  const filings = owed.map((f) => {
-    const edited = pending.items.get(f.task.id)
-    return edited === undefined ? f : { ...f, task: edited }
-  })
-  const filedTasks = new Set(filings.map((f) => f.task.id))
-  const filedLater = new Set(filings.map((f) => f.later.id))
-  const batch: BacklogContents = {
-    areas: [...pending.areas.values()],
-    items: [...pending.items.values()].filter((i) => !filedTasks.has(i.id)),
-    later: [...pending.later.values()].filter((l) => !filedLater.has(l.id)),
-  }
-  if (
-    batch.areas.length === 0 &&
-    batch.items.length === 0 &&
-    batch.later.length === 0 &&
-    filings.length === 0
-  ) {
-    return
-  }
+  const sent = owed.batch()
+  if (sent === null) return
 
   let result: WriteResult
   try {
-    result = await open.write({ ...batch, filings }, generation)
+    result = await open.write(sent.changes, generation)
   } catch {
     useStorageHealth.getState().noteFailure(Date.now(), 'tasks')
     return
@@ -718,86 +713,24 @@ async function flush(): Promise<void> {
     return
   }
 
-  for (const area of batch.areas) {
-    if (pending.areas.get(area.id) === area) pending.areas.delete(area.id)
-  }
-  for (const item of batch.items) {
-    if (pending.items.get(item.id) === item) pending.items.delete(item.id)
-  }
-  for (const later of batch.later) {
-    if (pending.later.get(later.id) === later) pending.later.delete(later.id)
-  }
-  filings.forEach((filing, i) => {
-    const id = filing.later.id
-    if (pending.filings.get(id) === owed[i]) pending.filings.delete(id)
-    if (pending.items.get(filing.task.id) === filing.task) pending.items.delete(filing.task.id)
-    // Covered by the filing whichever way it went: by its tombstone, or by
-    // the waiting copy the disk kept instead.
-    pending.later.delete(id)
+  const memory = useTasks.getState()
+  const settled = owed.settle(sent, result, {
+    areas: memory.areas,
+    items: memory.items,
+    later: memory.later,
   })
-
-  // A filing the disk refused never happened: the task goes, edits to it
-  // owed since included, and the line is waiting again — as the disk has it
-  // when the disk kept its own, as it was filed when the disk took that.
-  const refused = new Set(result.refused)
-  const undone = filings.filter((f) => refused.has(f.later.id))
-  const landed = filings.filter((f) => !refused.has(f.later.id))
-  const disksLater = new Map(result.stale.later.map((l) => [l.id, l]))
-  const keptWaiting = undone.filter((f) => !disksLater.has(f.later.id)).map((f) => f.waiting)
-  if (undone.length > 0) {
-    const tasks = new Set(undone.map((f) => f.task.id))
-    for (const id of tasks) pending.items.delete(id)
-    useTasks.setState((s) => ({
-      items: s.items.filter((i) => !tasks.has(i.id)),
-      later: undone.reduce(
-        (list, f) => upsert(list, disksLater.get(f.later.id) ?? f.waiting),
-        s.later,
-      ),
-    }))
-  }
-
-  // The disk kept its own copies of these. Believe it, and stop owing ours.
-  // Usually its copy is newer and would win anyway; a move refused for
-  // leaving a deleted subtree hands back an *older* one, which version order
-  // alone would let this tab's refused copy outrank — so where memory still
-  // holds exactly what was sent, the disk's copy replaces it outright.
-  const sent = new Map<string, Area | Item | Later>(
-    [...batch.areas, ...batch.items, ...batch.later].map((r) => [r.id, r]),
-  )
-  const theDisks = <T extends Area | Item | Later>(list: readonly T[], kept: readonly T[]): T[] => {
-    const byId = new Map(kept.map((r) => [r.id, r]))
-    return list.map((r) => (byId.has(r.id) && sent.get(r.id) === r ? byId.get(r.id)! : r))
-  }
-  useTasks.setState((s) => ({
-    areas: theDisks(s.areas, result.stale.areas),
-    items: theDisks(s.items, result.stale.items),
-    later: theDisks(s.later, result.stale.later),
-  }))
-  adoptNewer(result.stale)
-  if (nothingPending()) {
+  useTasks.setState(settled.memory)
+  if (owed.isEmpty()) {
     useStorageHealth.getState().noteSuccess('tasks')
   }
-
-  const staleIds = new Set(
-    [...result.stale.areas, ...result.stale.items, ...result.stale.later].map((r) => r.id),
-  )
-  channel?.postMessage({
-    type: 'changed',
-    generation,
-    areas: batch.areas.filter((a) => !staleIds.has(a.id)),
-    items: [...batch.items.filter((i) => !staleIds.has(i.id)), ...landed.map((f) => f.task)],
-    later: [
-      ...batch.later.filter((l) => !staleIds.has(l.id)),
-      ...landed.map((f) => f.later),
-      ...keptWaiting,
-    ],
-  } satisfies Message)
+  channel?.postMessage({ type: 'changed', generation, ...settled.broadcast } satisfies Message)
+  if (settled.again) void schedule(flush)
 }
 
 /**
  * Replace the backlog with an import: the disk first, then memory, then the
  * other tabs. A refusal from the disk rejects before anything else has
- * changed — memory, pending and the warning are exactly as they were, and the
+ * changed — memory, what is owed and the warning are exactly as they were, and the
  * backlog carries on as if the import had never been asked for.
  */
 async function replace(contents: BacklogContents): Promise<void> {
@@ -808,11 +741,11 @@ async function replace(contents: BacklogContents): Promise<void> {
   } catch {
     // No database at all, so the backlog only ever lives in memory, and the
     // import is taken there like every other edit. `diskless` keeps the
-    // warning up over it: pending records could not, since a newer copy of
+    // warning up over it: owed records could not, since a newer copy of
     // each from another tab would clear them without saving what the import
     // left out.
     diskless = true
-    clearPending()
+    owed.clear()
     useTasks.setState((s) => ({
       areas: contents.areas,
       items: contents.items,
@@ -825,8 +758,8 @@ async function replace(contents: BacklogContents): Promise<void> {
 
   generation = await open.replaceAll(contents)
   // Edits have been refused since the import was asked for, so everything
-  // still pending was an edit to the backlog it replaced.
-  clearPending()
+  // still owed was an edit to the backlog it replaced.
+  owed.clear()
   useTasks.setState((s) => ({
     areas: contents.areas,
     items: contents.items,
@@ -839,13 +772,13 @@ async function replace(contents: BacklogContents): Promise<void> {
 
 /**
  * Take the disk's backlog as this tab's, dropping everything owed. Used when the
- * backlog was replaced elsewhere: what was pending belonged to the old one.
+ * backlog was replaced elsewhere: what was owed belonged to the old one.
  */
 async function reload(open: TaskDb): Promise<void> {
   try {
     const read = await open.readAll()
     generation = read.generation
-    clearPending()
+    owed.clear()
     useTasks.setState((s) => ({
       areas: read.areas,
       items: read.items,
@@ -860,42 +793,14 @@ async function reload(open: TaskDb): Promise<void> {
 
 /**
  * Accept records known to be newer than this tab's — from the disk or from
- * another tab — and drop any pending copy they make obsolete.
- *
- * Dropping is the half that matters. Adopting alone left the older copy queued,
- * so this tab's next unrelated write sent it out again over the newer one.
- *
- * A tie goes to the incoming copy. Everything arriving here is what reached the
- * disk, and the disk keeps the first of two different copies at the same
- * version and refuses the second (`taskDb.ts`) — so a copy at this version that
- * reached the disk is the one it holds, and this tab's, if different, is the
- * one it refused or will refuse. Equal versions happen in use: two tabs editing
- * a record whose version is ahead of the clock both stamp it one past it.
+ * another tab — and stop owing any copy they make obsolete. The rules,
+ * placed records and ties included, are `owed.adopt`'s.
  *
  * Adopting the same records twice changes nothing the second time: anything
  * edited in between was stamped past them, so it is kept.
  */
 function adoptNewer(incoming: BacklogContents): void {
-  if (incoming.areas.length === 0 && incoming.items.length === 0 && incoming.later.length === 0) {
-    return
-  }
-  for (const area of incoming.areas) {
-    const owed = pending.areas.get(area.id)
-    if (owed && !outranks(owed, area)) pending.areas.delete(area.id)
-  }
-  for (const item of incoming.items) {
-    const owed = pending.items.get(item.id)
-    if (owed && !outranks(owed, item)) pending.items.delete(item.id)
-  }
-  for (const later of incoming.later) {
-    const owed = pending.later.get(later.id)
-    if (owed && !outranks(owed, later)) pending.later.delete(later.id)
-  }
-  useTasks.setState((s) => ({
-    areas: merge(s.areas, incoming.areas, 'incoming'),
-    items: merge(s.items, incoming.items, 'incoming'),
-    later: merge(s.later, incoming.later, 'incoming'),
-  }))
+  useTasks.setState((s) => owed.adopt(incoming, { areas: s.areas, items: s.items, later: s.later }))
 }
 
 function listen(): void {
@@ -922,7 +827,7 @@ async function receive(message: Message): Promise<void> {
   if (!db) return
   if (message.generation > generation) {
     // A replacement this tab has not caught up with — announced, or implied by
-    // a write made on top of it. Whatever was pending here belonged to the
+    // a write made on top of it. Whatever was owed here belonged to the
     // backlog it replaced.
     try {
       await reload(await db)
@@ -942,7 +847,7 @@ function adopt(message: Extract<Message, { type: 'changed' }>): void {
   // A tab still on a build from before Later sends none, which is no news
   // about it rather than news that there is none.
   adoptNewer({ areas: message.areas, items: message.items, later: message.later ?? [] })
-  if (!diskless && nothingPending()) {
+  if (!diskless && owed.isEmpty()) {
     useStorageHealth.getState().noteSuccess('tasks')
   }
 }
@@ -1000,30 +905,13 @@ function reordered<T extends { id: string; order: number; updatedAt: Ms }>(
   return written
 }
 
-const upsert = <T extends { id: string }>(list: readonly T[], record: T): T[] => {
-  const index = list.findIndex((r) => r.id === record.id)
-  if (index === -1) return [...list, record]
-  const next = [...list]
-  next[index] = record
-  return next
-}
-
-/**
- * Union by id, keeping whichever copy of a record in both `outranks` the
- * other, and on a tie the one from the side named. Another tab's write wins a
- * tie, being what reached the disk (`adoptNewer`); the load keeps the disk's
- * copy over an edit made before it finished at the same version.
- */
-function merge<T extends { id: string; updatedAt: Ms; deletedAt?: Ms }>(
-  base: readonly T[],
-  incoming: readonly T[],
-  ties: 'base' | 'incoming',
-): T[] {
-  const byId = new Map(base.map((r) => [r.id, r]))
-  for (const record of incoming) {
-    const existing = byId.get(record.id)
-    const keep = existing && (outranks(existing, record) || (ties === 'base' && !outranks(record, existing)))
-    byId.set(record.id, keep ? existing : record)
-  }
-  return [...byId.values()]
+/** Where each of these stood in memory before a placement wrote them. */
+function positionsOf(
+  written: readonly (Area | Item)[],
+  memory: { areas: readonly Area[]; items: readonly Item[] },
+): Map<string, Position> {
+  const ids = new Set(written.map((r) => r.id))
+  return new Map(
+    [...memory.areas, ...memory.items].filter((r) => ids.has(r.id)).map((r) => [r.id, positionOf(r)]),
+  )
 }
