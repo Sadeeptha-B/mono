@@ -203,9 +203,10 @@ shaped around:
   calendar follows the hours question as it is typed.
 - **A day is answered with tasks; intentions are optional names for some of
   them.** Starting the day needs one task chosen for it, ticked or written in
-  All Tasks, the whole backlog in the calendar's column and kept from there. Tasks can
-  then be dragged into intentions, which may be narrower than an outcome or
-  wider than an epic. The
+  All Tasks, the whole backlog in the calendar's column and kept from there; an
+  epic or outcome can be ticked whole. Tasks can
+  then be dragged into intentions, one at a time or a whole place at once,
+  which may be narrower than an outcome or wider than an epic. The
   next day offers what was left unfinished, and adds nothing by itself. The
   question carries its own timer, which stops at zero and records nothing.
 - **Every focus block is for at least one task**, ticked in All Tasks beside
@@ -215,7 +216,9 @@ shaped around:
   block to the block; neither writes the other.
 - **A block can be written in while it runs.** A log field takes a line about
   how it is going, and a counter counts each urge to leave the task, with a −
-  for a mis-tap; both are on the stage and in the pop-out. The calendar draws
+  for a mis-tap; both are on the stage and in the pop-out, where pointing at
+  the purpose shows the block's tasks. The calendar's column can turn to All
+  Tasks while a block runs, to write down a task or put today's list right. The calendar draws
   them on the block at the minutes they happened, and pointing at a log's mark
   shows it, to edit or delete. The count is noticing, not a score: nothing else
   in Mono reads it.

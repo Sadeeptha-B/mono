@@ -583,13 +583,13 @@ test('an epic row holds its outcomes as columns beside its card, and its own tas
   await expect(loose).toContainText('CSRF token')
 })
 
-test('the tasks straight under an epic are headed as not in an outcome', async ({ page }) => {
+test('the tasks straight under an epic are headed as its own tasks', async ({ page }) => {
   await openMono(page)
   await openTasks(page)
   await buildAuthEpic(page)
 
   const loose = epic(page, 'Mono auth').getByRole('list', { name: 'Mono auth tasks' })
-  const heading = epic(page, 'Mono auth').getByRole('heading', { name: 'Not in an outcome' })
+  const heading = epic(page, 'Mono auth').getByRole('heading', { name: 'Tasks', exact: true })
   const [h, l] = await Promise.all([heading, loose].map((x) => x.boundingBox()))
   expect(Math.abs(h!.x - l!.x)).toBeLessThan(8)
   expect(h!.y).toBeLessThan(l!.y)
@@ -766,4 +766,38 @@ test('an archived task is put away, not listed as work, and can be restored', as
   await main(page).getByText('Done, dropped and archived (1)').click()
   await main(page).getByRole('button', { name: 'Restore Paint the shed' }).click()
   await expect(inbox(page, 'Home')).toContainText('Paint the shed')
+})
+
+test("an epic's or outcome's sun chooses everything open in it for today at once", async ({
+  page,
+}) => {
+  await openMono(page)
+  await openTasks(page)
+  await buildAuthEpic(page)
+  await addOnTasksPage(page, 'task', 'Login pages', 'Session cookie')
+  const sun = (title: string) =>
+    main(page).getByRole('button', { name: `All of ${title} for today`, exact: true })
+  const today = main(page).getByRole('region', { name: 'Today', exact: true })
+
+  await sun('Login pages').click()
+  await expect(sun('Login pages')).toHaveAttribute('aria-pressed', 'true')
+  await expect(today).toContainText('Login form')
+  await expect(today).toContainText('Session cookie')
+  await expect(main(page).getByRole('button', { name: 'Login form for today', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+
+  // The epic holds a task still not today's, so its sun says how much is; a
+  // press chooses the rest.
+  await expect(sun('Mono auth')).toHaveAttribute('aria-pressed', 'mixed')
+  await expect(sun('Mono auth')).toContainText('2 of 3')
+  await sun('Mono auth').click()
+  await expect(today).toContainText('CSRF token')
+  await expect(sun('Mono auth')).toHaveAttribute('aria-pressed', 'true')
+
+  // Pressed again, all of it leaves today and stays in the backlog.
+  await sun('Mono auth').click()
+  await expect(today).not.toContainText('Login form')
+  await expect(outcome(page, 'Login pages')).toContainText('Login form')
 })

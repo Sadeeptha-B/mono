@@ -468,3 +468,49 @@ describe('a browser that refuses to save', () => {
     expect(storage.getItem('mono.session')).not.toBeNull()
   })
 })
+
+describe('choosing and grouping several tasks at once', () => {
+  beforeEach(async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(TODAY)
+    installStorageMock().clear()
+    ;({ useSession, selectRegions, useStorageHealth } = await import('./session'))
+    useSession.setState({ events: [], session: initialState, phase: initialPhase, dayKey: null })
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
+    installStorageMock().clear()
+    useSession.setState({ events: [], session: initialState, phase: initialPhase, dayKey: null })
+  })
+
+  const written = () => useSession.getState().events.map((e) => e.type)
+
+  it('chooses and puts back a whole outcome, writing only what changes', () => {
+    const { addToToday, addAllToToday, removeAllFromToday } = useSession.getState()
+    addToToday('a')
+    addAllToToday(['a', 'b', 'c'])
+    expect(useSession.getState().session.today).toEqual({ a: null, b: null, c: null })
+    expect(written()).toEqual(['today/taskAdded', 'today/taskAdded', 'today/taskAdded'])
+
+    removeAllFromToday(['b', 'c', 'elsewhere'])
+    expect(useSession.getState().session.today).toEqual({ a: null })
+    expect(written().filter((t) => t === 'today/taskRemoved')).toHaveLength(2)
+  })
+
+  it('carries several into an intention, choosing those not yet today, and back out to none', () => {
+    const { addToToday, addIntention, linkTask, linkTasks } = useSession.getState()
+    addToToday('a')
+    const admin = addIntention({ title: 'Admin' })
+    linkTask('b', admin)
+    const before = written().length
+
+    linkTasks(['a', 'b', 'c'], admin)
+    expect(useSession.getState().session.today).toEqual({ a: admin, b: admin, c: admin })
+    // `b` was already there.
+    expect(written().length - before).toBe(2)
+
+    linkTasks(['a', 'd'], null)
+    expect(useSession.getState().session.today).toEqual({ a: null, b: admin, c: admin, d: null })
+  })
+})

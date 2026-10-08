@@ -23,6 +23,7 @@ import {
   newItem,
   nextVersion,
   nextOrder,
+  openTasksBeneath,
   openTasks,
   openTasksUnder,
   outranks,
@@ -191,6 +192,23 @@ describe('placeAmong', () => {
       const at = siblings.findIndex((s) => s.id === id)
       expect(siblings[at + 1]!.id).toBe('b')
     }
+  })
+})
+
+describe('openTasksBeneath', () => {
+  it('takes every open task beneath a place, its places included, and none done', () => {
+    const items = [
+      item('epic', 'epic', 'work'),
+      item('outcome', 'outcome', 'epic'),
+      item('form', 'task', 'outcome'),
+      item('cookie', 'task', 'outcome', { order: 1 }),
+      item('loose', 'task', 'epic', { order: 2 }),
+      item('done', 'task', 'outcome', { order: 3, status: 'done', doneAt: AT }),
+    ]
+    const beneath = openTasksBeneath(taskTreeWithDone(items, [work], dayKey(AT)))
+    expect(beneath.get('outcome')).toEqual(['form', 'cookie'])
+    expect(beneath.get('epic')).toEqual(['loose', 'form', 'cookie'])
+    expect(beneath.get('work')).toEqual(['loose', 'form', 'cookie'])
   })
 })
 

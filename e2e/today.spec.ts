@@ -60,7 +60,9 @@ test("today's tasks are chosen from the backlog in place, and put back the same 
   await goToStage(page, 'Today')
   const tree = todayBrowser(page)
   await expect(tree).toContainText('Outcome: Login pages')
-  await expect(tree.getByRole('checkbox')).toHaveCount(3)
+  // A box for each task, and one for each epic and outcome, which takes all of it.
+  await expect(tree.getByRole('checkbox')).toHaveCount(5)
+  await expect(tree.getByRole('checkbox', { name: /^All of / })).toHaveCount(2)
 
   // A tick chooses a task for today, and today shows it under its places,
   // each said once: tasks from two areas are under both.
@@ -626,4 +628,82 @@ test("today's tasks survive a reload and are gone the next day", async ({ page }
   await goToStage(page, 'Today')
   await expect(todayList(page)).not.toContainText('Handle the billing ticket')
   await expect(start(page)).toBeDisabled()
+})
+
+/** Work › Mono auth › Login pages with two tasks, and one straight under the epic. */
+async function buildLoginPages(page: Page) {
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await addOnTasksPage(page, 'epic', 'Work', 'Mono auth')
+  await addOnTasksPage(page, 'outcome', 'Mono auth', 'Login pages')
+  await addOnTasksPage(page, 'task', 'Login pages', 'Login form')
+  await addOnTasksPage(page, 'task', 'Login pages', 'Session cookie')
+  await addOnTasksPage(page, 'task', 'Mono auth', 'CSRF token')
+  await page.getByRole('link', { name: 'Back to today' }).click()
+  await goToStage(page, 'Today')
+}
+
+test('a whole outcome or epic is ticked for today at once', async ({ page }) => {
+  await openMono(page)
+  await buildLoginPages(page)
+  const tree = todayBrowser(page)
+  const box = (name: string) => tree.getByRole('checkbox', { name, exact: true })
+  const mixed = (name: string) => box(name).evaluate((el) => (el as HTMLInputElement).indeterminate)
+
+  await box('All of Login pages').check()
+  await expect(box('Login form')).toBeChecked()
+  await expect(box('Session cookie')).toBeChecked()
+  await expect(todayList(page)).toContainText('Session cookie')
+  // The epic holds a task not yet ticked, so its box is mixed; pressed, it
+  // takes the rest.
+  await expect(box('All of Mono auth')).not.toBeChecked()
+  expect(await mixed('All of Mono auth')).toBe(true)
+  await box('All of Mono auth').check()
+  await expect(box('CSRF token')).toBeChecked()
+
+  // And unticked, all of it leaves today.
+  await box('All of Mono auth').uncheck()
+  await expect(box('Login form')).not.toBeChecked()
+  await expect(todayList(page)).not.toContainText('CSRF token')
+})
+
+test('an outcome is carried into an intention whole, from All Tasks or by its heading in today', async ({
+  page,
+}) => {
+  await openMono(page)
+  await buildLoginPages(page)
+  await addIntention(page, 'Auth')
+  const tree = todayBrowser(page)
+
+  // Dragged by its row from All Tasks, all of it is chosen and grouped at once.
+  const row = tree.getByText('Login pages', { exact: true })
+  const from = (await row.boundingBox())!
+  await page.mouse.move(from.x + 5, from.y + 5)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 20, from.y + 15, { steps: 5 })
+  const to = (await intention(page, 'Auth').boundingBox())!
+  await page.mouse.move(to.x + 20, to.y + 10, { steps: 10 })
+  await page.mouse.up()
+  await expect(intention(page, 'Auth')).toContainText('Login form')
+  await expect(intention(page, 'Auth')).toContainText('Session cookie')
+  await expect(tree.getByRole('checkbox', { name: 'CSRF token', exact: true })).not.toBeChecked()
+
+  // In today's list, a place's heading carries what it heads there: picked up
+  // by its grip and put down under no intention, focus following it.
+  const grip = intention(page, 'Auth').getByRole('button', {
+    name: 'Move tasks in Login pages',
+    exact: true,
+  })
+  await grip.click()
+  await todayList(page)
+    .getByRole('button', { name: 'Move tasks in Login pages to no intention', exact: true })
+    .click()
+  await expect(intention(page, 'Auth')).not.toContainText('Login form')
+  await expect(todayList(page).getByRole('region', { name: 'Not grouped' })).toContainText(
+    'Session cookie',
+  )
+  await expect(
+    todayList(page)
+      .getByRole('region', { name: 'Not grouped' })
+      .getByRole('button', { name: 'Move tasks in Login pages', exact: true }),
+  ).toBeFocused()
 })

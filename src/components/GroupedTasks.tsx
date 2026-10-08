@@ -28,6 +28,7 @@ import { PATH_SEPARATOR, type Item, type TaskTreeNode } from '@/domain/tasks'
 /** How every level of one list is drawn, handed down unchanged. */
 type Look = {
   renderTask: (task: Item) => ReactNode
+  renderPlace: ((node: TaskTreeNode, line: string, className: string) => ReactNode) | undefined
   gutter: 'narrow' | 'wide'
   placeText: 'text-xs' | 'text-sm'
 }
@@ -36,6 +37,7 @@ export function GroupedTasks({
   groups,
   label,
   renderTask,
+  renderPlace,
   gutter = 'narrow',
   placeText = 'text-xs',
   className = '',
@@ -45,13 +47,20 @@ export function GroupedTasks({
   label: string
   /** What a task's row holds, inside its list item. */
   renderTask: (task: Item) => ReactNode
+  /**
+   * A place's line, for a caller that does more with it than say it: today's
+   * list carries everything under a place by its heading. Given the place the
+   * line ends with — the one whose tasks it heads — the line as written, and
+   * the classes it is set in. Without it, the line is text.
+   */
+  renderPlace?: Look['renderPlace']
   /** Room between a guide line and its rows: `wide` for something hung there. */
   gutter?: Look['gutter']
   /** The size of a place's line. */
   placeText?: Look['placeText']
   className?: string
 }) {
-  const look: Look = { renderTask, gutter, placeText }
+  const look: Look = { renderTask, renderPlace, gutter, placeText }
   return (
     <ul aria-label={label} className={`flex flex-col gap-1.5 ${className}`}>
       {groups.map((node) => (
@@ -76,11 +85,15 @@ function Group({
     return <Group node={only} above={[...above, node.name]} look={look} />
   }
   const top = above.length === 0 && node.kind === 'area'
+  const line = [...above, node.name].join(PATH_SEPARATOR)
+  const lineClass = `truncate ${look.placeText} ${top ? 'text-body' : 'text-muted'}`
   return (
     <li className="min-w-0">
-      <div className={`truncate ${look.placeText} ${top ? 'text-body' : 'text-muted'}`}>
-        {[...above, node.name].join(PATH_SEPARATOR)}
-      </div>
+      {look.renderPlace ? (
+        look.renderPlace(node, line, lineClass)
+      ) : (
+        <div className={lineClass}>{line}</div>
+      )}
       <ul
         className={`mt-1 ml-1 flex flex-col gap-1 border-l border-line ${
           look.gutter === 'wide' ? 'pl-5' : 'pl-3'

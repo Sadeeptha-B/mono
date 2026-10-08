@@ -22,7 +22,7 @@
  * not. A shared constant would have to pick one of those and be wrong somewhere.
  */
 
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 
 import {
   BREAK_DURATIONS,
@@ -30,7 +30,8 @@ import {
   describeBreakCost,
   FREE_BREAK,
 } from '@/components/breakCost'
-import { BlockTasks } from '@/components/BlockTasks'
+import { BlockTasks, useBlockTasks } from '@/components/BlockTasks'
+import { cardClass, useOpenCard } from '@/components/hoverCard'
 import { QuestionClock } from '@/components/QuestionClock'
 import { useTodayBacklog } from '@/components/useTodayBacklog'
 import { GhostButton, PrimaryButton } from '@/components/ui'
@@ -131,10 +132,59 @@ export function MiniTimer({
       <div className="mt-0.5 text-[10px] text-muted">{face.modeLabel}</div>
 
       {active.kind === 'block' && active.purpose && (
-        // Named as on the stage, so the same line reads the same in both.
-        <p className="mt-2 line-clamp-2 text-sm leading-snug text-body">
-          <span className="text-muted">Purpose:</span> {active.purpose}
-        </p>
+        <PurposeLine purpose={active.purpose} taskIds={active.taskIds} />
+      )}
+    </div>
+  )
+}
+
+/** How wide the purpose's card is, and how tall before it scrolls, where there is room. */
+const PURPOSE_CARD = { width: 260, height: 180 }
+
+/**
+ * The running block's purpose, and the tasks it is for in a card that opens
+ * on hover or with focus — Mono's own (`hoverCard.ts`), the card a log's mark
+ * opens on the calendar, not the browser's late plain tooltip.
+ *
+ * The window lists nothing while a block runs, because a list always on top
+ * is a list of reasons to look at it; but which tasks the sentence stands for
+ * is the question a glance at it most often asks, and pointing at it is
+ * asking. They can be ticked there, as on the stage and at the end of the
+ * block (`BlockTasks`): finishing one is often why the window was looked at.
+ * The card opens above or below the line, wherever the window has room.
+ */
+function PurposeLine({ purpose, taskIds }: { purpose: string; taskIds: readonly string[] }) {
+  const anchor = useRef<HTMLDivElement>(null)
+  const target = useRef<HTMLParagraphElement>(null)
+  const card = useRef<HTMLDivElement>(null)
+  const opening = useOpenCard(anchor, target, card, { beside: false, size: PURPOSE_CARD })
+  const tasks = useBlockTasks(taskIds)
+  const asks = tasks.length > 0
+
+  return (
+    <div ref={anchor} className="group/purpose relative mt-2" {...(asks ? opening : {})}>
+      {/* Named as on the stage, so the same line reads the same in both. */}
+      <p
+        ref={target}
+        {...(asks ? { tabIndex: 0 } : {})}
+        className={`line-clamp-2 rounded-sm text-sm leading-snug text-body ${
+          asks
+            ? 'cursor-default focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bright'
+            : ''
+        }`}
+      >
+        <span className="text-muted">Purpose:</span> {purpose}
+      </p>
+      {asks && (
+        <div
+          ref={card}
+          className={`${cardClass} hidden group-focus-within/purpose:block group-hover/purpose:block`}
+        >
+          <div className="text-[10px] font-medium tracking-widest text-muted uppercase">
+            {tasks.length === 1 ? 'Task' : `${tasks.length} tasks`}
+          </div>
+          <BlockTasks taskIds={taskIds} compact />
+        </div>
       )}
     </div>
   )

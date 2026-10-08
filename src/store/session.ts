@@ -177,6 +177,14 @@ type SessionStore = {
   addToToday: (taskId: string) => void
   /** Put a task back out of today, and out of its intention. It stays in the backlog. */
   removeFromToday: (taskId: string) => void
+  /**
+   * The same for several at once — a whole outcome or epic ticked in All
+   * Tasks — as one change to the session: one event per task, the log's shape
+   * unchanged, appended together so the day is drawn once and saved once.
+   * Those already where they are asked to be write nothing.
+   */
+  addAllToToday: (taskIds: readonly string[]) => void
+  removeAllFromToday: (taskIds: readonly string[]) => void
   /** Name a group of today's tasks. Returns its id. */
   addIntention: (input: Omit<Intention, 'id'>) => string
   updateIntention: (id: string, patch: IntentionPatch) => void
@@ -188,6 +196,12 @@ type SessionStore = {
    * intention and leave it today's.
    */
   linkTask: (taskId: string, intentionId: string | null) => void
+  /**
+   * `linkTask` for several at once: everything an outcome or epic holds,
+   * carried into an intention in one move. Those already under it write
+   * nothing; with `null`, those not yet today are chosen for it, under none.
+   */
+  linkTasks: (taskIds: readonly string[], intentionId: string | null) => void
 
   /**
    * Write a line into the running block, count an urge, or take the last one
@@ -311,6 +325,24 @@ export const useSession = create<SessionStore>()(
       removeFromToday: (taskId) =>
         get().append({ type: 'today/taskRemoved', at: Date.now(), taskId }),
 
+      addAllToToday: (taskIds) => {
+        const { today } = get().session
+        const at = Date.now()
+        const events = taskIds
+          .filter((taskId) => !Object.hasOwn(today, taskId))
+          .map((taskId): MonoEvent => ({ type: 'today/taskAdded', at, taskId }))
+        if (events.length > 0) get().append(...events)
+      },
+
+      removeAllFromToday: (taskIds) => {
+        const { today } = get().session
+        const at = Date.now()
+        const events = taskIds
+          .filter((taskId) => Object.hasOwn(today, taskId))
+          .map((taskId): MonoEvent => ({ type: 'today/taskRemoved', at, taskId }))
+        if (events.length > 0) get().append(...events)
+      },
+
       addIntention: (input) => {
         const id = newId()
         get().append({ type: 'intention/added', at: Date.now(), intention: { ...input, id } })
@@ -324,6 +356,22 @@ export const useSession = create<SessionStore>()(
 
       linkTask: (taskId, intentionId) =>
         get().append({ type: 'intention/taskLinked', at: Date.now(), taskId, intentionId }),
+
+      linkTasks: (taskIds, intentionId) => {
+        const { today } = get().session
+        const at = Date.now()
+        const events = taskIds.flatMap((taskId): MonoEvent[] => {
+          if (!Object.hasOwn(today, taskId)) {
+            return intentionId === null
+              ? [{ type: 'today/taskAdded', at, taskId }]
+              : [{ type: 'intention/taskLinked', at, taskId, intentionId }]
+          }
+          return today[taskId] === intentionId
+            ? []
+            : [{ type: 'intention/taskLinked', at, taskId, intentionId }]
+        })
+        if (events.length > 0) get().append(...events)
+      },
 
       logBlock: (text) => get().dispatch({ type: 'logBlock', at: Date.now(), text }),
 

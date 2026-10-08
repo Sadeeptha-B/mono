@@ -378,19 +378,29 @@ export function App() {
 
   const stage = stageFor(phase, setupOpen, setupStage)
 
-  // The question choosing tasks, if one is open: while it is, the column shows
-  // All Tasks instead of the day, and its switch turns it back. A choice made
-  // by hand lasts until the question closes, adjusted during render so a stale
-  // choice is never painted.
+  // The question choosing tasks, if one is open, or the block running: while
+  // either is, the column can show All Tasks instead of the day, from its
+  // switch. The questions open on All Tasks, where their answers come from; a
+  // running block opens on the day, which is drawing it. A choice made by hand
+  // lasts until the question closes or the block ends, adjusted during render
+  // so a stale choice is never painted.
   const choosingFor: ChoosingFor | null =
-    stage === 'today' ? 'today' : phase.name === 'definingPurpose' ? 'block' : null
+    stage === 'today'
+      ? 'today'
+      : phase.name === 'definingPurpose'
+        ? 'block'
+        : phase.name === 'focusing'
+          ? 'focus'
+          : null
   if (columnChoice !== null && columnChoice.for !== choosingFor) setColumnChoice(null)
   const columnView: ColumnView =
     choosingFor === null
       ? 'day'
       : columnChoice?.for === choosingFor
         ? columnChoice.view
-        : 'tasks'
+        : choosingFor === 'focus'
+          ? 'day'
+          : 'tasks'
   const showColumn = (view: ColumnView) => {
     if (choosingFor !== null) setColumnChoice({ for: choosingFor, view })
   }
@@ -408,6 +418,11 @@ export function App() {
     const { session, addToToday } = useSession.getState()
     if (on && !isToday(session.today, taskId)) addToToday(taskId)
     setBlockPick((pick) => tickTasks(pick, [taskId], on))
+  }, [])
+  // Everything open in an epic or outcome at once, the same way.
+  const tickAllForBlock = useCallback((taskIds: readonly string[], on: boolean) => {
+    if (on) useSession.getState().addAllToToday(taskIds)
+    setBlockPick((pick) => tickTasks(pick, taskIds, on))
   }, [])
   const columnSwitch = <ColumnSwitch view={columnView} onView={showColumn} />
 
@@ -888,6 +903,7 @@ export function App() {
                   choosingFor={choosingFor}
                   blockSelected={blockSelected}
                   onBlockTick={tickForBlock}
+                  onBlockTickMany={tickAllForBlock}
                   switcher={columnSwitch}
                 />
               </div>
