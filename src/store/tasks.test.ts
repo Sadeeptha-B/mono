@@ -751,6 +751,166 @@ describe('ordering', () => {
       expect(titlesUnder(tab, work)).toEqual(['B', 'A', 'C here', 'D'])
       expect(titlesUnder(await openTab(factory), work)).toEqual(['B', 'A', 'C here', 'D'])
     })
+
+    it('does not bring back a filed task when the renumbering its filing needed is refused', async () => {
+      const { tab, work, items } = await tiedSiblings()
+      const line = tab.useTasks.getState().addLater('Filed')!
+      await settle()
+      const refusing = refuseWrites()
+      tab.useTasks.getState().fileLater(line, work, 'b')
+      // The filed task is numbered again with its siblings, so its filing
+      // lands only with the renumbering.
+      tab.useTasks.getState().placeItem('a', work, 'c')
+      await settle()
+      refusing.mockRestore()
+      await writtenElsewhere({ items: [renamedElsewhere(items)] })
+
+      tab.useTasks.getState().renameItem('d', 'D')
+      await settle()
+      await settle()
+      const filed = () => tab.useTasks.getState().items.filter((i) => i.title === 'Filed' && !i.deletedAt)
+      expect(filed()).toEqual([])
+      expect(waitingLater(tab.useTasks.getState().later).map((l) => l.title)).toEqual(['Filed'])
+
+      // Filed again, it is one task, here and on disk.
+      tab.useTasks.getState().fileLater(line, work)
+      await settle()
+      expect(filed()).toHaveLength(1)
+      const reloaded = await openTab(factory)
+      expect(reloaded.useTasks.getState().items.filter((i) => i.title === 'Filed')).toHaveLength(1)
+      expect(waitingLater(reloaded.useTasks.getState().later)).toEqual([])
+    })
+  })
+
+  /*
+   * A drop worked out while an earlier renumbering is on its way stands on
+   * orders that may never land. Refused, the renumbering takes back with it
+   * every later move among the same siblings; a move elsewhere is its own.
+   */
+  describe('when a renumbering is refused after more was placed behind it', () => {
+    const renamedB = (items: Item[]) => ({
+      ...items[1]!,
+      title: 'B renamed',
+      updatedAt: Date.now() + 60_000,
+    })
+
+    it('takes back a drop among the same siblings that was worked out from it', async () => {
+      const { tab, work, items } = await tiedSiblings()
+      await writtenElsewhere({ items: [renamedB(items)] })
+      const held = holdNext('readwrite')
+
+      // A before C: B 0, A 1, C 2, D 3, on its way to the disk.
+      tab.useTasks.getState().placeItem('a', work, 'c')
+      await held.holding
+      // D before C, between A and C as they now stand: one write, at 1.5.
+      tab.useTasks.getState().placeItem('d', work, 'c')
+      expect(titlesUnder(tab, work)).toEqual(['B', 'A', 'D', 'C'])
+      held.release()
+      await settle()
+      await settle()
+
+      expect(titlesUnder(tab, work)).toEqual(['A', 'B renamed', 'C', 'D'])
+      expect(titlesUnder(await openTab(factory), work)).toEqual(['A', 'B renamed', 'C', 'D'])
+    })
+
+    it('takes back a move into the same siblings, and keeps a move out of them', async () => {
+      const { tab, work, items } = await tiedSiblings()
+      const personal = activeAreas(tab.useTasks.getState().areas)[1]!.id
+      const elsewhere = tab.useTasks.getState().addItem({ kind: 'task', title: 'E', parentId: personal })!
+      await settle()
+      await writtenElsewhere({ items: [renamedB(items)] })
+      const held = holdNext('readwrite')
+
+      tab.useTasks.getState().placeItem('a', work, 'c')
+      await held.holding
+      // D out to Personal, after E; and E into Work, last as Work now stands.
+      tab.useTasks.getState().placeItem('d', personal, null)
+      tab.useTasks.getState().moveItem(elsewhere, work)
+      held.release()
+      await settle()
+      await settle()
+
+      const check = (t: TasksModule) => {
+        expect(titlesUnder(t, work)).toEqual(['A', 'B renamed', 'C'])
+        expect(titlesUnder(t, personal)).toEqual(['E', 'D'])
+      }
+      check(tab)
+      check(await openTab(factory))
+    })
+
+    it('takes back a move as the disk has the record, not as this tab last saw it', async () => {
+      const { tab, work, items } = await tiedSiblings()
+      const personal = activeAreas(tab.useTasks.getState().areas)[1]!.id
+      const third = tab.useTasks.getState().addArea('Third')!
+      const e = tab.useTasks.getState().addItem({ kind: 'task', title: 'E', parentId: personal })!
+      await settle()
+      // Another tab has moved E to Third; this tab has not heard.
+      const seen = tab.useTasks.getState().items.find((i) => i.id === e)!
+      await writtenElsewhere({
+        items: [renamedB(items), { ...seen, parentId: third, updatedAt: seen.updatedAt + 1 }],
+      })
+      const held = holdNext('readwrite')
+
+      tab.useTasks.getState().placeItem('a', work, 'c')
+      await held.holding
+      tab.useTasks.getState().moveItem(e, work)
+      held.release()
+      await settle()
+      await settle()
+
+      const check = (t: TasksModule) => {
+        expect(titlesUnder(t, work)).toEqual(['A', 'B renamed', 'C', 'D'])
+        expect(titlesUnder(t, personal)).toEqual([])
+        expect(titlesUnder(t, third)).toEqual(['E'])
+      }
+      check(tab)
+      check(await openTab(factory))
+    })
+
+    it('keeps an edit made beside the move it takes back, on the record as the disk has it', async () => {
+      const { tab, work, items } = await tiedSiblings()
+      const personal = activeAreas(tab.useTasks.getState().areas)[1]!.id
+      const third = tab.useTasks.getState().addArea('Third')!
+      const e = tab.useTasks.getState().addItem({ kind: 'task', title: 'E', parentId: personal })!
+      await settle()
+      const seen = tab.useTasks.getState().items.find((i) => i.id === e)!
+      await writtenElsewhere({
+        items: [renamedB(items), { ...seen, parentId: third, updatedAt: seen.updatedAt + 1 }],
+      })
+      const held = holdNext('readwrite')
+
+      tab.useTasks.getState().placeItem('a', work, 'c')
+      await held.holding
+      tab.useTasks.getState().moveItem(e, work)
+      tab.useTasks.getState().renameItem(e, 'E renamed')
+      held.release()
+      await settle()
+      await settle()
+
+      const check = (t: TasksModule) => {
+        expect(titlesUnder(t, work)).toEqual(['A', 'B renamed', 'C', 'D'])
+        expect(titlesUnder(t, third)).toEqual(['E renamed'])
+      }
+      check(tab)
+      check(await openTab(factory))
+    })
+
+    it('keeps a task written and dropped while it was on its way', async () => {
+      const { tab, work, items } = await tiedSiblings()
+      await writtenElsewhere({ items: [renamedB(items)] })
+      const held = holdNext('readwrite')
+
+      tab.useTasks.getState().placeItem('a', work, 'c')
+      await held.holding
+      const fresh = tab.useTasks.getState().addItem({ kind: 'task', title: 'New', parentId: work })!
+      tab.useTasks.getState().placeItem(fresh, work, 'c')
+      held.release()
+      await settle()
+      await settle()
+
+      expect(titlesUnder(tab, work)).toContain('New')
+      expect(titlesUnder(await openTab(factory), work)).toContain('New')
+    })
   })
 
   it('files a Later before a sibling when asked, and last otherwise', async () => {

@@ -36,6 +36,30 @@
  * field. What is then still different from the disk stays owed, as an edit of
  * its own. Where the disk's copy is newer than ours, it simply wins.
  *
+ * **What was placed on top of it goes back with it.** A drop made while a
+ * renumbering is on its way is worked out from the orders that renumbering
+ * gave, and those may never land: D put between A and C at 1.5, where A and C
+ * stand at 1 and 2 only if the renumbering does, lands between the wrong
+ * neighbours once it is refused. So every edit that moves a record is owed as
+ * a placement, a single drop and a move to another parent as much as a
+ * renumbering, and a refused renumbering takes back every placement among
+ * the siblings it numbered, made before it or since. A placement among other
+ * siblings is its own and stays. Each goes back to where the disk has it,
+ * never to where this tab last saw it: the write read its own members, and a
+ * placement made since is put back by a read of the disk once the write has
+ * committed, since another tab may have moved that record meanwhile and a
+ * position written blind would overwrite theirs. Unread, it is left owed as it
+ * is — a row one place off rather than a move undone that nobody made. Taken back rather than worked out again: the
+ * rule a refusal already keeps is that the drop did not happen, and a drop
+ * that depended on it did not either. Two limits are accepted for how rarely
+ * they can arise — a placement made since that leaned on another taken back
+ * under a different parent stays where it was put, and a record written new
+ * since keeps the order it was given — since neither loses anything, and at
+ * worst draws a row one place from where it was let go.
+ *
+ * A filing the disk refused takes its task with it; nothing a refused
+ * renumbering puts back brings that task back.
+ *
  * **A placed record stays owed whatever another tab says**, so its
  * renumbering is refused whole rather than landing without it, and the screen
  * keeps the order the drop gave it until the disk has answered.
@@ -107,21 +131,26 @@ export function createOwed() {
   const filedTasks = () => new Set([...filings.values()].map((f) => f.taskId))
 
   /**
-   * Owe a record as it is now. A placed record moved again — dropped a second
-   * time where there was room, or moved to another parent — takes its
-   * placement with it, so the renumbering never puts it back where it was
-   * dropped before; it keeps where it stood before the first.
+   * Owe a record as it is now, given where it stood before the edit when it
+   * stood anywhere (`before`). An edit that moves it — dropped where there was
+   * room, moved to another parent — is a placement, as a renumbering's are, so
+   * a renumbering refused under it can take it back (see the header). A placed
+   * record moved again takes its placement with it, so the renumbering never
+   * puts it back where it was dropped before; it keeps where it stood before
+   * the first.
    */
-  function owe(kind: 'areas', record: Area): void
-  function owe(kind: 'items', record: Item): void
+  function owe(kind: 'areas', record: Area, before?: Position): void
+  function owe(kind: 'items', record: Item, before?: Position): void
   function owe(kind: 'later', record: Later): void
-  function owe(kind: keyof typeof records, record: Area | Item | Later): void {
+  function owe(kind: keyof typeof records, record: Area | Item | Later, before?: Position): void {
     ;(records[kind] as Map<string, typeof record>).set(record.id, record)
     if (kind === 'later') return
     const placement = placedIn(kind).get(record.id)
     const now = positionOf(record as Placed)
-    if (placement && !samePosition(placement, now)) {
-      placedIn(kind).set(record.id, { ...now, from: placement.from })
+    if (placement) {
+      if (!samePosition(placement, now)) placedIn(kind).set(record.id, { ...now, from: placement.from })
+    } else if (before && !samePosition(before, now)) {
+      placedIn(kind).set(record.id, { ...now, from: before })
     }
   }
 
@@ -257,11 +286,17 @@ export function createOwed() {
    * Settle a write the disk took — `written`, not `superseded` — against
    * memory as it is now: release what was settled, put back what was
    * refused, and say what landed. See the header for the rules.
+   *
+   * `readAfter` is the disk as read once the write had committed, at the same
+   * generation, when its renumbering was refused: what a placement made since
+   * is put back to, since the write never read those records. Without it they
+   * are left owed as they are.
    */
   function settle(
     sent: Sent,
     result: Extract<WriteResult, { kind: 'written' }>,
     memory: BacklogContents,
+    readAfter?: BacklogContents,
   ): Settled {
     const owedNow = {
       areas: (id: string) => records.areas.get(id) ?? sent.records.areas.get(id),
@@ -303,8 +338,10 @@ export function createOwed() {
     const keptWaiting = undone
       .filter(([laterId]) => !disksLater.has(laterId))
       .map(([, filing]) => filing.waiting)
+    // Gone with their filings, and not to be put back by anything below.
+    const undoneTasks = new Set(undone.map(([, filing]) => filing.taskId))
     if (undone.length > 0) {
-      const tasks = new Set(undone.map(([, filing]) => filing.taskId))
+      const tasks = undoneTasks
       for (const id of tasks) {
         records.items.delete(id)
         placements.items.delete(id)
@@ -334,19 +371,53 @@ export function createOwed() {
     items = theDisks(items, result.stale.items)
     later = theDisks(later, result.stale.later)
 
-    // A refused renumbering puts back only what it placed, member by member.
+    // A refused renumbering puts back only what it placed, member by member,
+    // and every placement made since among the siblings it numbered: each was
+    // worked out from orders that never landed. One made since among other
+    // siblings is its own, and stays owed.
     if (result.renumberingRefused === true) {
       const onDisk = new Map<string, Placed>(
         [...result.stale.areas, ...result.stale.items].map((r) => [r.id, r]),
       )
+      const numbered = new Set([...sent.placements.items.values()].map((p) => p.parentId))
+      const among = (kind: PlacedKind, placement: Placement) =>
+        kind === 'areas' ? sent.placements.areas.size > 0 : numbered.has(placement.parentId)
+      const takenBack = (kind: PlacedKind) => {
+        const back = new Map<string, Placement>()
+        for (const [id, placement] of sent.placements[kind]) {
+          if (!placedSince(kind, id)) back.set(id, placement)
+        }
+        // What is still placed here was placed since: those it sent settled.
+        for (const [id, placement] of placements[kind]) {
+          if (among(kind, placement)) back.set(id, placement)
+        }
+        for (const id of undoneTasks) back.delete(id)
+        return back
+      }
+      // What the disk holds of a record, as far as this tab knows: a member the
+      // write judged was read by it, and absent was absent. Anything else was
+      // not read by the write, and is answered by the read made after it
+      // (`readAfter`) — or not at all, when there was none.
+      const read = new Map<string, Placed>(
+        [...(readAfter?.areas ?? []), ...(readAfter?.items ?? [])].map((r) => [r.id, r]),
+      )
+      const onDiskNow = (kind: PlacedKind, id: string): { copy: Placed | undefined } | null => {
+        if (sent.placements[kind].has(id)) return { copy: onDisk.get(id) }
+        return readAfter ? { copy: read.get(id) } : null
+      }
       const putBack = <T extends Placed>(kind: PlacedKind, list: T[]): T[] => {
         let next = list
-        for (const [id, placement] of sent.placements[kind]) {
-          // Placed again since, it is owed in that renumbering now.
-          if (placedSince(kind, id)) continue
+        for (const [id, placement] of takenBack(kind)) {
+          const known = onDiskNow(kind, id)
+          // Not known: left owed as it is rather than put back somewhere this
+          // tab has not read. A position written blind could overwrite where
+          // another tab has since moved it; one left standing is a row one
+          // place off at worst.
+          if (known === null) continue
+          placements[kind].delete(id)
           const ours = owedNow[kind](id) as T | undefined
           if (!ours) continue
-          const disk = onDisk.get(id) as T | undefined
+          const disk = known.copy as T | undefined
           const shown = next.find((r) => r.id === id)
           if (disk && beats(disk, ours)) {
             // Newer on disk, or deleted there: ours is out of date.
