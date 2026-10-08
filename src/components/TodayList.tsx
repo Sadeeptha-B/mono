@@ -69,8 +69,10 @@ import {
   MoveHere,
   useCarriedRow,
   useCarryState,
+  type Carried,
   type CarryHand,
   type CarryMode,
+  type CarryPayload,
 } from './carry'
 import { GroupedTasks } from './GroupedTasks'
 import { DeleteIcon, DoneRingIcon } from './icons'
@@ -96,14 +98,10 @@ type TodayCarried = Item | Bundle
 const isBundle = (carried: TodayCarried): carried is Bundle => 'taskIds' in carried
 
 /**
- * A heading's carry id: the group it heads part of — an intention, or none —
- * and the place. The same place heads part of several groups, and each is a
- * different handful of tasks. `|` is in no id Mono makes.
+ * A heading's key: the group it heads part of — an intention, or none — and
+ * the place. Compared, never read back: what a heading carries is its payload.
  */
-const HEADING = 'heading|'
-const headingId = (group: string, placeId: string) => `${HEADING}${group}|${placeId}`
-const headingPlace = (id: string): string | null =>
-  id.startsWith(HEADING) ? (id.split('|')[2] ?? null) : null
+const headingKey = (group: string, placeId: string) => `heading:${group}:${placeId}`
 
 type PlaceEntry = { name: string; kind: TaskTreeNode['kind']; open: readonly string[] }
 
@@ -119,31 +117,29 @@ function placeIndex(tree: readonly TaskTreeNode[]): ReadonlyMap<string, PlaceEnt
   return index
 }
 
-/** The bundle an id names, or undefined when it names none or nothing in it is open. */
+/** The bundle a payload names, or undefined when nothing in it is open. */
 function bundleOf(
-  id: string,
+  carried: Carried,
+  payload: CarryPayload,
   by: CarryMode,
   places: ReadonlyMap<string, PlaceEntry>,
   today: Today,
 ): Bundle | undefined {
-  const placeId = headingPlace(id)
+  const place = places.get(payload.placeId)
+  if (!place) return undefined
   let taskIds: readonly string[]
-  let place: PlaceEntry | undefined
-  if (placeId !== null) {
-    const group = id.slice(HEADING.length, id.length - placeId.length - 1)
-    place = places.get(placeId)
-    if (!place) return undefined
+  if (payload.kind === 'heading') {
     const inPlace = new Set(place.open)
-    const inGroup = group === NOT_GROUPED ? ungroupedToday(today) : tasksOfIntention(group, today)
+    const inGroup =
+      payload.group === NOT_GROUPED ? ungroupedToday(today) : tasksOfIntention(payload.group, today)
     taskIds = inGroup.filter((taskId) => inPlace.has(taskId))
   } else {
     // A place is carried from All Tasks only, by drag; an area is too much
     // of a life to carry at once.
-    place = places.get(id)
-    if (by !== 'drag' || !place || place.kind === 'area') return undefined
+    if (by !== 'drag' || place.kind === 'area') return undefined
     taskIds = place.open
   }
-  return taskIds.length > 0 ? { id, title: `tasks in ${place.name}`, taskIds } : undefined
+  return taskIds.length > 0 ? { id: carried.id, title: `tasks in ${place.name}`, taskIds } : undefined
 }
 
 /** An intention being renamed, and the name typed so far. */
@@ -201,24 +197,17 @@ export function TodayCarry({
   const taskById = backlog.task
   const group = backlog.group
   const places = useMemo(() => placeIndex(backlog.pickerTree), [backlog.pickerTree])
-  // A bundle is worked out once per change to the day or the backlog, so the
-  // one in hand keeps its identity across the clock's tick.
-  const bundles = useMemo(() => new Map<string, Bundle>(), [places, today])
+  // Changes with the day or the backlog, not the clock, so the carry asks it
+  // again only then and a bundle in hand keeps its identity across the tick.
   const find = useCallback(
-    (id: string, by: CarryMode): TodayCarried | undefined => {
-      const task = taskById(id)
-      if (task) {
-        // Only today's rows have a grip; a drag may come from All Tasks.
-        const inPlace = by === 'drag' || isToday(today, id)
-        return task.status === 'open' && inPlace ? task : undefined
-      }
-      const known = bundles.get(id)
-      if (known) return known
-      const bundle = bundleOf(id, by, places, today)
-      if (bundle) bundles.set(id, bundle)
-      return bundle
+    (carried: Carried, by: CarryMode): TodayCarried | undefined => {
+      if (carried.payload) return bundleOf(carried, carried.payload, by, places, today)
+      const task = taskById(carried.id)
+      // Only today's rows have a grip; a drag may come from All Tasks.
+      const inPlace = by === 'drag' || isToday(today, carried.id)
+      return task?.status === 'open' && inPlace ? task : undefined
     },
-    [taskById, today, places, bundles],
+    [taskById, today, places],
   )
   const takes = useCallback(
     (carried: TodayCarried, target: string) =>
@@ -240,7 +229,7 @@ export function TodayCarry({
         const inGroup =
           target === NOT_GROUPED ? ungroupedToday(after) : tasksOfIntention(target, after)
         const landed = deepestHolding(group(inGroup), carried.taskIds)
-        return landed === null ? undefined : headingId(target, landed.id)
+        return landed === null ? undefined : headingKey(target, landed.id)
       }
       if (target !== NOT_GROUPED) linkTask(carried.id, target)
       else if (isToday(today, carried.id)) linkTask(carried.id, null)
@@ -539,7 +528,11 @@ function PlaceHeading({
   line: string
   className: string
 }) {
-  const carried = { id: headingId(group, node.id), title: `tasks in ${node.name}` }
+  const carried: Carried = {
+    id: headingKey(group, node.id),
+    title: `tasks in ${node.name}`,
+    payload: { kind: 'heading', group, placeId: node.id },
+  }
   const open = holdsOpen(node)
   const { picked, dragProps } = useCarriedRow(carried, open)
   return (
