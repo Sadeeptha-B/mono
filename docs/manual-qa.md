@@ -148,7 +148,10 @@ The two-tab checks below assume it is there.
     and press Enter, then count an urge. The first click must land on the field
     or the button and the typing must reach the field, not the app behind. The
     window must not take the focus by itself before you click, and the tab's
-    log list and counter must show both at once.
+    log list and counter must show both at once. Then do the same with
+    `⤴ Later`: the window must say `1 for later`, the line must appear on the
+    tab's Tasks page, and at the opening size the openers, the counts, the urges
+    and the sound must still share one row.
 
 ## Ambient sound
 

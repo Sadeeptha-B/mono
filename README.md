@@ -126,8 +126,9 @@ rest of the day, so it never gets covered up.
 The **tasks page** at `#/tasks` is a page for the guide's reason: you go there
 and stay a while. It holds the backlog — areas of life, each with an inbox of
 the tasks that sit directly under it, then its epics, each epic's outcomes, and
-tasks at any of those levels — and today's tasks, grouped under the intentions
-some of them are given. Each area is a band split by a rule: epics and the inbox
+tasks at any of those levels — today's tasks, grouped under the intentions
+some of them are given, and **Later**, what was put down to come back to,
+waiting to be carried into a column as a task, let go or deleted. Each area is a band split by a rule: epics and the inbox
 down the left, and level with each, its outcomes as columns of tasks. Epics and
 outcomes are finished by hand; finishing or archiving one hides everything
 inside without changing it, and deleting one, or an area, deletes its subtree.
@@ -143,8 +144,8 @@ Settings and from the day's questions about hours and commitments rather than
 from the header.
 
 The header itself is places on the left — **Today** and **Tasks**, the two views
-a day moves between — and tools as icons on the right: the room's swatch, the
-pop-out, the guide and Settings, each named on hover.
+a day moves between — and tools as icons on the right: Later, the room's
+swatch, the pop-out, the guide and Settings, each named on hover.
 
 Session state is a fold over an append-only event log
 ([src/domain/events.ts](src/domain/events.ts)). The log is persisted and the
@@ -156,7 +157,8 @@ the day has gone.
 The backlog is the one thing that is not in the log. Tasks are long-lived
 records edited in place, so they live in IndexedDB as current state
 ([src/store/tasks.ts](src/store/tasks.ts)), and the log refers to them only by
-id. Export carries both.
+id. What is put down for later lives beside them, for the same reasons
+([src/domain/later.ts](src/domain/later.ts)). Export carries all of it.
 
 ## Behaviour worth knowing
 
@@ -214,6 +216,12 @@ shaped around:
   them on the block at the minutes they happened, and pointing at a log's mark
   shows it, to edit or delete. The count is noticing, not a score: nothing else
   in Mono reads it.
+- **A tangent is put down, not filed.** `Later` in the header, or `⤴ Later`
+  beside `✎ Log` while a block runs, keeps a line that is about no block: an
+  idea, a question, something to look into. It waits on the tasks page, with
+  what the block was for beside it if it came from one, and is never drawn on
+  the calendar. Filing it — carrying it into an area, epic or outcome — makes
+  it a task there.
 - **Recurring commitments come round by themselves.** A series written on the
   routine page appears among the commitments of every day it falls on.
   Editing or removing it on the day changes that day only; changing the series
