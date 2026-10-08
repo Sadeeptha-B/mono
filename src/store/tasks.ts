@@ -296,14 +296,18 @@ let diskless = false
 const importing = () => importsInFlight > 0
 
 export const useTasks = create<TaskStore>()((set, get) => {
+  // Owed with where it stood before, so an edit that moves it is owed as a
+  // placement and can be taken back with a renumbering it depended on.
   const putArea = (area: Area) => {
+    const was = get().areas.find((a) => a.id === area.id)
     set((s) => ({ areas: upsert(s.areas, area) }))
-    owed.owe('areas', area)
+    owed.owe('areas', area, was && positionOf(was))
     void schedule(flush)
   }
   const putItem = (item: Item) => {
+    const was = get().items.find((i) => i.id === item.id)
     set((s) => ({ items: upsert(s.items, item) }))
-    owed.owe('items', item)
+    owed.owe('items', item, was && positionOf(was))
     void schedule(flush)
   }
   // A placement written as one record is an edit like any other. One that
@@ -713,12 +717,29 @@ async function flush(): Promise<void> {
     return
   }
 
+  // A refused renumbering takes back what was placed among its siblings since
+  // it was sent, and this write never read those records. Read the disk once,
+  // at this generation, so each goes back to where the disk has it — another
+  // tab may have moved it — rather than to where this tab last saw it.
+  let readAfter: BacklogContents | undefined
+  if (result.renumberingRefused === true) {
+    try {
+      const read = await open.readAll()
+      if (read.generation === generation) {
+        readAfter = { areas: read.areas, items: read.items, later: read.later }
+      }
+    } catch {
+      // Unread, they are left owed as they are (`owed.settle`).
+    }
+  }
+
   const memory = useTasks.getState()
-  const settled = owed.settle(sent, result, {
-    areas: memory.areas,
-    items: memory.items,
-    later: memory.later,
-  })
+  const settled = owed.settle(
+    sent,
+    result,
+    { areas: memory.areas, items: memory.items, later: memory.later },
+    readAfter,
+  )
   useTasks.setState(settled.memory)
   if (owed.isEmpty()) {
     useStorageHealth.getState().noteSuccess('tasks')

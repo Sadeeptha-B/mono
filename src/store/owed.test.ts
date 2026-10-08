@@ -175,6 +175,90 @@ describe('what the disk answers', () => {
     expect(settled.again).toBe(false)
   })
 
+  it('does not put back a filed task its refused filing took away', () => {
+    const owed = createOwed()
+    const filed = task('filed', 2.5, { updatedAt: 11 })
+    const waiting = line('l')
+    const gone = { ...waiting, deletedAt: 11, updatedAt: 11 }
+    owed.file(filed, gone, waiting, false)
+    const a = task('a', 0)
+    const moved = { ...filed, order: 0, updatedAt: 12 }
+    const a2 = { ...a, order: 1, updatedAt: 12 }
+    owed.place('items', [moved, a2], before(filed, a))
+
+    const sent = owed.batch()!
+    const settled = owed.settle(
+      sent,
+      written({ items: [{ ...a, updatedAt: 50 }] }, { refused: ['l'], renumberingRefused: true }),
+      { ...nothing(), items: [moved, a2], later: [gone] },
+    )
+    expect(settled.memory.items.map((i) => i.id)).toEqual(['a'])
+    expect(settled.memory.later).toEqual([waiting])
+    expect(owed.isEmpty()).toBe(true)
+  })
+
+  it('takes back a drop made since among the siblings a refused renumbering numbered, and no other', () => {
+    const { owed, b, c, b2, c2 } = renumbered()
+    const sent = owed.batch()!
+    // While it is on its way: D dropped between them, E moved under another parent.
+    const d = task('d', 6)
+    const d2 = { ...d, order: 1.5, updatedAt: 12 }
+    owed.owe('items', d2, positionOf(d))
+    const e = task('e', 0, { parentId: 'home' })
+    const e2 = { ...e, order: 4, updatedAt: 12 }
+    owed.owe('items', e2, positionOf(e))
+
+    const settled = owed.settle(
+      sent,
+      written({ items: [{ ...b, updatedAt: 50 }, c] }, { renumberingRefused: true }),
+      { ...nothing(), items: [b2, c2, d2, e2] },
+      // Read once the write had committed: D as the disk has it.
+      { ...nothing(), items: [b, c, d, e] },
+    )
+    const shown = new Map(settled.memory.items.map((i) => [i.id, i]))
+    expect(shown.get('d')).toEqual(d)
+    expect(shown.get('e')).toMatchObject({ order: 4 })
+    const next = owed.batch()!.changes
+    expect(next.renumbering?.items.map((i) => i.id)).toEqual(['e'])
+    expect(next.items).toEqual([])
+  })
+
+  it('puts a drop made since back where the disk has it, which another tab may have changed', () => {
+    const { owed, b, c, b2, c2 } = renumbered()
+    const sent = owed.batch()!
+    const d = task('d', 6)
+    const d2 = { ...d, order: 1.5, title: 'D here', updatedAt: 12 }
+    owed.owe('items', d2, positionOf(d))
+    // Another tab had moved D to another parent before this tab moved it.
+    const theirs = { ...d, parentId: 'home', order: 0, updatedAt: 11 }
+
+    const settled = owed.settle(
+      sent,
+      written({ items: [{ ...b, updatedAt: 50 }, c] }, { renumberingRefused: true }),
+      { ...nothing(), items: [b2, c2, d2] },
+      { ...nothing(), items: [b, c, theirs] },
+    )
+    // Its rename stays this tab's; where it stands is the disk's.
+    const restored = { ...d2, parentId: 'home', order: 0 }
+    expect(settled.memory.items.find((i) => i.id === 'd')).toEqual(restored)
+    expect(owed.batch()!.changes.items).toEqual([restored])
+  })
+
+  it('leaves a drop made since owed as it is when the disk could not be read after', () => {
+    const { owed, b, c, b2, c2 } = renumbered()
+    const sent = owed.batch()!
+    const d = task('d', 6)
+    const d2 = { ...d, order: 1.5, updatedAt: 12 }
+    owed.owe('items', d2, positionOf(d))
+
+    owed.settle(
+      sent,
+      written({ items: [{ ...b, updatedAt: 50 }, c] }, { renumberingRefused: true }),
+      { ...nothing(), items: [b2, c2, d2] },
+    )
+    expect(owed.batch()!.changes.renumbering?.items).toEqual([d2])
+  })
+
   it('undoes a refused filing: the task goes, and the line waits as it did', () => {
     const owed = createOwed()
     const filed = task('filed', 3, { updatedAt: 11 })
