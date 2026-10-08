@@ -357,9 +357,11 @@ function sectionsFor(settings: Settings): Section[] {
             one session and both windows are looking at it.
           </P>
           <P>
-            While a block runs it also has the log field and the urge counter, since that
-            is the window in view when either is wanted. It says how many logs you have
-            written rather than listing them; the stage and the calendar have the list.
+            While a block runs it also has the log field, Later and the urge counter,
+            since that is the window in view when any of them is wanted. It says how many
+            logs you have written and lines you have put down for later rather than
+            listing them; the stage and the calendar have the logs, and the Tasks page
+            has the rest.
             Across the window, under the timer, is the block itself, drawn as the
             calendar draws it but on its side, with its start and end at either end:
             the line standing across it is now, so you can see how much is gone, and its
@@ -691,11 +693,15 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="Focusing"
-              asks="The timer shows time remaining by default. Click it to see time focused so far, and click again to switch back. Your choice carries into later blocks and breaks. End early sits at the far side, level with the block's name. Your purpose is under the timer, and under that two columns: the block's tasks on the left — tick one off the moment it is done — with ✎ Log beneath them, and its logs on the right, with the urge counter beneath them, level with ✎ Log."
+              asks="The timer shows time remaining by default. Click it to see time focused so far, and click again to switch back. Your choice carries into later blocks and breaks. End early sits at the far side, level with the block's name. Your purpose is under the timer, and under that two columns: the block's tasks on the left — tick one off the moment it is done — with ✎ Log and ⤴ Later beneath them, and its logs on the right, with the urge counter beneath them, level with ✎ Log."
               choices={[
                 [
                   'Log',
                   'Opens a field to write a line into the block: how it is going, what got in the way, what just worked. Enter keeps it and closes the field; Escape or × closes it without. A log keeps the minute you wrote it, and can be edited or deleted from its ✎ and bin, here or later on the calendar. Deleting takes it off the block; the words stay in the journal Mono keeps, and in an export, as everything you have done does.',
+                ],
+                [
+                  'Later',
+                  'Opens a field for a line that is not about this block — an idea, a question, something to look into — so it can be put down and the block got back to. Enter keeps it and closes the field. It waits on the Tasks page with what this block was for beside it, and is never drawn on the block; the stage only says how many this block has put down.',
                 ],
                 [
                   'Urges',
@@ -747,7 +753,7 @@ function sectionsFor(settings: Settings): Section[] {
     },
     {
       id: 'tasks',
-      title: 'Tasks, today and intentions',
+      title: 'Tasks, Later, today and intentions',
       body: (
         <>
           <P>
@@ -805,14 +811,27 @@ function sectionsFor(settings: Settings): Section[] {
             block, too: tick it in All Tasks and it joins today.
           </P>
           <P>
+            <Em>Later</Em> is for what turns up while you are doing something else. The
+            arrow in the header opens a field for it on every page, and stays open so a
+            second thought can follow the first; while a block runs, ⤴ Later beside ✎ Log
+            does the same. What you put down waits at the top of the Tasks page, oldest
+            first, with what the block was for beside it if it came from one. Carry one
+            into any column — drag it, or pick it up by its dots and choose{' '}
+            <Em>Move here</Em> — and it becomes a task there and leaves Later. Rename it
+            first if it was written in a hurry. <Em>Let go</Em> puts it in a folded list
+            it can be brought back from, as a dropped task is kept; <Em>Delete</Em> is
+            for good.
+          </P>
+          <P>
             Ticking a task done is the backlog's business, and finishing a block is the
             block's. Neither says anything about the other — a block can run its full
             length without finishing anything, and a task can be finished in a block you
             cut short.
           </P>
           <P>
-            The backlog is kept in this browser like everything else, in its own store
-            beside the day's journal, and <Em>Export</Em> in settings carries both.
+            The backlog and Later are kept in this browser like everything else, in their
+            own store beside the day's journal, and <Em>Export</Em> in settings carries
+            all of it.
           </P>
         </>
       ),

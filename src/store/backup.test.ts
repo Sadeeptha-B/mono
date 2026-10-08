@@ -86,6 +86,18 @@ describe('importing a backup', () => {
     expect(app.useTasks.getState().items.map((i) => i.title)).toEqual(['Fix the gate'])
   })
 
+  it('carries what was put down for later out and back', async () => {
+    const app = await openApp()
+    app.useTasks.getState().addLater('Try WebGPU', { blockId: 'b', purpose: 'Draft the schema' })
+    const exported = await app.exportBackup()
+
+    const other = await openApp(new IDBFactory())
+    await other.importBackup(exported)
+    expect(other.useTasks.getState().later).toMatchObject([
+      { title: 'Try WebGPU', from: { blockId: 'b', purpose: 'Draft the schema' } },
+    ])
+  })
+
   it('changes neither when the browser will not save the backlog', async () => {
     const app = await openApp()
     const before = app.useSession.getState().events

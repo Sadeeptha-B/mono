@@ -450,6 +450,40 @@ describe('the v4 schema', () => {
     expect(readImport(file, NOW).tasks).toBeNull()
   })
 
+  it('reads what was put down for later, dropping only what it cannot read', () => {
+    const later = { id: 'l', title: ' Try WebGPU ', createdAt: 1, updatedAt: 2 }
+    const file = JSON.stringify({
+      version: SCHEMA_VERSION,
+      dayKey: today,
+      events: [],
+      tasks: {
+        areas: [],
+        items: [],
+        later: [
+          { ...later, from: { blockId: 'b', purpose: 'Draft the schema' }, letGoAt: 3 },
+          { ...later, id: 'odd', from: { blockId: 7 } },
+          { ...later, id: 'blank', title: '  ' },
+          { ...later, id: 'unversioned', updatedAt: -1 },
+        ],
+      },
+    })
+    expect(readImport(file, NOW).tasks?.later).toEqual([
+      {
+        id: 'l',
+        title: 'Try WebGPU',
+        createdAt: 1,
+        updatedAt: 2,
+        from: { blockId: 'b', purpose: 'Draft the schema' },
+        letGoAt: 3,
+      },
+      // Where it came from is a nicety: unreadable, it is left off, not the record.
+      { id: 'odd', title: 'Try WebGPU', createdAt: 1, updatedAt: 2 },
+    ])
+
+    const before = JSON.stringify({ version: 7, dayKey: today, events: [], tasks: { areas: [], items: [] } })
+    expect(readImport(before, NOW).tasks).toEqual({ areas: [], items: [] })
+  })
+
   it('reads the backlog from a v4 file, dropping only the records it cannot read', () => {
     const area = { id: 'work', name: 'Work', order: 0, createdAt: 1, updatedAt: 1 }
     const task = {
@@ -496,6 +530,25 @@ describe('the v4 schema', () => {
       tasks: { areas: [{ id: 'work', name: 42 }], items: [task] },
     })
     expect(() => readImport(file, NOW)).toThrow(/do not fit together.*nothing was imported/)
+  })
+
+  it('refuses a backlog in which something put down for later shares an id', () => {
+    const area = { id: 'work', name: 'Work', order: 0, createdAt: 1, updatedAt: 1 }
+    const later = (id: string, title: string) => ({ id, title, createdAt: 1, updatedAt: 1 })
+    const file = (laterList: unknown[]) =>
+      JSON.stringify({
+        version: SCHEMA_VERSION,
+        dayKey: today,
+        events: [],
+        tasks: { areas: [area], items: [], later: laterList },
+      })
+    // Two lines under one id: the disk would keep one and lose the other.
+    expect(() => readImport(file([later('l', 'One'), later('l', 'Two')]), NOW)).toThrow(
+      /share an id.*nothing was imported/,
+    )
+    // A line under an area's id: the tasks page finds the area by it instead.
+    expect(() => readImport(file([later('work', 'Clash')]), NOW)).toThrow(/share an id/)
+    expect(readImport(file([later('l', 'One')]), NOW).tasks?.later).toHaveLength(1)
   })
 
   it('drops a record whose version cannot be advanced', () => {

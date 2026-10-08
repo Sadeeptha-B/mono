@@ -549,6 +549,32 @@ test('a log and an urge written in the pop-out land on the block in the tab', as
   ).toHaveText('1')
 })
 
+test('a line put down for later in the pop-out waits on the tasks page in the tab', async ({
+  page,
+}) => {
+  await stubMiniWindow(page)
+  await openMono(page)
+  await shapeDayInTab(page)
+  await startBlock(page, 'Write the migration')
+
+  const mini = page.frameLocator(MINI)
+  await mini.getByRole('button', { name: 'Put something down for later' }).click()
+  const field = mini.getByRole('textbox', { name: 'Later', exact: true })
+  await field.fill('Ask Priya about the index')
+  await field.press('Enter')
+  await expect(field).toHaveCount(0)
+  await expect(mini.getByText('1 for later')).toBeVisible()
+  // Still one row with the urges beside it, inside the window.
+  const window = await mini.locator('body').boundingBox()
+  const urge = await mini.getByRole('button', { name: 'Count an urge' }).boundingBox()
+  expect(urge!.x + urge!.width).toBeLessThanOrEqual(window!.x + window!.width)
+
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await expect(
+    page.getByRole('main').getByRole('list', { name: 'Waiting for later' }),
+  ).toContainText('Ask Priya about the index')
+})
+
 test("a log's card stays inside a narrow pop-out", async ({ page }) => {
   // Regression: a card opened from the middle of the strip kept its full
   // width, and in a window this narrow its edit and delete fell off the side.

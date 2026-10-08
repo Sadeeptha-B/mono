@@ -85,6 +85,7 @@ export function AllTasksPane({
   const archiveArea = useTasks((s) => s.archiveArea)
   const archiveItem = useTasks((s) => s.archiveItem)
   const items = useTasks((s) => s.items)
+  const replaced = useTasks((s) => s.replaced)
   // A new intention's title while its field is open, on the purpose prompt.
   const [newIntention, setNewIntention] = useState<string | null>(null)
   const [renaming, setRenaming] = useIntentionRename()
@@ -148,7 +149,16 @@ export function AllTasksPane({
         {!backlog.hydrated ? (
           <p className="px-2.5 py-3 text-sm text-muted">Loading your tasks…</p>
         ) : (
+          // Keyed by the backlog's replacements as well as the session's
+          // generation above: a rename half typed names a task by id, and an
+          // import in another tab can bring that id back saying something else.
+          // Everything in it goes, a task half written included, unlike the
+          // tasks page's Add fields: this column is a question's, gone when the
+          // question closes, and an import in this tab already clears all of it
+          // through the generation. Keeping what is being added only when the
+          // import came from another tab would make the rarer case the gentler.
           <TaskBrowser
+            key={replaced}
             label={forToday ? 'Tasks for today' : 'Tasks for this block'}
             tree={backlog.pickerTree}
             selected={forToday ? backlog.chosen : blockSelected}

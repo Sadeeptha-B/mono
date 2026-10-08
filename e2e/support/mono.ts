@@ -324,3 +324,37 @@ export function storedItems(page: Page): Promise<StoredRecord[]> {
 export async function storedRecord(page: Page, label: string): Promise<StoredRecord | null> {
   return (await storedItems(page)).find((r) => r.title === label || r.name === label) ?? null
 }
+
+/** The fields of something stored in Later that a spec may wait on. */
+export type StoredLater = {
+  id: string
+  title: string
+  from?: { blockId: string; purpose: string }
+  letGoAt?: number
+  deletedAt?: number
+}
+
+/**
+ * Everything the backlog's IndexedDB holds in Later right now, tombstones
+ * included, read as `storedItems` reads the tasks: the disk, for a spec to
+ * poll before a reload that is meant to prove something was kept.
+ */
+export function storedLater(page: Page): Promise<StoredLater[]> {
+  return page.evaluate(
+    () =>
+      new Promise<StoredLater[]>((resolve, reject) => {
+        const open = indexedDB.open('mono')
+        open.onerror = () => reject(open.error)
+        open.onsuccess = () => {
+          const db = open.result
+          const tx = db.transaction(['later'], 'readonly')
+          const later = tx.objectStore('later').getAll()
+          tx.oncomplete = () => {
+            db.close()
+            resolve(later.result as StoredLater[])
+          }
+          tx.onerror = () => reject(tx.error)
+        }
+      }),
+  )
+}

@@ -44,8 +44,8 @@ function inTurn<T>(work: () => Promise<T>): Promise<T> {
 export function exportBackup(): Promise<string> {
   return inTurn(async () => {
     await whenHydrated()
-    const { areas, items } = useTasks.getState()
-    return useSession.getState().exportJSON({ areas, items })
+    const { areas, items, later } = useTasks.getState()
+    return useSession.getState().exportJSON({ areas, items, later })
   })
 }
 

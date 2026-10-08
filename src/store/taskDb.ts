@@ -48,8 +48,24 @@
  *   moved its epic into a deleted area afterwards, or allowed because the same
  *   write re-deleted an epic that was already deleted. Each edit is then
  *   judged by what came before it, never by what its own writer did next.
+ * - **A filing lands whole or not at all.** Something put down for later is
+ *   made a task by two records — the new task, and the Later's tombstone — and
+ *   each judged on its own let one land without the other: two tabs filing
+ *   the same line each wrote a task, and a line filed into an area another tab
+ *   had just deleted was used up making a task nobody could see. So a filing
+ *   is judged as one, against the disk as the write began: it is refused when
+ *   the disk's Later has moved past the copy it was filed from — deleted, let
+ *   go or reworded elsewhere — or when the place it is filed into is gone
+ *   (`goneOnDisk`, over the disk as this write will leave it, since a place
+ *   can arrive or move in the same write), and then neither record is
+ *   written. The disk's copies
+ *   come back as `stale`, and the Later's waiting copy is written instead when
+ *   the disk has none or an older one, so a line never lost on the way to
+ *   being filed is not lost by the refusal either. A filing whose task is
+ *   already on disk has landed before, and writes nothing rather than being
+ *   refused by its own tombstone.
  * - **A replacement invalidates everything written against what it replaced.**
- *   An import clears both stores and bumps a *generation* kept in `meta`. Every
+ *   An import clears every store and bumps a *generation* kept in `meta`. Every
  *   write states the generation it was made against, and one made against an
  *   older generation writes nothing and comes back `superseded`.
  * - **Seeding happens at most once, and answers with a whole snapshot.** The
@@ -64,20 +80,41 @@
  * case rather than sharing one global.
  */
 
+import type { Later } from '@/domain/later'
 import { isLive, outranks, type Area, type Item } from '@/domain/tasks'
 
 const DB_NAME = 'mono'
 /**
  * Bumped only when the object stores themselves change, with an upgrade step.
  * v2 added `meta`, for the generation. A v1 database upgrades in place: its
- * two stores are kept as they are and its generation reads as 0.
+ * two stores are kept as they are and its generation reads as 0. v3 added
+ * `later`, for what is put down to come back to (`domain/later.ts`); an older
+ * database upgrades the same way, with nothing in it.
  */
-const DB_VERSION = 2
+const DB_VERSION = 3
 
-const STORES = ['areas', 'items', 'meta'] as const
+const STORES = ['areas', 'items', 'later', 'meta'] as const
 const GENERATION_KEY = 'generation'
 
-export type BacklogContents = { areas: Area[]; items: Item[] }
+export type BacklogContents = { areas: Area[]; items: Item[]; later: Later[] }
+
+/**
+ * Something put down for later, made a task: the task, the Later's tombstone,
+ * and the copy of the Later that was waiting, which is what stays if the
+ * filing is refused. Written whole or not at all; see the header.
+ */
+export type Filing = { task: Item; later: Later; waiting: Later }
+
+/** Records to write, and filings to judge whole. */
+export type Changes = Partial<BacklogContents> & { filings?: readonly Filing[] }
+
+/**
+ * A whole backlog to replace this one with. Later may be left out, and then
+ * there is none: a file from before it existed is taken as having nothing put
+ * down for later rather than leaving what is here beside a backlog it was
+ * never part of.
+ */
+export type BacklogReplacement = Omit<BacklogContents, 'later'> & { later?: Later[] }
 
 /** What a write did. */
 export type WriteResult =
@@ -86,16 +123,21 @@ export type WriteResult =
    * the writer to adopt: of what it refused, and the tombstone that refused a
    * move out of a deleted subtree.
    */
-  | { kind: 'written'; stale: BacklogContents }
+  | {
+      kind: 'written'
+      stale: BacklogContents
+      /** The Laters whose filings were refused, by id. Neither record was written. */
+      refused: string[]
+    }
   /** The backlog was replaced since this tab last read it. Nothing was written. */
   | { kind: 'superseded' }
 
 export type TaskDb = {
   readAll: () => Promise<BacklogContents & { generation: number }>
   /** Write these records against `generation`, in one transaction. */
-  write: (changes: Partial<BacklogContents>, generation: number) => Promise<WriteResult>
-  /** Clear both stores, write these instead, and return the new generation. */
-  replaceAll: (contents: BacklogContents) => Promise<number>
+  write: (changes: Changes, generation: number) => Promise<WriteResult>
+  /** Clear every store, write these instead, and return the new generation. */
+  replaceAll: (contents: BacklogReplacement) => Promise<number>
   /**
    * Write these areas only if there are none at all, and return everything that
    * is there afterwards, read in the same transaction.
@@ -116,6 +158,7 @@ export function openTaskDb(factory: IDBFactory = globalThis.indexedDB): Promise<
       const db = request.result
       if (!db.objectStoreNames.contains('areas')) db.createObjectStore('areas', { keyPath: 'id' })
       if (!db.objectStoreNames.contains('items')) db.createObjectStore('items', { keyPath: 'id' })
+      if (!db.objectStoreNames.contains('later')) db.createObjectStore('later', { keyPath: 'id' })
       if (!db.objectStoreNames.contains('meta')) db.createObjectStore('meta', { keyPath: 'key' })
     }
     request.onerror = () => reject(request.error ?? new Error('Could not open the task store.'))
@@ -138,11 +181,13 @@ function wrap(db: IDBDatabase): TaskDb {
       run(db, 'readonly', (tx, done) => {
         const areas = tx.objectStore('areas').getAll()
         const items = tx.objectStore('items').getAll()
+        const later = tx.objectStore('later').getAll()
         const generation = tx.objectStore('meta').get(GENERATION_KEY)
         tx.addEventListener('complete', () =>
           done({
             areas: areas.result as Area[],
             items: items.result as Item[],
+            later: later.result as Later[],
             generation: readGeneration(generation.result),
           }),
         )
@@ -150,7 +195,8 @@ function wrap(db: IDBDatabase): TaskDb {
 
     write: (changes, generation) =>
       run(db, 'readwrite', (tx, done) => {
-        const stale: BacklogContents = { areas: [], items: [] }
+        const stale: BacklogContents = { areas: [], items: [], later: [] }
+        const refused: string[] = []
         let superseded = false
 
         // Everything is chained off the generation read, so the check and the
@@ -164,11 +210,24 @@ function wrap(db: IDBDatabase): TaskDb {
           // header on why a write is judged against the disk as it began.
           const puts: (() => void)[] = []
           const blockers = new Map<string, Area | Item>()
-          const writing = new Set([...(changes.areas ?? []), ...(changes.items ?? [])].map((r) => r.id))
-          let waiting = 0
-          const answered = () => {
-            waiting -= 1
-            if (waiting > 0) return
+          const filings = changes.filings ?? []
+          const writing = new Set(
+            [
+              ...(changes.areas ?? []),
+              ...(changes.items ?? []),
+              ...(changes.later ?? []),
+              ...filings.flatMap((f) => [f.task, f.later]),
+            ].map((r) => r.id),
+          )
+          // Two rounds. Plain records first, each against the disk as the
+          // write began; filings once every one of those has been answered,
+          // against the disk as this write will leave it (`accepted`), since
+          // the place a line is filed into may be arriving or moving in the
+          // same write. The puts only once both rounds are done.
+          const accepted = new Map<string, Area | Item>()
+          let plainOwed = 0
+          let filingsOwed = 0
+          const finish = () => {
             for (const put of puts) put()
             // A blocker this write also sends is answered by its own judgement.
             for (const blocker of blockers.values()) {
@@ -177,34 +236,89 @@ function wrap(db: IDBDatabase): TaskDb {
               else stale.areas.push(blocker)
             }
           }
-          const judge = <T extends Area | Item>(store: IDBObjectStore, records: readonly T[], kept: T[]) => {
+          const plainAnswered = () => {
+            plainOwed -= 1
+            if (plainOwed === 0) judgeFilings()
+          }
+          const filingAnswered = () => {
+            filingsOwed -= 1
+            if (filingsOwed === 0) finish()
+          }
+          const judge = <T extends Area | Item | Later>(
+            store: IDBObjectStore,
+            records: readonly T[],
+            kept: T[],
+            track: boolean,
+          ) => {
             for (const record of records) {
-              waiting += 1
+              plainOwed += 1
               store.get(record.id).onsuccess = (event) => {
                 const existing = (event.target as IDBRequest<T | undefined>).result
                 if (existing !== undefined && beats(existing, record)) {
                   kept.push(existing)
-                  return answered()
+                  return plainAnswered()
                 }
                 const accept = () => {
                   puts.push(() => store.put(record))
-                  answered()
+                  if (track) accepted.set(record.id, record as Area | Item)
+                  plainAnswered()
                 }
                 if (existing === undefined || !movesOut(existing, record)) return accept()
-                goneOnDisk(tx, (existing as Item).parentId, (blocker) => {
+                goneOnDisk(tx, (existing as Item).parentId, NOTHING_ACCEPTED, (blocker) => {
                   if (blocker === null) return accept()
                   kept.push(existing)
                   blockers.set(blocker.id, blocker)
-                  answered()
+                  plainAnswered()
                 })
               }
             }
           }
-          judge(tx.objectStore('areas'), changes.areas ?? [], stale.areas)
-          judge(tx.objectStore('items'), changes.items ?? [], stale.items)
+
+          // Three reads each — the Later, the task, and the place it is filed
+          // into — and one decision for both records. See the header.
+          const items = tx.objectStore('items')
+          const later = tx.objectStore('later')
+          const judgeFilings = () => {
+            if (filings.length === 0) return finish()
+            filingsOwed = filings.length
+            for (const filing of filings) {
+              later.get(filing.later.id).onsuccess = (event) => {
+                const onDisk = (event.target as IDBRequest<Later | undefined>).result
+                items.get(filing.task.id).onsuccess = (read) => {
+                  const landed = (read.target as IDBRequest<Item | undefined>).result !== undefined
+                  goneOnDisk(tx, filing.task.parentId, accepted, (blocker) => {
+                    // Landed before: there is nothing to write, and its own
+                    // tombstone must not refuse it.
+                    if (landed) return filingAnswered()
+                    // Filed from a copy the disk has moved past — deleted, let
+                    // go, or reworded in another tab — it would make a task of
+                    // what the line no longer says.
+                    const moved = onDisk !== undefined && beats(onDisk, filing.waiting)
+                    if (!moved && blocker === null) {
+                      puts.push(() => {
+                        items.put(filing.task)
+                        later.put(filing.later)
+                      })
+                      return filingAnswered()
+                    }
+                    refused.push(filing.later.id)
+                    if (blocker !== null) blockers.set(blocker.id, blocker)
+                    if (moved) stale.later.push(onDisk)
+                    else puts.push(() => later.put(filing.waiting))
+                    filingAnswered()
+                  })
+                }
+              }
+            }
+          }
+
+          judge(tx.objectStore('areas'), changes.areas ?? [], stale.areas, true)
+          judge(tx.objectStore('items'), changes.items ?? [], stale.items, true)
+          judge(tx.objectStore('later'), changes.later ?? [], stale.later, false)
+          if (plainOwed === 0) judgeFilings()
         }
         tx.addEventListener('complete', () =>
-          done(superseded ? { kind: 'superseded' } : { kind: 'written', stale }),
+          done(superseded ? { kind: 'superseded' } : { kind: 'written', stale, refused }),
         )
       }),
 
@@ -216,10 +330,13 @@ function wrap(db: IDBDatabase): TaskDb {
           next = readGeneration((event.target as IDBRequest).result) + 1
           const areas = tx.objectStore('areas')
           const items = tx.objectStore('items')
+          const later = tx.objectStore('later')
           areas.clear()
           items.clear()
+          later.clear()
           for (const area of contents.areas) areas.put(area)
           for (const item of contents.items) items.put(item)
+          for (const record of contents.later ?? []) later.put(record)
           meta.put({ key: GENERATION_KEY, value: next })
         }
         tx.addEventListener('complete', () => done(next))
@@ -231,6 +348,7 @@ function wrap(db: IDBDatabase): TaskDb {
         const after: BacklogContents & { generation: number } = {
           areas: [],
           items: [],
+          later: [],
           generation: 0,
         }
         areas.count().onsuccess = (event) => {
@@ -244,6 +362,9 @@ function wrap(db: IDBDatabase): TaskDb {
           }
           tx.objectStore('items').getAll().onsuccess = (read) => {
             after.items = (read.target as IDBRequest<Item[]>).result
+          }
+          tx.objectStore('later').getAll().onsuccess = (read) => {
+            after.later = (read.target as IDBRequest<Later[]>).result
           }
           tx.objectStore('meta').get(GENERATION_KEY).onsuccess = (read) => {
             after.generation = readGeneration((read.target as IDBRequest).result)
@@ -271,11 +392,11 @@ function wrap(db: IDBDatabase): TaskDb {
 function beats<T extends { updatedAt: number; deletedAt?: number }>(existing: T, record: T): boolean {
   if (outranks(existing, record)) return true
   if (outranks(record, existing)) return false
-  return !sameFields(existing, record)
+  return !sameValue(existing, record)
 }
 
 /** Whether writing `record` over `existing` moves a live item to a new parent. */
-const movesOut = (existing: Area | Item, record: Area | Item): boolean =>
+const movesOut = (existing: Area | Item | Later, record: Area | Item | Later): boolean =>
   'parentId' in existing &&
   'parentId' in record &&
   isLive(existing) &&
@@ -288,16 +409,32 @@ const movesOut = (existing: Area | Item, record: Area | Item): boolean =>
  * the write's puts, so it sees the disk as the write found it. A missing parent
  * is not a deleted one, and a cycle is not either — the same answers `isGone`
  * gives.
+ *
+ * `accepted` is laid over the disk: copies this write has already been judged
+ * to put, walked in place of the disk's. A filing passes the write's, because
+ * what it needs to know is where the task will sit once the write lands — in
+ * an epic arriving in the same write, or one the same write moves. A move
+ * passes none: it is judged by where the record is now, and never by what the
+ * same write does next.
  */
+/** What a move walks over: the disk alone. See `goneOnDisk`. */
+const NOTHING_ACCEPTED: ReadonlyMap<string, Area | Item> = new Map()
+
 function goneOnDisk(
   tx: IDBTransaction,
   startId: string,
+  accepted: ReadonlyMap<string, Area | Item>,
   answer: (blocker: Area | Item | null) => void,
 ): void {
   const seen = new Set<string>()
-  const step = (id: string) => {
+  const step = (id: string): void => {
     if (seen.has(id)) return answer(null)
     seen.add(id)
+    const own = accepted.get(id)
+    if (own) {
+      if (!isLive(own)) return answer(own)
+      return 'parentId' in own ? step(own.parentId) : answer(null)
+    }
     tx.objectStore('areas').get(id).onsuccess = (event) => {
       const area = (event.target as IDBRequest<Area | undefined>).result
       if (area) return answer(isLive(area) ? null : area)
@@ -312,12 +449,24 @@ function goneOnDisk(
   step(startId)
 }
 
-/** Whether two flat records hold the same fields with the same values. */
-function sameFields(a: object, b: object): boolean {
+/**
+ * Whether two records hold the same values, compared as data rather than by
+ * reference. A record read back from IndexedDB is a structured clone, so a
+ * nested value — where a Later came from — is a new object with the same
+ * contents every time it is read, and comparing it by reference made every
+ * saved copy of such a Later differ from itself.
+ */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || a === null || b === null) return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
   const left = a as Record<string, unknown>
   const right = b as Record<string, unknown>
   const keys = Object.keys(left)
-  return keys.length === Object.keys(right).length && keys.every((k) => left[k] === right[k])
+  return (
+    keys.length === Object.keys(right).length &&
+    keys.every((k) => Object.hasOwn(right, k) && sameValue(left[k], right[k]))
+  )
 }
 
 const readGeneration = (record: unknown): number =>

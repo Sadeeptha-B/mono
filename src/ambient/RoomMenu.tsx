@@ -1,12 +1,11 @@
 /**
  * The header's quick room and sound menu, on every view.
  *
- * It is a popover rather than a dialog in any behavioural sense. `role="dialog"`
- * names it for assistive technology, but it is deliberately not modal and not
- * focus-trapped: Escape closes it and returns focus to the trigger, a pointer
- * press outside closes it, and that is the whole of its dismissal contract. If
- * it ever grows enough controls to feel like a form, that decision is worth
- * revisiting — for two radio groups, a toggle and a range it would be ceremony.
+ * It is a popover rather than a dialog in any behavioural sense, with the
+ * header's dismissal contract (`useHeaderPopover`): Escape, a pointer press
+ * outside, or the focus moving elsewhere puts it away. If it ever grows enough controls to feel like a form,
+ * that decision is worth revisiting — for two radio groups, a toggle and a
+ * range a modal would be ceremony.
  *
  * Choosing an option deliberately leaves it open. Room, sound and volume are
  * one decision made through three controls — you pick Tide, hear what it
@@ -16,126 +15,17 @@
  * made where you can immediately see and hear the result.
  */
 
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties } from 'react'
-
 import { RoomControls } from './RoomControls'
 import { headerIconClass } from '@/components/ui'
+import { useHeaderPopover } from '@/components/headerPopover'
 import { ROOMS } from './rooms'
 import { useSession } from '@/store/session'
 
-/** Where the panel was last put, so an unchanged recomputation costs nothing. */
-type Placement = { top: number; left: number; width: number; maxHeight: number }
-
 export function RoomMenu({ idPrefix }: { idPrefix: string }) {
-  const [open, setOpen] = useState(false)
-  const [panelStyle, setPanelStyle] = useState<CSSProperties>()
-  const wrap = useRef<HTMLDivElement>(null)
-  const button = useRef<HTMLButtonElement>(null)
-  const panel = useRef<HTMLDivElement>(null)
-  const placed = useRef<Placement | null>(null)
+  const { open, setOpen, wrap, button, panel, panelStyle } = useHeaderPopover(352)
   const roomId = useSession((state) => state.session.settings.roomId)
   const room = ROOMS[roomId]
   const panelId = `${idPrefix}-room-menu`
-
-  useEffect(() => {
-    if (!open) return
-    const outside = (event: PointerEvent) => {
-      if (!wrap.current?.contains(event.target as Node)) setOpen(false)
-    }
-    const escape = (event: KeyboardEvent) => {
-      if (event.key !== 'Escape') return
-      setOpen(false)
-      button.current?.focus()
-    }
-    document.addEventListener('pointerdown', outside)
-    document.addEventListener('keydown', escape)
-    return () => {
-      document.removeEventListener('pointerdown', outside)
-      document.removeEventListener('keydown', escape)
-    }
-  }, [open])
-
-  // Header controls wrap on narrow screens, so an anchored absolute panel can
-  // begin much lower than its width alone suggests. Place it against the
-  // viewport instead: use below when it fits, otherwise use whichever side has
-  // more room, and let only the panel scroll on especially short screens.
-  useLayoutEffect(() => {
-    if (!open) {
-      placed.current = null
-      setPanelStyle(undefined)
-      return
-    }
-
-    const place = () => {
-      const trigger = button.current?.getBoundingClientRect()
-      const menu = panel.current
-      if (!trigger || !menu) return
-
-      const edge = 16
-      const gap = 8
-      const width = Math.min(352, window.innerWidth - edge * 2)
-
-      // Measure at the final width. A fixed auto-width panel near the right
-      // edge shrink-wraps too narrowly and reports a misleadingly tall height.
-      const widthStyle = `${width}px`
-      if (menu.style.width !== widthStyle) menu.style.width = widthStyle
-
-      const belowTop = trigger.bottom + gap
-      const spaceBelow = Math.max(0, window.innerHeight - edge - belowTop)
-      const spaceAbove = Math.max(0, trigger.top - gap - edge)
-      const fullHeight = menu.scrollHeight
-      const placeBelow = fullHeight <= spaceBelow || spaceBelow >= spaceAbove
-      const availableHeight = placeBelow ? spaceBelow : spaceAbove
-      const visibleHeight = Math.min(fullHeight, availableHeight)
-      const top = placeBelow ? belowTop : trigger.top - gap - visibleHeight
-      const left = Math.min(
-        window.innerWidth - width - edge,
-        Math.max(edge, trigger.right - width),
-      )
-      const next: Placement = { top, left, width, maxHeight: availableHeight }
-
-      // Captured panel scrolling reaches this too; do not rerender unchanged
-      // controls on every scroll frame.
-      const last = placed.current
-      if (
-        last &&
-        (Object.keys(next) as (keyof Placement)[]).every((key) => last[key] === next[key])
-      ) {
-        return
-      }
-
-      placed.current = next
-      setPanelStyle({ ...next, visibility: 'visible' })
-    }
-
-    place()
-
-    let pendingFrame: number | null = null
-    const schedulePlace = () => {
-      if (pendingFrame !== null) return
-      pendingFrame = window.requestAnimationFrame(() => {
-        pendingFrame = null
-        place()
-      })
-    }
-
-    // Enabling ambience adds the volume slider, so placement follows content
-    // size without coupling this component to each control inside it.
-    const observer = new ResizeObserver(schedulePlace)
-    if (panel.current) observer.observe(panel.current)
-
-    // Capture, because the surface that scrolls is a column inside the page
-    // rather than the page itself, and scroll events do not bubble.
-    const listening = { capture: true, passive: true } as const
-    window.addEventListener('resize', schedulePlace, listening)
-    window.addEventListener('scroll', schedulePlace, listening)
-    return () => {
-      observer.disconnect()
-      if (pendingFrame !== null) window.cancelAnimationFrame(pendingFrame)
-      window.removeEventListener('resize', schedulePlace, listening)
-      window.removeEventListener('scroll', schedulePlace, listening)
-    }
-  }, [open])
 
   return (
     <div ref={wrap}>
@@ -166,7 +56,7 @@ export function RoomMenu({ idPrefix }: { idPrefix: string }) {
           id={panelId}
           role="dialog"
           aria-label="Room and ambient sound"
-          style={panelStyle ?? { visibility: 'hidden' }}
+          style={panelStyle}
           className="fixed z-30 overflow-y-auto rounded-xl border border-line bg-surface p-4 text-left shadow-2xl"
         >
           <RoomControls idPrefix={idPrefix} />

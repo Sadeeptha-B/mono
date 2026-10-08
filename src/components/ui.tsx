@@ -11,6 +11,7 @@
 import {
   useEffect,
   useRef,
+  useState,
   type ButtonHTMLAttributes,
   type InputHTMLAttributes,
   type MouseEvent,
@@ -27,12 +28,12 @@ export const labelClass =
   'mb-1.5 block text-xs font-medium tracking-wide text-muted uppercase'
 
 /**
- * A tool in the header, drawn as an icon: the room, the pop-out, the guide and
- * settings. Borderless and quiet at rest, so four of them read as a cluster
- * rather than a row of buttons, with the name each one cannot show carried by
- * its `aria-label` and shown on hover by its `title`. Shared because every view
- * draws the same header (`AppHeader`), and the room and pop-out controls live
- * in their own modules.
+ * A tool in the header, drawn as an icon: Later, the room, the pop-out, the
+ * guide and settings. Borderless and quiet at rest, so five of them read as a
+ * cluster rather than a row of buttons, with the name each one cannot show
+ * carried by its `aria-label` and shown on hover by its `title`. Shared because
+ * every view draws the same header (`AppHeader`), and Later, the room and the
+ * pop-out live in their own modules.
  */
 export const headerIconClass =
   'inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted transition hover:bg-surface-raised hover:text-bright focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-bright'
@@ -521,6 +522,110 @@ export function KeepField({
         ×
       </button>
     </>
+  )
+}
+
+/**
+ * A line written and kept: a block's log, or something put down for later.
+ * Enter or the submit word keeps it; Escape or × closes the field without. A
+ * blank line is not kept. It takes the focus as it opens, because the press
+ * that opened it asked for exactly this.
+ *
+ * The draft belongs to the field and goes with it: closed, or the block ended,
+ * the half-written line goes, as a half-named purpose goes with its prompt.
+ * Kept, the field closes, unless the caller is somewhere a second line is as
+ * likely as the first (`stayOpen`): then it empties and has the focus, however
+ * the line was kept.
+ *
+ * It takes no width of its own: the input's `size` is one character, so the
+ * field is as wide as its place leaves it — the stage's column under the
+ * block's tasks, or the mini window's row beside the counter. A box the width
+ * of the stage read as the thing the stage was for; a line is a sideline to
+ * what is being worked on, and should look it.
+ */
+export function LineField({
+  label,
+  placeholder,
+  submit,
+  closeLabel,
+  maxLength,
+  onKeep,
+  onDone,
+  compact = false,
+  stayOpen = false,
+}: {
+  label: string
+  placeholder: string
+  /** The word on the button that keeps the line. */
+  submit: string
+  closeLabel: string
+  maxLength: number
+  /**
+   * Keep the line. `false` when it was not kept — the backlog refuses edits
+   * while an import lands — and the line then stays in the field to be kept
+   * again, rather than going as though it had been.
+   */
+  onKeep: (text: string) => boolean | void
+  onDone: () => void
+  compact?: boolean
+  stayOpen?: boolean
+}) {
+  const [draft, setDraft] = useState('')
+  const input = useRef<HTMLInputElement>(null)
+
+  const keep = () => {
+    if (draft.trim() === '') return
+    if (onKeep(draft) === false) return
+    setDraft('')
+    if (!stayOpen) return onDone()
+    // Kept with a click, the button has the focus; the next line is typed
+    // into the field, so it goes back there, as it stays after Enter.
+    input.current?.focus()
+  }
+
+  return (
+    <form
+      className="min-w-0 flex-1"
+      onSubmit={(e) => {
+        e.preventDefault()
+        keep()
+      }}
+    >
+      <div className="flex items-center gap-2">
+        <input
+          ref={input}
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              onDone()
+            }
+          }}
+          aria-label={label}
+          placeholder={placeholder}
+          maxLength={maxLength}
+          size={1}
+          autoFocus
+          className={`${fieldClass} ${compact ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-sm'}`}
+        />
+        <GhostButton
+          type="submit"
+          disabled={draft.trim() === ''}
+          className={`shrink-0 disabled:cursor-not-allowed disabled:opacity-40 ${compact ? 'px-3 py-1 text-xs' : 'px-3 py-1.5'}`}
+        >
+          {submit}
+        </GhostButton>
+        <button
+          type="button"
+          onClick={onDone}
+          aria-label={closeLabel}
+          className="shrink-0 px-0.5 text-muted transition hover:text-bright"
+        >
+          ×
+        </button>
+      </div>
+    </form>
   )
 }
 
