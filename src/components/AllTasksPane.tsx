@@ -41,11 +41,17 @@
  * on their rows (`PlaceActions`): renamed, given an epic or an outcome,
  * finished, archived or deleted — an area only renamed, given an epic or
  * archived, its delete left to the tasks page.
+ *
+ * And the backlog is put in order from here, as on the tasks page: areas,
+ * epics, outcomes and tasks dragged up and down the tree, or stepped with the
+ * arrows in their `⋯` (`onPlace`). Today's list has no order of its own — it
+ * is drawn in the backlog's — so ordering here is how today's list is ordered
+ * too.
  */
 
 import { useCallback, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 
-import { TaskBrowser, type PlaceActions } from './TaskBrowser'
+import { TaskBrowser, type PlaceActions, type PlaceInOrder } from './TaskBrowser'
 import { TodayList, useIntentionRename } from './TodayList'
 import { useTodayBacklog } from './useTodayBacklog'
 import { liveDescendantsOf } from '@/domain/tasks'
@@ -84,6 +90,8 @@ export function AllTasksPane({
   const renameArea = useTasks((s) => s.renameArea)
   const archiveArea = useTasks((s) => s.archiveArea)
   const archiveItem = useTasks((s) => s.archiveItem)
+  const placeItem = useTasks((s) => s.placeItem)
+  const placeArea = useTasks((s) => s.placeArea)
   const items = useTasks((s) => s.items)
   const replaced = useTasks((s) => s.replaced)
   // A new intention's title while its field is open, on the purpose prompt.
@@ -105,6 +113,11 @@ export function AllTasksPane({
   const write = useCallback(
     (parentId: string, title: string) => addItem({ kind: 'task', title, parentId }),
     [addItem],
+  )
+  const place = useCallback<PlaceInOrder>(
+    (kind, id, parentId, beforeId) =>
+      kind === 'area' ? placeArea(id, beforeId) : placeItem(id, parentId, beforeId),
+    [placeArea, placeItem],
   )
   const under = useCallback(
     (taskId: string) => {
@@ -171,6 +184,7 @@ export function AllTasksPane({
             places={places}
             elsewhere={under}
             draggable
+            onPlace={place}
           />
         )}
       </div>

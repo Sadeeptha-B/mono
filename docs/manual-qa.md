@@ -95,7 +95,15 @@ The two-tab checks below assume it is there.
    move it; Escape, or pressing the grip again, must put it back where it was;
    after `Move here`, focus must be on the task's grip in its new column. Pick
    one up and mark it done or drop it: reopening it must not bring the move
-   back. Do the same with today's list on the opening question, carrying a
+   back. Drag a task between two rows of its own column and of another, an
+   outcome's card along its row, an epic's card and an area's name up and
+   down: a line must show where each will land, nothing may shift under the
+   pointer as it moves, and each must land there. Without a pointer, step a
+   task with the arrow keys on its grip and a card with its move icons: focus
+   must stay on the grip or icon after every step, including the one that
+   brings it to the end. Do the same in All Tasks, dragging rows and using the
+   arrows in a row's `⋯`, and check that a task's drag can still be let go on
+   one of today's intentions. Do the same with today's list on the opening question, carrying a
    task into an intention and back to `Not grouped`, and drag a task from
    All Tasks, in the calendar's column, across onto an intention on the stage.
    Then, on a real phone in portrait and landscape, where the column is

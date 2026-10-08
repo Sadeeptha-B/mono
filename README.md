@@ -132,6 +132,9 @@ waiting to be carried into a column as a task, let go or deleted. Each area is a
 down the left, and level with each, its outcomes as columns of tasks. Epics and
 outcomes are finished by hand; finishing or archiving one hides everything
 inside without changing it, and deleting one, or an area, deletes its subtree.
+Areas, epics, outcomes and tasks are put in order by dragging, there or in All
+Tasks, or a step at a time from the keyboard, and today's list follows that
+order.
 The stage sees today's tasks and the tasks a block is for, and lets you write
 or find one there; filing and tidying happens on the page, away from the timer.
 

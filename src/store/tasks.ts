@@ -83,8 +83,10 @@ import { create } from 'zustand'
 
 import { letGo, newLater, restore, type Later, type LaterSource } from '@/domain/later'
 import {
+  activeAreas,
   archive,
   canParent,
+  childrenOf,
   complete,
   drop,
   isGone,
@@ -93,8 +95,12 @@ import {
   newItem,
   nextOrder,
   nextVersion,
+  openContainers,
+  openTasksUnder,
   outranks,
+  placeAmong,
   reopen,
+  stepTarget,
   unarchive,
   type Area,
   type Item,
@@ -145,6 +151,9 @@ type TaskStore = BacklogContents & {
    * level up. Only the area is written; the rest goes by ancestry.
    */
   deleteArea: (id: string) => void
+  /** `placeItem` and `shiftItem` for areas: placed among the live ones, stepped through the active ones. */
+  placeArea: (id: string, beforeId: string | null) => void
+  shiftArea: (id: string, by: -1 | 1) => void
 
   /*
    * The item verbs work on epics, outcomes and tasks alike: they are one shape
@@ -163,6 +172,20 @@ type TaskStore = BacklogContents & {
   renameItem: (id: string, title: string) => void
   /** Ignored when the new parent cannot hold this kind, or lies inside it. */
   moveItem: (id: string, parentId: string) => void
+  /**
+   * Put an item immediately before one of its siblings under `parentId`, or
+   * after all of them when `beforeId` is null: its own parent to reorder it,
+   * another to move it there, at that spot. Usually one write; see
+   * `placeAmong` for when it is more. Ignored where `moveItem` would be, and
+   * when nothing would change or the sibling aimed at is no longer there.
+   */
+  placeItem: (id: string, parentId: string, beforeId: string | null) => void
+  /**
+   * One step earlier (`-1`) or later (`1`) through the list that draws it —
+   * its parent's open tasks, or its open epics or outcomes — so a step from
+   * the keyboard passes exactly one row on screen, whatever is put away between.
+   */
+  shiftItem: (id: string, by: -1 | 1) => void
   completeItem: (id: string) => void
   dropItem: (id: string) => void
   reopenItem: (id: string) => void
@@ -211,8 +234,12 @@ type TaskStore = BacklogContents & {
    * there first — filing it, or deleting where it was going — and then the
    * task goes and the line is waiting again. Returns the task's id, or null
    * when the Later is let go or gone, or the parent cannot hold a task.
+   *
+   * Lands before `beforeId` when that is given and there is room between it
+   * and the sibling above; otherwise last. A filing is judged as two records,
+   * and numbering the siblings again to make room would make it more.
    */
-  fileLater: (id: string, parentId: string) => string | null
+  fileLater: (id: string, parentId: string, beforeId?: string | null) => string | null
 }
 
 /** What tabs tell each other. Both carry the generation the sender is on. */
@@ -265,6 +292,16 @@ export const useTasks = create<TaskStore>()((set, get) => {
   const putItem = (item: Item) => {
     set((s) => ({ items: upsert(s.items, item) }))
     save({ items: [item] })
+  }
+  // Several at once, as one change to memory and one flush: a reorder that
+  // numbers its siblings again.
+  const putItems = (written: readonly Item[]) => {
+    set((s) => ({ items: written.reduce((list: Item[], item) => upsert(list, item), s.items) }))
+    save({ items: [...written] })
+  }
+  const putAreas = (written: readonly Area[]) => {
+    set((s) => ({ areas: written.reduce((list: Area[], area) => upsert(list, area), s.areas) }))
+    save({ areas: [...written] })
   }
   const putLater = (later: Later) => {
     set((s) => ({ later: upsert(s.later, later) }))
@@ -336,6 +373,22 @@ export const useTasks = create<TaskStore>()((set, get) => {
 
     deleteArea: (id) => editArea(id, (area, at) => ({ ...area, deletedAt: at })),
 
+    placeArea: (id, beforeId) => {
+      if (importing()) return
+      const { areas } = get()
+      const area = areas.find((a) => a.id === id)
+      if (!area || !isLive(area)) return
+      const live = areas.filter(isLive).sort((a, b) => a.order - b.order)
+      const orders = placeAmong(live, id, beforeId)
+      const written = orders && reordered(live, orders, Date.now())
+      if (written) putAreas(written)
+    },
+
+    shiftArea: (id, by) => {
+      const before = stepTarget(activeAreas(get().areas), id, by)
+      if (before !== undefined) get().placeArea(id, before)
+    },
+
     addItem: ({ kind, title, parentId }) => {
       if (importing()) return null
       const { areas, items } = get()
@@ -361,6 +414,33 @@ export const useTasks = create<TaskStore>()((set, get) => {
         const siblings = items.filter((i) => i.parentId === parentId)
         return { ...item, parentId, order: nextOrder(siblings), updatedAt: at }
       }),
+
+    placeItem: (id, parentId, beforeId) => {
+      if (importing()) return
+      const { areas, items } = get()
+      const item = items.find((i) => i.id === id)
+      if (!item || isGone(id, items, areas)) return
+      const parent = parentKindOf(parentId, areas, items)
+      if (parent === null || !canParent(item.kind, parent)) return
+      if (liesWithin(parentId, item.id, items)) return
+      const orders = placeAmong(childrenOf(parentId, items), id, beforeId)
+      const written =
+        orders &&
+        reordered(items, orders, Date.now(), (i) => (i.id === id ? { ...i, parentId } : i))
+      if (written) putItems(written)
+    },
+
+    shiftItem: (id, by) => {
+      const { items } = get()
+      const item = items.find((i) => i.id === id)
+      if (!item) return
+      const list =
+        item.kind === 'task'
+          ? openTasksUnder(item.parentId, items)
+          : openContainers(item.parentId, item.kind, items)
+      const before = stepTarget(list, id, by)
+      if (before !== undefined) get().placeItem(id, item.parentId, before)
+    },
 
     completeItem: (id) =>
       editItem(id, (item, at) => (item.status === 'done' ? null : complete(item, at))),
@@ -407,7 +487,7 @@ export const useTasks = create<TaskStore>()((set, get) => {
 
     deleteLater: (id) => editLater(id, (later, at) => ({ ...later, deletedAt: at })),
 
-    fileLater: (id, parentId) => {
+    fileLater: (id, parentId, beforeId = null) => {
       if (importing()) return null
       const { later, areas, items } = get()
       const record = later.find((l) => l.id === id)
@@ -418,11 +498,12 @@ export const useTasks = create<TaskStore>()((set, get) => {
       const version = nextVersion(record.updatedAt, at)
       if (version === null) return null
       const taskId = newId()
-      const siblings = items.filter((i) => i.parentId === parentId)
-      const task = newItem(
-        { id: taskId, kind: 'task', title: record.title, parentId, order: nextOrder(siblings) },
-        at,
-      )
+      const placed = placeAmong(childrenOf(parentId, items), taskId, beforeId)
+      const order =
+        placed?.size === 1
+          ? placed.get(taskId)!
+          : nextOrder(items.filter((i) => i.parentId === parentId))
+      const task = newItem({ id: taskId, kind: 'task', title: record.title, parentId, order }, at)
       const gone: Later = { ...record, deletedAt: at, updatedAt: version }
       set((s) => ({ items: upsert(s.items, task), later: upsert(s.later, gone) }))
       pending.filings.set(record.id, { task, later: gone, waiting: record })
@@ -877,6 +958,30 @@ function liesWithin(id: string, ancestorId: string, items: readonly Item[]): boo
     current = byId.get(current)?.parentId
   }
   return false
+}
+
+/**
+ * The records `orders` names, each with its new order and a version past its
+ * own (`nextVersion`), changed by `also` first if given. Null when one of them
+ * has no version left to give, so a reorder is refused whole rather than
+ * written half.
+ */
+function reordered<T extends { id: string; order: number; updatedAt: Ms }>(
+  records: readonly T[],
+  orders: ReadonlyMap<string, number>,
+  at: Ms,
+  also: (record: T) => T = (record) => record,
+): T[] | null {
+  const byId = new Map(records.map((r) => [r.id, r]))
+  const written: T[] = []
+  for (const [id, order] of orders) {
+    const record = byId.get(id)
+    if (!record) continue
+    const version = nextVersion(record.updatedAt, at)
+    if (version === null) return null
+    written.push({ ...also(record), order, updatedAt: version })
+  }
+  return written
 }
 
 const upsert = <T extends { id: string }>(list: readonly T[], record: T): T[] => {

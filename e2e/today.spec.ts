@@ -446,6 +446,51 @@ test('a task dragged from All Tasks onto an intention is chosen and grouped at o
   await expect(tree.getByText('under Admin')).toBeVisible()
 })
 
+test('All Tasks puts the backlog in order, by dragging and from the arrows in a ⋯', async ({
+  page,
+}) => {
+  await openMono(page)
+  await goToStage(page, 'Today')
+  await addTodayTask(page, 'First')
+  await addTodayTask(page, 'Second')
+  const tree = todayBrowser(page)
+  const tasks = tree.locator('li[data-slot="task"]')
+
+  // Dragged by its title over the top half of another row, it lands above it,
+  // and today's list, drawn in the backlog's order, follows.
+  const second = tree.getByText('Second', { exact: true })
+  const first = tree.getByText('First', { exact: true })
+  const from = (await second.boundingBox())!
+  await page.mouse.move(from.x + 5, from.y + 5)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 15, from.y + 10, { steps: 5 })
+  const to = (await first.boundingBox())!
+  await page.mouse.move(to.x + 5, to.y + 1, { steps: 10 })
+  await page.mouse.up()
+  await expect(tasks).toHaveText([/Second/, /First/])
+  const listed = await todayList(page).innerText()
+  expect(listed.indexOf('Second')).toBeLessThan(listed.indexOf('First'))
+
+  // A step from the ⋯ keeps it open and the focus on the arrow, which says it
+  // can go no further once the row is last.
+  await second.hover()
+  await tree.getByRole('button', { name: 'More for task Second', exact: true }).click()
+  const down = tree.getByRole('button', { name: 'Move task Second down', exact: true })
+  await down.click()
+  await expect(tasks).toHaveText([/First/, /Second/])
+  await expect(down).toBeFocused()
+  await expect(down).toHaveAttribute('aria-disabled', 'true')
+  await page.keyboard.press('Escape')
+
+  // Places too: an area steps past another.
+  const areas = tree.locator('li[data-slot="area"] > div')
+  await expect(areas).toHaveText([/^Area: Work/, /^Area: Personal/])
+  await tree.getByText('Personal', { exact: true }).hover()
+  await tree.getByRole('button', { name: 'More for Personal', exact: true }).click()
+  await tree.getByRole('button', { name: 'Move Personal up', exact: true }).click()
+  await expect(areas).toHaveText([/^Area: Personal/, /^Area: Work/])
+})
+
 test('what the last day left unfinished is offered, not added, and lasts a day', async ({
   page,
 }) => {

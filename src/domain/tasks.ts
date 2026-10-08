@@ -645,6 +645,94 @@ export const nextOrder = (siblings: readonly { order: number }[]): number =>
   siblings.reduce((max, s) => Math.max(max, s.order + 1), 0)
 
 /**
+ * The orders to write so that `movedId` stands immediately before `beforeId`
+ * among `siblings`, or after all of them when `beforeId` is null. `siblings`
+ * are every live record under the same parent, in display order; the moved
+ * record may be among them (a reorder) or not (a move from elsewhere, or a
+ * record not written yet). Null when nothing would change, or when `beforeId`
+ * is not among them — a drop aimed at a sibling another tab has since moved.
+ *
+ * Usually one record: the moved one takes an order between its new
+ * neighbours', so a reorder is one write, as every other edit to the backlog
+ * is, and racing another tab's edit to a sibling cannot undo it. Between two
+ * orders there is not always room — they can be equal, from two tabs adding at
+ * once, or a run of moves into one gap can halve it past what a number holds
+ * — and then every sibling is numbered again from zero in the order wanted,
+ * which writes only those whose order changes. That is the rare case, and it
+ * repairs equal orders, which otherwise draw in whatever order the disk
+ * happened to read them.
+ *
+ * The orders are compared among *all* siblings, not only those a list shows:
+ * a done task or an outcome may stand between two open tasks in order. Placed
+ * between its visible neighbours' orders, a record lands between them in every
+ * list that shows it, whatever lies hidden on either side.
+ */
+export function placeAmong(
+  siblings: readonly { id: string; order: number }[],
+  movedId: string,
+  beforeId: string | null,
+): ReadonlyMap<string, number> | null {
+  const at = siblings.findIndex((s) => s.id === movedId)
+  if (at !== -1 && (siblings[at + 1]?.id ?? null) === beforeId) return null
+  const rest = siblings.filter((s) => s.id !== movedId)
+  const index = beforeId === null ? rest.length : rest.findIndex((s) => s.id === beforeId)
+  if (index === -1) return null
+
+  const order = orderBetween(rest[index - 1]?.order, rest[index]?.order)
+  if (order !== null) return new Map([[movedId, order]])
+
+  const wanted = [...rest.slice(0, index).map((s) => s.id), movedId, ...rest.slice(index).map((s) => s.id)]
+  const was = new Map(siblings.map((s) => [s.id, s.order]))
+  const orders = new Map<string, number>()
+  wanted.forEach((id, i) => {
+    if (id === movedId || was.get(id) !== i) orders.set(id, i)
+  })
+  return orders
+}
+
+/**
+ * An order strictly between two others, either of which may be absent: past
+ * the end, before the start, or anywhere in an empty list. Null when there is
+ * no number strictly between them.
+ */
+function orderBetween(after: number | undefined, before: number | undefined): number | null {
+  if (after === undefined && before === undefined) return 0
+  if (before === undefined) return after! + 1
+  if (after === undefined) return before - 1
+  const middle = after + (before - after) / 2
+  return after < middle && middle < before ? middle : null
+}
+
+/**
+ * Whether putting `id` before `beforeId` in `list` (null: at the end) would
+ * leave it where it is. `list` is what one list draws, in its order; a record
+ * not in it is always somewhere new. Asked before a drop target lights up, so
+ * a drag shows no line where letting go would change nothing.
+ */
+export function staysPut(list: readonly { id: string }[], id: string, beforeId: string | null): boolean {
+  const at = list.findIndex((r) => r.id === id)
+  return at !== -1 && (beforeId === id || (list[at + 1]?.id ?? null) === beforeId)
+}
+
+/**
+ * The sibling to put `id` before so that it moves one step through `list`,
+ * earlier (`-1`) or later (`1`): null for the end, undefined when it is already
+ * first or last, or not in the list at all. One step through what a list draws,
+ * so a keyboard's step always moves it past exactly one row on screen.
+ */
+export function stepTarget(
+  list: readonly { id: string }[],
+  id: string,
+  by: -1 | 1,
+): string | null | undefined {
+  const at = list.findIndex((r) => r.id === id)
+  if (at === -1) return undefined
+  if (by === -1) return at === 0 ? undefined : list[at - 1]!.id
+  if (at === list.length - 1) return undefined
+  return list[at + 2]?.id ?? null
+}
+
+/**
  * The longest purpose a block can carry.
  *
  * The purpose prompt's field enforces it while typing; this is what keeps a

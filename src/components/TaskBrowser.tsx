@@ -102,22 +102,49 @@
  * and pick it up there with its grip. The browser draws no grip of its own,
  * because a second set of them on every row of the backlog would double the
  * stops a keyboard makes through it for a move it can already make.
+ *
+ * The tree is put in order here as well, when the caller says how
+ * (`onPlace`). An area, epic or outcome is dragged by its row up or down among
+ * its own siblings; a task is dragged between two rows of any place, its own
+ * or another, or onto a place's row to go last in it; a line shows where it
+ * would land. The keyboard's way is a step at a time, with the ↑ and ↓ in a
+ * row's `⋯`, which stays open and keeps the focus on the arrow so a row can
+ * be stepped several places in a run. That is the tree's own carry, held here
+ * (`useCarryState`) apart from the one around it: a task's drag is both at
+ * once, so it can still be let go on one of today's intentions, and whichever
+ * takes it, the other lets go when the drag ends. What putting it down writes
+ * is the caller's, as every other action here is.
  */
 
 import {
   memo,
+  useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
+  type DragEvent,
+  type HTMLAttributes,
   type KeyboardEvent,
   type ReactNode,
   type RefObject,
 } from 'react'
 
-import { useCarriedRow } from './carry'
-import { ArchiveIcon, CheckIcon, DeleteIcon, ReopenIcon } from './icons'
+import {
+  dropListProps,
+  SlotMark,
+  slotAttrs,
+  slotEdge,
+  TOP,
+  useCarriedRow,
+  useCarryState,
+  type CarryContext,
+  type Slot,
+  type SlotKind,
+} from './carry'
+import { ArchiveIcon, CheckIcon, DeleteIcon, MoveIcon, ReopenIcon } from './icons'
 import { EditGlyph, IconButton, KeepField, revealOnHover } from './ui'
-import type { Item, ItemKind, TaskTreeNode } from '@/domain/tasks'
+import { staysPut, stepTarget, type Item, type ItemKind, type TaskTreeNode } from '@/domain/tasks'
 
 const LEVEL: Record<TaskTreeNode['kind'], string> = { area: 'Area', epic: 'Epic', outcome: 'Outcome' }
 
@@ -136,6 +163,55 @@ export type PlaceActions = {
   /** How many live items would go with it if it were deleted. */
   inside: (node: TaskTreeNode) => number
 }
+
+/**
+ * Put an area, epic, outcome or task immediately before a sibling under
+ * `parentId`, or last when `beforeId` is null. Only a task ever arrives with a
+ * parent other than its own.
+ */
+export type PlaceInOrder = (
+  kind: SlotKind,
+  id: string,
+  parentId: string,
+  beforeId: string | null,
+) => void
+
+/** A row the tree can put in order: what it is, and where it hangs. */
+type OrderRow = { id: string; title: string; kind: SlotKind; parent: string }
+
+/**
+ * Every row of the tree that can be put in order, and the list of each kind
+ * under each parent, in order: open tasks only, since a task done today is
+ * drawn after them and is not moved. Kept per tree, which is per backlog
+ * snapshot.
+ */
+function orderRows(tree: readonly TaskTreeNode[]) {
+  const rows = new Map<string, OrderRow>()
+  const lists = new Map<string, OrderRow[]>()
+  const add = (row: OrderRow) => {
+    rows.set(row.id, row)
+    const key = `${row.parent}:${row.kind}`
+    const list = lists.get(key)
+    if (list) list.push(row)
+    else lists.set(key, [row])
+  }
+  const walk = (node: TaskTreeNode, parent: string) => {
+    add({ id: node.id, title: node.name, kind: node.kind, parent })
+    for (const child of node.children) walk(child, node.id)
+    for (const task of node.tasks) {
+      if (task.status === 'open') add({ id: task.id, title: task.title, kind: 'task', parent: node.id })
+    }
+  }
+  for (const node of tree) walk(node, TOP)
+  return {
+    rows,
+    of: (parent: string, kind: SlotKind): readonly OrderRow[] => lists.get(`${parent}:${kind}`) ?? [],
+  }
+}
+
+/** The tree's carry takes nothing into a column; only between rows. */
+const takesNoColumn = () => false
+const movesNowhere = () => undefined
 
 /** What a place's `+` writes under it. */
 const CHILD: Partial<Record<TaskTreeNode['kind'], 'epic' | 'outcome'>> = {
@@ -163,6 +239,7 @@ export const TaskBrowser = memo(function TaskBrowser({
   places,
   elsewhere,
   draggable = false,
+  onPlace,
 }: {
   /** What is being chosen, as the group's accessible name. */
   label: string
@@ -186,6 +263,8 @@ export const TaskBrowser = memo(function TaskBrowser({
   elsewhere: (taskId: string) => string | null
   /** Whether open rows can be dragged to the `Carry` the caller provides. */
   draggable?: boolean
+  /** How to put the tree in order; without it, it cannot be. Stable across the tick. */
+  onPlace?: PlaceInOrder
 }) {
   /** The place something new is being written into, if any: what, and what is typed. */
   const [adding, setAdding] = useState<{
@@ -211,6 +290,44 @@ export const TaskBrowser = memo(function TaskBrowser({
   if (renamingPlace && !drawsPlace(shown, renamingPlace.id)) setRenamingPlace(null)
   if (confirming !== null && !drawsPlace(shown, confirming)) setConfirming(null)
   if (menu !== null && !drawsPlace(shown, menu) && !drawnTask(shown, menu)) setMenu(null)
+
+  // Putting the tree in order: its own carry — see the header. A place moves
+  // only among its own siblings, a task anywhere a task can go, and neither to
+  // where it already stands.
+  const order = useMemo(() => orderRows(tree), [tree])
+  const findRow = useCallback((id: string) => order.rows.get(id), [order])
+  const fitsRow = useCallback(
+    (row: OrderRow, { parent, kind, before }: Slot) =>
+      row.kind === kind &&
+      (row.parent === parent
+        ? !staysPut(order.of(parent, kind), row.id, before)
+        : kind === 'task'),
+    [order],
+  )
+  const placeRow = useCallback(
+    (row: OrderRow, slot: Slot) => onPlace?.(row.kind, row.id, slot.parent, slot.before),
+    [onPlace],
+  )
+  const reorder = useCarryState({
+    find: findRow,
+    takes: takesNoColumn,
+    move: movesNowhere,
+    fits: fitsRow,
+    place: placeRow,
+  })
+  const ordering = onPlace !== undefined
+  /** A step through its own list, from a `⋯`, with the focus kept on the arrow pressed. */
+  const step = (kind: SlotKind, id: string, parent: string, by: -1 | 1) => {
+    const before = stepTarget(order.of(parent, kind), id, by)
+    if (before === undefined) return
+    focusField.current = `${by < 0 ? 'up' : 'down'}:${id}`
+    onPlace?.(kind, id, parent, before)
+  }
+  /** Where a row stands in its own list, for its arrows. */
+  const ends = (kind: SlotKind, id: string, parent: string) => {
+    const list = order.of(parent, kind)
+    return { first: list[0]?.id === id, last: list[list.length - 1]?.id === id }
+  }
 
   const root = useRef<HTMLDivElement>(null)
   const search = useRef<HTMLInputElement>(null)
@@ -328,13 +445,43 @@ export const TaskBrowser = memo(function TaskBrowser({
       <span key={level} aria-hidden="true" className="ml-1 w-2.5 shrink-0 self-stretch border-l border-line" />
     ))
 
-  const branch = (node: TaskTreeNode, depth: number) => {
+  /**
+   * A place's row as the tree's carry sees it: dragged to put the place in
+   * order, and a task let go on it goes last in it.
+   */
+  const placeRowProps = (node: TaskTreeNode): HTMLAttributes<HTMLDivElement> => ({
+    draggable: true,
+    onDragStart: (e: DragEvent) => {
+      e.dataTransfer.effectAllowed = 'move'
+      e.dataTransfer.setData('text/plain', node.name)
+      reorder.pickUp({ id: node.id, title: node.name }, 'drag')
+    },
+    onDragEnd: reorder.putDown,
+    ...dropListProps(reorder, node.id, ['task']),
+  })
+
+  const branch = (node: TaskTreeNode, depth: number, parent: string, last: boolean) => {
     const child = CHILD[node.kind]
     const asking = confirming === node.id
     const open = menu === node.id
+    const openTasks = node.tasks.filter((t) => t.status === 'open')
+    const lastTask = openTasks[openTasks.length - 1]?.id
+    // A task about to go last into a place with nothing open in it has no
+    // row to draw a line under, so the place's own row lights instead.
+    const into =
+      reorder.aimed?.parent === node.id &&
+      reorder.aimed.kind === 'task' &&
+      reorder.aimed.before === null &&
+      lastTask === undefined
     return (
-      <li key={node.id}>
-        <div className="group/row relative flex items-stretch gap-2 px-2.5">
+      <li key={node.id} {...(ordering ? slotAttrs(node.kind, node.id) : {})} className="relative">
+        <SlotMark edge={slotEdge(reorder.aimed, parent, node.kind, node.id, last)} />
+        <div
+          {...(ordering && renamingPlace?.id !== node.id ? placeRowProps(node) : {})}
+          className={`group/row relative flex items-stretch gap-2 rounded-md px-2.5 ${
+            ordering ? 'cursor-grab active:cursor-grabbing' : ''
+          } ${into ? 'bg-surface-raised' : ''}`}
+        >
           {guides(depth)}
           {renamingPlace?.id === node.id ? (
             <span className="flex min-w-0 flex-1 py-1">
@@ -371,6 +518,14 @@ export const TaskBrowser = memo(function TaskBrowser({
                 <PlaceTools
                   node={node}
                   child={child}
+                  steps={
+                    ordering
+                      ? {
+                          ...ends(node.kind, node.id, parent),
+                          onStep: (by) => step(node.kind, node.id, parent, by),
+                        }
+                      : undefined
+                  }
                   asking={asking}
                   inside={asking ? places.inside(node) : 0}
                   onAdd={(kind) => {
@@ -407,7 +562,10 @@ export const TaskBrowser = memo(function TaskBrowser({
         </div>
         {/* Every row and field in here belongs to this place: where focus goes
             if one of them is taken away from under it. */}
-        <ul data-home={`menu:${node.id}`}>
+        <ul
+          data-home={`menu:${node.id}`}
+          {...(ordering ? dropListProps(reorder, node.id, child ? [child, 'task'] : ['task']) : {})}
+        >
           {adding?.parentId === node.id && (
             <li className="flex items-stretch gap-2 px-2.5 py-1">
               {guides(depth + 1)}
@@ -426,7 +584,9 @@ export const TaskBrowser = memo(function TaskBrowser({
               />
             </li>
           )}
-          {node.children.map((child) => branch(child, depth + 1))}
+          {node.children.map((place, i, all) =>
+            branch(place, depth + 1, node.id, i === all.length - 1),
+          )}
           {node.tasks.map((task) =>
             task.status === 'done' ? (
               <DoneOption
@@ -483,6 +643,16 @@ export const TaskBrowser = memo(function TaskBrowser({
                 }}
                 elsewhere={elsewhere(task.id)}
                 draggable={draggable}
+                reorder={ordering ? reorder : null}
+                edge={slotEdge(reorder.aimed, node.id, 'task', task.id, task.id === lastTask)}
+                steps={
+                  ordering
+                    ? {
+                        ...ends('task', task.id, node.id),
+                        onStep: (by) => step('task', task.id, node.id, by),
+                      }
+                    : undefined
+                }
               />
             ),
           )}
@@ -532,7 +702,9 @@ export const TaskBrowser = memo(function TaskBrowser({
       ) : shown.length === 0 ? (
         <p className="px-2.5 py-1.5 text-sm text-muted">Nothing open matches.</p>
       ) : (
-        <ul>{shown.map((node) => branch(node, 0))}</ul>
+        <ul {...(ordering ? dropListProps(reorder, TOP, ['area']) : {})}>
+          {shown.map((node, i) => branch(node, 0, TOP, i === shown.length - 1))}
+        </ul>
       )}
     </div>
   )
@@ -583,6 +755,9 @@ function TaskOption({
   onComplete,
   elsewhere,
   draggable,
+  reorder,
+  edge,
+  steps,
 }: {
   task: Item
   guides: ReactNode
@@ -596,13 +771,35 @@ function TaskOption({
   onComplete: () => void
   elsewhere: string | null
   draggable: boolean
+  /** The tree's own carry, when it can be put in order: a drag is in both. */
+  reorder: CarryContext | null
+  /** Where a drag's line is drawn on this row, if anywhere. */
+  edge: 'before' | 'after' | null
+  steps: Steps | undefined
 }) {
+  // Carried into today's intentions by the carry around the tree, and in the
+  // tree by its own; each lets go when the drag ends, whichever took it.
   const { dragProps } = useCarriedRow(task, draggable)
+  const both = reorder
+    ? {
+        ...dragProps,
+        onDragStart: (e: DragEvent<HTMLElement>) => {
+          dragProps.onDragStart?.(e)
+          reorder.pickUp(task, 'drag')
+        },
+        onDragEnd: (e: DragEvent<HTMLElement>) => {
+          dragProps.onDragEnd?.(e)
+          reorder.putDown()
+        },
+      }
+    : dragProps
   return (
     <li
-      {...(draggable ? dragProps : {})}
+      {...(draggable ? both : {})}
+      {...(reorder ? slotAttrs('task', task.id) : {})}
       className={`group/row relative flex items-stretch gap-2 px-2.5 ${draggable ? 'cursor-grab active:cursor-grabbing' : ''}`}
     >
+      <SlotMark edge={edge} />
       {guides}
       <label className="flex min-w-0 flex-1 cursor-pointer items-baseline gap-2 py-1 text-sm text-body hover:text-bright">
         <input
@@ -632,6 +829,7 @@ function TaskOption({
         className="mt-0.5"
       >
         <RowMenu id={task.id} name={`task ${task.title}`}>
+          {steps && <StepPair id={task.id} name={`task ${task.title}`} {...steps} />}
           <IconButton onClick={onComplete} label={`Mark task ${task.title} done`} hint="Done">
             <CheckIcon />
           </IconButton>
@@ -738,6 +936,41 @@ function More({
   )
 }
 
+/** Where a row stands in its own list, and the step that moves it through it. */
+type Steps = { first: boolean; last: boolean; onStep: (by: -1 | 1) => void }
+
+/**
+ * A row's ↑ and ↓, first in its popup. At either end the one that cannot move
+ * says so and stays, so the press that brought the row there leaves the focus
+ * where it was; the tree hands it back after the row moves (`focusField`).
+ * Nothing when the row has no siblings to move past.
+ */
+function StepPair({ id, name, first, last, onStep }: Steps & { id: string; name: string }) {
+  if (first && last) return null
+  return (
+    <>
+      <IconButton
+        onClick={() => onStep(-1)}
+        disabled={first}
+        focusKey={`up:${id}`}
+        label={`Move ${name} up`}
+        hint="Move up"
+      >
+        <MoveIcon towards="up" />
+      </IconButton>
+      <IconButton
+        onClick={() => onStep(1)}
+        disabled={last}
+        focusKey={`down:${id}`}
+        label={`Move ${name} down`}
+        hint="Move down"
+      >
+        <MoveIcon towards="down" />
+      </IconButton>
+    </>
+  )
+}
+
 /** A task's popup: its actions, as the tasks page's icons. */
 function RowMenu({ id, name, children }: { id: string; name: string; children: ReactNode }) {
   return (
@@ -757,6 +990,7 @@ function RowMenu({ id, name, children }: { id: string; name: string; children: R
 function PlaceTools({
   node,
   child,
+  steps,
   asking,
   inside,
   onAdd,
@@ -769,6 +1003,8 @@ function PlaceTools({
   node: TaskTreeNode
   /** What its `+` writes under it, if anything. */
   child: 'epic' | 'outcome' | undefined
+  /** Its ↑ and ↓, when the tree can be put in order. */
+  steps: Steps | undefined
   asking: boolean
   /** How many live items go with it, while it is asking. */
   inside: number
@@ -824,6 +1060,7 @@ function PlaceTools({
               + {child === 'epic' ? 'Epic' : 'Outcome'}
             </button>
           )}
+          {steps && <StepPair id={node.id} name={node.name} {...steps} />}
           <IconButton onClick={onRename} label={`Rename ${node.name}`} hint="Rename">
             <EditGlyph />
           </IconButton>

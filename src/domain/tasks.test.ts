@@ -27,10 +27,13 @@ import {
   openTasksUnder,
   outranks,
   pathOf,
+  placeAmong,
   purposeParts,
   tasksOfOutcome,
   PURPOSE_MAX_LENGTH,
   reopen,
+  staysPut,
+  stepTarget,
   taskTree,
   taskTreeWithDone,
   unarchive,
@@ -139,6 +142,77 @@ describe('nextOrder', () => {
   it('goes after the last sibling', () => {
     expect(nextOrder([])).toBe(0)
     expect(nextOrder([{ order: 3 }, { order: 1 }])).toBe(4)
+  })
+})
+
+describe('placeAmong', () => {
+  const rows = (...orders: number[]) => orders.map((order, i) => ({ id: 'abcdefgh'[i]!, order }))
+  const as = (orders: ReadonlyMap<string, number> | null) => (orders ? Object.fromEntries(orders) : null)
+
+  it('writes the moved record alone, between its new neighbours', () => {
+    expect(as(placeAmong(rows(0, 1, 2), 'c', 'a'))).toEqual({ c: -1 })
+    expect(as(placeAmong(rows(0, 1, 2), 'a', 'c'))).toEqual({ a: 1.5 })
+    expect(as(placeAmong(rows(0, 1, 2), 'a', null))).toEqual({ a: 3 })
+  })
+
+  it('places a record from elsewhere, or one not written yet, the same way', () => {
+    expect(as(placeAmong(rows(0, 1), 'new', 'b'))).toEqual({ new: 0.5 })
+    expect(as(placeAmong(rows(0, 1), 'new', null))).toEqual({ new: 2 })
+    expect(as(placeAmong([], 'new', null))).toEqual({ new: 0 })
+  })
+
+  it('changes nothing where the record already stands, or before a sibling that has gone', () => {
+    expect(placeAmong(rows(0, 1, 2), 'a', 'b')).toBeNull()
+    expect(placeAmong(rows(0, 1, 2), 'c', null)).toBeNull()
+    expect(placeAmong(rows(0, 1, 2), 'a', 'elsewhere')).toBeNull()
+  })
+
+  it('numbers the siblings again when there is no room between two orders, writing only what changes', () => {
+    // Equal orders, as two tabs adding at once leave them.
+    expect(as(placeAmong(rows(0, 1, 1), 'a', 'c'))).toEqual({ a: 1, b: 0, c: 2 })
+    // A gap halved past what a number can hold.
+    const tight = [
+      { id: 'a', order: 1 },
+      { id: 'b', order: 1 + Number.EPSILON },
+      { id: 'c', order: 5 },
+    ]
+    expect(as(placeAmong(tight, 'c', 'b'))).toEqual({ a: 0, c: 1, b: 2 })
+  })
+
+  it('keeps a record between its neighbours through many moves into the same gap', () => {
+    let siblings = rows(0, 1)
+    for (let i = 0; i < 200; i++) {
+      const id = `n${i}`
+      const orders = placeAmong(siblings, id, 'b')!
+      siblings = [
+        ...siblings.filter((s) => !orders.has(s.id)),
+        ...[...orders].map(([written, order]) => ({ id: written, order })),
+      ].sort((x, y) => x.order - y.order)
+      const at = siblings.findIndex((s) => s.id === id)
+      expect(siblings[at + 1]!.id).toBe('b')
+    }
+  })
+})
+
+describe('staysPut and stepTarget', () => {
+  const list = [{ id: 'a' }, { id: 'b' }, { id: 'c' }]
+
+  it('knows the two drops that would leave a record where it is', () => {
+    expect(staysPut(list, 'b', 'b')).toBe(true)
+    expect(staysPut(list, 'b', 'c')).toBe(true)
+    expect(staysPut(list, 'c', null)).toBe(true)
+    expect(staysPut(list, 'b', 'a')).toBe(false)
+    expect(staysPut(list, 'b', null)).toBe(false)
+    expect(staysPut(list, 'elsewhere', 'a')).toBe(false)
+  })
+
+  it('steps one row at a time, and not past either end', () => {
+    expect(stepTarget(list, 'b', -1)).toBe('a')
+    expect(stepTarget(list, 'a', 1)).toBe('c')
+    expect(stepTarget(list, 'b', 1)).toBeNull()
+    expect(stepTarget(list, 'a', -1)).toBeUndefined()
+    expect(stepTarget(list, 'c', 1)).toBeUndefined()
+    expect(stepTarget(list, 'elsewhere', 1)).toBeUndefined()
   })
 })
 
