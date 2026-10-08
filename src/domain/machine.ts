@@ -32,9 +32,9 @@
  *
  * `awayDetected` outranks every phase and jumps straight to `reconciling`.
  * `focusing` also accepts `abandonBlock` — there is no pause, deliberately;
- * see `docs/decisions.md` — and the three things written *into* a running
- * block, `logBlock`, `countUrge` and `takeBackUrge`, which stay where they are
- * and only append. Only `focusing` takes them: at `blockComplete` the segment
+ * see `docs/decisions.md` — and the things written *into* a running block,
+ * `logBlock`, `countUrge` and `takeBackUrge`, and `addBlockTasks` and
+ * `removeBlockTasks` from All Tasks, which stay where they are and only append. Only `focusing` takes them: at `blockComplete` the segment
  * is still active, but the block is over and nobody is sitting in it.
  * `startDeciding` gives the purpose prompt a few minutes to work out what
  * matters, and is the one transition that stays in the same phase: it is a
@@ -114,6 +114,13 @@ export type Action =
   | { type: 'countUrge'; at: Ms }
   /** Take back the running block's last urge. Nothing to take back, nothing happens. */
   | { type: 'takeBackUrge'; at: Ms }
+  /**
+   * Take more tasks on in the running block, or let some go. Those already
+   * where they are asked to be write nothing; a removal that would leave the
+   * block with no task is refused whole.
+   */
+  | { type: 'addBlockTasks'; at: Ms; taskIds: readonly string[] }
+  | { type: 'removeBlockTasks'; at: Ms; taskIds: readonly string[] }
   | { type: 'takeBreak'; at: Ms }
   | { type: 'skipBreak'; at: Ms; nextBlockKind: BlockKind }
   | { type: 'confirmBreak'; at: Ms; durationMin: number }
@@ -223,6 +230,29 @@ export function transition(
           return stay(phase)
         }
         return { phase, events: [{ type: 'block/urgeTakenBack', at: action.at }] }
+      }
+      if (action.type === 'addBlockTasks') {
+        if (session.active?.kind !== 'block') return stay(phase)
+        const held = session.active.taskIds
+        const fresh = [...new Set(action.taskIds)].filter((id) => !held.includes(id))
+        if (fresh.length === 0) return stay(phase)
+        return {
+          phase,
+          events: fresh.map((taskId) => ({ type: 'block/taskAdded', at: action.at, taskId })),
+        }
+      }
+      if (action.type === 'removeBlockTasks') {
+        if (session.active?.kind !== 'block') return stay(phase)
+        const held = session.active.taskIds
+        const going = held.filter((id) => action.taskIds.includes(id))
+        // Refused whole rather than cut short: letting go of an outcome that
+        // is all the block holds should leave it as it was, not with one task
+        // chosen by whichever happened to be last.
+        if (going.length === 0 || going.length === held.length) return stay(phase)
+        return {
+          phase,
+          events: going.map((taskId) => ({ type: 'block/taskRemoved', at: action.at, taskId })),
+        }
       }
       return stay(phase)
     }

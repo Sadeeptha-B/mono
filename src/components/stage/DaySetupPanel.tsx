@@ -61,7 +61,7 @@
 import { useState } from 'react'
 import { format } from 'date-fns'
 
-import { AddFold, EditGlyph, GhostButton, PrimaryButton, StagePrompt } from '../ui'
+import { AddFold, EditGlyph, GhostButton, PrimaryButton, revealOnHover, StagePrompt } from '../ui'
 import {
   CommitmentFields,
   draftFromCommitment,
@@ -451,7 +451,7 @@ function CommitmentRow({
 
   return (
     <li
-      className={`flex items-baseline gap-3 rounded-lg border px-3 py-2 ${
+      className={`group/row flex items-baseline gap-3 rounded-lg border px-3 py-2 ${
         editing ? 'border-bright/60' : 'border-muted/70'
       }`}
     >
@@ -482,12 +482,13 @@ function CommitmentRow({
         <EditGlyph />
       </button>
       {/* One day of a series is skipped rather than removed: tomorrow's comes
-          round as usual, and the series is changed on its own page. */}
+          round as usual, and the series is changed on its own page. Shown on
+          hover or with focus in the row, as a task's × is in today's list. */}
       <button
         type="button"
         onClick={onRemove}
         aria-label={recurs ? `Skip ${commitment.title} today` : `Remove ${commitment.title}`}
-        className="shrink-0 text-muted transition hover:text-commit"
+        className={`shrink-0 text-muted transition hover:text-commit ${revealOnHover}`}
       >
         ×
       </button>

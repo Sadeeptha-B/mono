@@ -101,8 +101,13 @@ export type ExportedShape = PersistedShape & { version: number; tasks?: Exported
  * beside them (`renameLegacyLogEvent`), since no newer event can carry them.
  * An export's backlog also gained what was put down for later, which a v7
  * build would drop without a word.
+ *
+ * v9 added `block/taskAdded` and `block/taskRemoved`: a running block's
+ * tasks can now change while it runs, from All Tasks. A v8 build would drop
+ * them and record the block as for what it started with, so it is a bump for
+ * the same reason as the others. No existing event changed shape.
  */
-export const SCHEMA_VERSION = 8
+export const SCHEMA_VERSION = 9
 
 /**
  * Read an export. Throws only when the file is not a Mono export, or comes
@@ -166,6 +171,7 @@ export function migratePersisted(persisted: unknown, from: number): PersistedSha
   // upgrade.
   if (
     (from === SCHEMA_VERSION ||
+      from === 8 ||
       from === 7 ||
       from === 6 ||
       from === 5 ||
@@ -438,7 +444,9 @@ function sanitiseImportedEvent(input: MonoEvent): MonoEvent | null {
     }
 
     case 'today/taskAdded':
-    case 'today/taskRemoved': {
+    case 'today/taskRemoved':
+    case 'block/taskAdded':
+    case 'block/taskRemoved': {
       const taskId = sanitiseString(raw.taskId)
       return taskId === null ? null : { type: event.type, at: event.at, taskId }
     }

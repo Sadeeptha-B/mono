@@ -707,3 +707,23 @@ test('an outcome is carried into an intention whole, from All Tasks or by its he
       .getByRole('button', { name: 'Move tasks in Login pages', exact: true }),
   ).toBeFocused()
 })
+
+test("a task's × in today's list shows on hover or focus, not at rest", async ({ page }) => {
+  await openMono(page)
+  await goToStage(page, 'Today')
+  await addTodayTask(page, 'Reply to Priya')
+  const remove = todayList(page).getByRole('button', {
+    name: 'Take Reply to Priya out of today',
+    exact: true,
+  })
+
+  await expect(remove).toHaveCSS('opacity', '0')
+  await todayList(page).getByText('Reply to Priya', { exact: true }).hover()
+  await expect(remove).toHaveCSS('opacity', '1')
+  await page.mouse.move(0, 0)
+  await expect(remove).toHaveCSS('opacity', '0')
+  await remove.focus()
+  await expect(remove).toHaveCSS('opacity', '1')
+  await remove.press('Enter')
+  await expect(todayList(page)).not.toContainText('Reply to Priya')
+})

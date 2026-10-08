@@ -55,7 +55,7 @@ import { unlockAudio } from '@/ambient/audio'
 import { GroupedTasks } from '../GroupedTasks'
 import { QuestionClock } from '../QuestionClock'
 import { useTodayBacklog } from '../useTodayBacklog'
-import { fieldClass, GhostButton, PrimaryButton, StagePrompt } from '../ui'
+import { fieldClass, GhostButton, PrimaryButton, revealOnHover, StagePrompt } from '../ui'
 import type { DecidingTimer } from '@/domain/machine'
 import {
   defaultPurpose,
@@ -279,15 +279,16 @@ function ChosenList({
       label={label}
       groups={groups}
       renderTask={(task) => (
-        <span className="flex items-baseline gap-2 text-sm text-body">
+        <span className="group/row flex items-baseline gap-2 text-sm text-body">
           <span className="min-w-0 flex-1 wrap-break-word">{task.title}</span>
-          {/* Off the block, not out of today. */}
+          {/* Off the block, not out of today. Shown on hover or with focus in
+              the row, as today's list's × is. */}
           <button
             type="button"
             onClick={() => onUntick(task.id)}
             aria-label={`Take ${task.title} off this block`}
             title="Not for this block"
-            className="shrink-0 px-1 text-muted transition hover:text-bright"
+            className={`shrink-0 px-1 text-muted transition hover:text-bright ${revealOnHover}`}
           >
             ×
           </button>

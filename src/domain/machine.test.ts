@@ -627,3 +627,67 @@ describe('writing into a running block', () => {
     ])
   })
 })
+
+describe("changing a running block's tasks", () => {
+  const started: Action[] = [
+    { type: 'startBlock', at: at(14), blockKind: 'deep' },
+    { type: 'setPurpose', at: at(14), purpose: 'Write the migration', taskIds: ['a'] },
+  ]
+  const tasksOf = (session: SessionState) =>
+    session.active?.kind === 'block' ? session.active.taskIds : null
+
+  it('takes tasks on and lets them go, chooses what it takes for today, and keeps its purpose', () => {
+    const { session, events } = run([
+      ...started,
+      { type: 'addBlockTasks', at: at(14, 5), taskIds: ['b', 'c', 'a', 'b'] },
+      { type: 'removeBlockTasks', at: at(14, 10), taskIds: ['a', 'elsewhere'] },
+    ])
+    expect(tasksOf(session)).toEqual(['b', 'c'])
+    expect(Object.keys(session.today)).toEqual(['a', 'b', 'c'])
+    expect(session.active).toMatchObject({ purpose: 'Write the migration' })
+    expect(events.map((e) => e.type)).toEqual([
+      'block/started',
+      'block/taskAdded',
+      'block/taskAdded',
+      'block/taskRemoved',
+    ])
+  })
+
+  it('carries what it ended with into history, and replays to the same block', () => {
+    const { session, events } = run([
+      ...started,
+      { type: 'addBlockTasks', at: at(14, 5), taskIds: ['b'] },
+      { type: 'removeBlockTasks', at: at(14, 6), taskIds: ['a'] },
+      { type: 'timerElapsed', at: at(14, 45) },
+      { type: 'takeBreak', at: at(14, 45) },
+    ])
+    expect(session.history.at(-1)).toMatchObject({ kind: 'block', taskIds: ['b'] })
+    expect(replay(events)).toEqual(session)
+  })
+
+  it('never leaves a block with no task: a removal that would is refused whole', () => {
+    const { session, events } = run([
+      ...started,
+      { type: 'addBlockTasks', at: at(14, 5), taskIds: ['b'] },
+      { type: 'removeBlockTasks', at: at(14, 6), taskIds: ['a', 'b'] },
+    ])
+    expect(tasksOf(session)).toEqual(['a', 'b'])
+    expect(events.map((e) => e.type)).toEqual(['block/started', 'block/taskAdded'])
+    // And the reducer holds the same line for a log written some other way.
+    const removed = [
+      { type: 'block/taskRemoved', at: at(14, 7), taskId: 'a' },
+      { type: 'block/taskRemoved', at: at(14, 8), taskId: 'b' },
+    ] as const
+    expect(tasksOf(removed.reduce<SessionState>(reduce, session))).toEqual(['b'])
+  })
+
+  it('takes no change once the block is over, or with none running', () => {
+    const { events } = run([
+      { type: 'addBlockTasks', at: at(13), taskIds: ['b'] },
+      ...started,
+      { type: 'timerElapsed', at: at(14, 45) },
+      { type: 'addBlockTasks', at: at(14, 46), taskIds: ['b'] },
+    ])
+    expect(events.map((e) => e.type)).toEqual(['block/started'])
+  })
+})

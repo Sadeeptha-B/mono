@@ -211,6 +211,13 @@ type SessionStore = {
   countUrge: () => void
   takeBackUrge: () => void
   /**
+   * Take tasks on in the running block, choosing them for today, or let some
+   * go — from All Tasks while it runs. Through the machine, so refused outside
+   * `focusing`, and a removal that would leave the block with none is refused.
+   */
+  addToBlock: (taskIds: readonly string[]) => void
+  removeFromBlock: (taskIds: readonly string[]) => void
+  /**
    * Correct or delete a block's log, in the running block or one already over. Not
    * through the machine: a mistype is worth fixing whatever is on the stage,
    * as an intention is renamed whatever is on it.
@@ -378,6 +385,11 @@ export const useSession = create<SessionStore>()(
       countUrge: () => get().dispatch({ type: 'countUrge', at: Date.now() }),
 
       takeBackUrge: () => get().dispatch({ type: 'takeBackUrge', at: Date.now() }),
+
+      addToBlock: (taskIds) => get().dispatch({ type: 'addBlockTasks', at: Date.now(), taskIds }),
+
+      removeFromBlock: (taskIds) =>
+        get().dispatch({ type: 'removeBlockTasks', at: Date.now(), taskIds }),
 
       editLog: (blockId, logId, text) =>
         get().append({ type: 'block/logEdited', at: Date.now(), blockId, logId, text }),

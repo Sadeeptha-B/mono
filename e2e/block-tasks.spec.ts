@@ -521,7 +521,7 @@ test('an archived epic takes its tasks out of the prompt', async ({ page }) => {
   await expect(blockBacklog(page)).not.toContainText('Login pages')
 })
 
-test('All Tasks is a press away while a block runs, and keeps today without touching the block', async ({
+test("All Tasks is a press away while a block runs, and changes the block's tasks there alone", async ({
   page,
 }) => {
   await openMono(page)
@@ -537,21 +537,32 @@ test('All Tasks is a press away while a block runs, and keeps today without touc
   )
   await switcher.getByRole('button', { name: 'All Tasks', exact: true }).click()
 
-  // A task written there is chosen for today, and shown in today's list under
-  // the tree; the block's own tasks are fixed once it has started.
-  const tree = page
-    .getByRole('complementary')
-    .getByRole('group', { name: 'Tasks for today', exact: true })
+  // A task written there is taken on by the block, and chosen for today; its
+  // purpose stays the sentence it started with.
+  const tree = blockBacklog(page)
+  await expect(tree.getByRole('checkbox', { name: 'The task at hand' })).toBeChecked()
   await addTaskIn(tree, 'Personal')
   const field = tree.getByLabel('New task in Personal', { exact: true })
   await field.fill('Call the bank')
   await field.press('Enter')
   await tree.getByRole('button', { name: 'Cancel the new task in Personal', exact: true }).click()
-  await expect(tree.getByRole('checkbox', { name: 'Call the bank' })).toBeChecked()
+  await expect(blockTasks(page)).toContainText('Call the bank')
   await expect(
     page.getByRole('complementary').getByRole('region', { name: "Today's tasks", exact: true }),
   ).toContainText('Call the bank')
-  await expect(blockTasks(page)).not.toContainText('Call the bank')
+  await expect(stage(page)).toContainText('Write the migration')
+
+  // Unticked, a task is let go by the block and stays today's; the last one
+  // cannot be, since every block is for at least one task.
+  await tree.getByRole('checkbox', { name: 'The task at hand' }).uncheck()
+  await expect(blockTasks(page)).not.toContainText('The task at hand')
+  await tree.getByRole('checkbox', { name: 'Call the bank' }).click()
+  await expect(tree.getByRole('checkbox', { name: 'Call the bank' })).toBeChecked()
+  await expect(blockTasks(page)).toContainText('Call the bank')
+
+  // The stage only ticks them done: nothing on it adds to the block or takes
+  // a task off it.
+  await expect(stage(page).getByRole('button', { name: /off this block$/ })).toHaveCount(0)
 
   // The block over, the column is the day again.
   await stage(page).getByRole('button', { name: 'End early' }).click()

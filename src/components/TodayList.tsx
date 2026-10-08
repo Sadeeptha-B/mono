@@ -471,7 +471,9 @@ export function TodayList({
 
 /**
  * One of today's tasks: the grip that carries it between intentions, its
- * title, and the × that takes it out of today. Finished today, it is crossed
+ * title, and the × that takes it out of today — shown on hover or with focus
+ * in the row, and always on a touch screen, as a row's actions are on the
+ * tasks page: at rest the list reads as what the day is for. Finished today, it is crossed
  * out and stays where it is, with nothing to carry.
  *
  * The grip hangs in the gutter `GroupedTasks` leaves between its guide line
@@ -485,7 +487,7 @@ function TodayTaskRow({ task, onRemove }: { task: Item; onRemove: () => void }) 
   return (
     <div
       {...(open ? dragProps : {})}
-      className={`relative flex items-start gap-1.5 rounded-md text-[15px] ${
+      className={`group/row relative flex items-start gap-1.5 rounded-md text-[15px] ${
         picked ? 'bg-surface/60 outline-1 outline-deep/70 outline-dashed' : ''
       }`}
     >
@@ -502,7 +504,7 @@ function TodayTaskRow({ task, onRemove }: { task: Item; onRemove: () => void }) 
         onClick={onRemove}
         aria-label={`Take ${task.title} out of today`}
         title="Not today"
-        className="shrink-0 px-1 text-muted transition hover:text-bright"
+        className={`shrink-0 px-1 text-muted transition hover:text-bright ${revealOnHover}`}
       >
         ×
       </button>

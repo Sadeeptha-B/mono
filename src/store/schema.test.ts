@@ -143,6 +143,8 @@ const EVERY_EVENT = {
   },
   'block/urged': { type: 'block/urged', at: 25 },
   'block/urgeTakenBack': { type: 'block/urgeTakenBack', at: 26 },
+  'block/taskAdded': { type: 'block/taskAdded', at: 26, taskId: 'task-c' },
+  'block/taskRemoved': { type: 'block/taskRemoved', at: 26, taskId: 'task-c' },
   'block/logEdited': {
     type: 'block/logEdited',
     at: 27,
@@ -202,6 +204,10 @@ const V6: readonly string[] = [
 
 /** What v7 added: commitments that come round on a schedule. */
 const isV7 = (e: MonoEvent): boolean => e.type.startsWith('recurring/')
+
+/** What v9 added: a running block's tasks changing while it runs. */
+const isV9 = (e: MonoEvent): boolean =>
+  e.type === 'block/taskAdded' || e.type === 'block/taskRemoved'
 
 describe('persisted schema', () => {
   it('returns a well-formed current log unchanged', () => {
@@ -317,8 +323,13 @@ describe('the v4 schema', () => {
   })
 
   it('reads a v7 log exactly as it was, rather than discarding it on upgrade', () => {
-    const v7 = { events: EVERY, dayKey: today }
+    const v7 = { events: EVERY.filter((e) => !isV9(e)), dayKey: today }
     expect(migratePersisted(v7, 7)).toEqual(v7)
+  })
+
+  it('reads a v8 log exactly as it was, rather than discarding it on upgrade', () => {
+    const v8 = { events: EVERY.filter((e) => !isV9(e)), dayKey: today }
+    expect(migratePersisted(v8, 8)).toEqual(v8)
   })
 
   it("reads a block's log under the names it had before v8, from storage and from a file", () => {

@@ -17,11 +17,12 @@
  * which is showing, and hides the other rather than unmounting it, so a field
  * half written in either is still there when it is switched back.
  *
- * What a tick means follows the question. On today's question, and while a
- * block runs, it chooses the task for today — a running block's tasks are
- * fixed when it starts; on the purpose prompt it ticks the task for the
- * block, through the same pick the prompt reads (`BlockPick`), and chooses it
- * for today as well (`App`). An epic's or outcome's box ticks everything open
+ * What a tick means follows the question. On today's question it chooses the
+ * task for today; on the purpose prompt it ticks the task for the block,
+ * through the same pick the prompt reads (`BlockPick`), and chooses it for
+ * today as well (`App`). While a block runs it ticks for that block: the task
+ * is taken on, and chosen for today, or let go and left today's — the one
+ * place a running block's tasks change, and never its last one. An epic's or outcome's box ticks everything open
  * in it the same way, at once. A row can be dragged across onto one of
  * today's intentions — the list and the backlog share one hand, `TodayCarry`,
  * held around both columns — and an epic's or outcome's row brings everything
@@ -70,8 +71,8 @@ export type ColumnView = 'day' | 'tasks'
 
 /**
  * What All Tasks is offered for: today's question, the purpose prompt, or a
- * block running — where it is for keeping the backlog and today's list, the
- * block's own tasks being fixed once it starts.
+ * block running — where it changes what the block is for, as well as keeping
+ * the backlog and today's list.
  */
 export type ChoosingFor = 'today' | 'block' | 'focus'
 
@@ -163,9 +164,11 @@ export function AllTasksPane({
     [renameArea, renameItem, addItem, completeItem, archiveArea, archiveItem, deleteItem, items],
   )
 
-  // A tick chooses for today everywhere but the purpose prompt, where it is
-  // for the block being named.
-  const forToday = choosingFor !== 'block'
+  // A tick chooses for today on today's question. On the purpose prompt it is
+  // for the block being named, and while a block runs for that block, which
+  // takes the task on or lets it go — the one place a running block's tasks
+  // change. Either way a task the block takes is today's too.
+  const forToday = choosingFor === 'today'
   // Today's list under the tree wherever the stage beside it is not already
   // showing it: the purpose prompt, and a block running.
   const withToday = choosingFor !== 'today'
