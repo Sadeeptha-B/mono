@@ -22,27 +22,11 @@
  * two would be one import.
  */
 
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-  type FocusEvent,
-  type RefObject,
-} from 'react'
+import { useMemo, useRef, type CSSProperties } from 'react'
 
-import {
-  drawnWithin,
-  markOffsets,
-  offsetAt,
-  placeCard,
-  stackRuns,
-  type Box,
-} from './marks'
+import { drawnWithin, markOffsets, offsetAt, stackRuns } from './marks'
 import { LogCard, useLogDrafts, type LogDrafts } from '../BlockLog'
+import { cardClass, useOpenCard } from '../hoverCard'
 import { formatClock } from '@/domain/time'
 import type { BlockLog, Interval, Ms, TimelineEntry } from '@/domain/types'
 import { useSession } from '@/store/session'
@@ -279,7 +263,7 @@ function UrgeMark({
  * cost no more than pointing at it.
  *
  * Where the card goes is worked out as it opens and kept up while it is open
- * (`useOpenCard`).
+ * (`useOpenCard`, Mono's own hover card).
  */
 function LogMark({
   blockId,
@@ -301,7 +285,7 @@ function LogMark({
   const target = useRef<HTMLButtonElement>(null)
   const card = useRef<HTMLDivElement>(null)
   const editing = logs.some((log) => edits.drafts.has(log.id))
-  const opening = useOpenCard(anchor, target, card, beside, editing)
+  const opening = useOpenCard(anchor, target, card, { beside, size: CARD_SIZE, held: editing })
   const first = formatClock(logs[0]!.at)
   const last = formatClock(logs.at(-1)!.at)
   const stacked = logs.length > 1
@@ -336,7 +320,7 @@ function LogMark({
         ref={card}
         {...(editing ? { 'data-open': '' } : {})}
         className={[
-          'absolute z-20 overflow-y-auto rounded-md border border-muted/70 bg-surface-raised px-2 py-1.5 shadow-lg',
+          cardClass,
           editing ? 'block' : 'hidden group-focus-within/log:block group-hover/log:block',
         ].join(' ')}
       >
@@ -346,122 +330,5 @@ function LogMark({
   )
 }
 
-/**
- * A log's card while it is open, kept where it can be seen; returns the
- * handlers its mark listens with.
- *
- * Open is one state, however it came about: pointed at, focus inside it — a
- * keyboard reaching the mark, or an edit's field — or an edit under way with
- * neither. The card is placed as it opens, in the handler, so the place is
- * there in the frame that first shows it; then again after every commit while
- * it is open, so whatever moved its mark is caught — a commitment added beside
- * the block taking it into a narrower lane, the block ending shorter, the
- * tick — and whenever anything it is seen through scrolls or its window is
- * resized. Closed, it neither listens nor measures.
- *
- * Whether it shows is still the stylesheet's (hover, focus within, editing),
- * because that cannot be held open by a focus that left without a word: some
- * browsers send no `focusout` when the focused field is removed, as an edit's
- * is on saving. Here that only keeps a hidden card being placed until the next
- * blur. The place is written straight onto the card rather than kept as state:
- * it is measurement, and as state it would cost a second render for each.
- */
-function useOpenCard(
-  anchor: RefObject<HTMLElement | null>,
-  target: RefObject<HTMLElement | null>,
-  card: RefObject<HTMLElement | null>,
-  beside: boolean,
-  editing: boolean,
-) {
-  const [pointed, setPointed] = useState(false)
-  const [focused, setFocused] = useState(false)
-  const open = pointed || focused || editing
-
-  const position = useCallback(() => {
-    if (anchor.current && target.current && card.current) {
-      positionCard(anchor.current, target.current, card.current, beside)
-    }
-  }, [anchor, target, card, beside])
-
-  // After every commit, deliberately without dependencies: what moves a mark
-  // is its host's layout, which this cannot list.
-  useLayoutEffect(() => {
-    if (open) position()
-  })
-
-  useEffect(() => {
-    const doc = anchor.current?.ownerDocument
-    const view = doc?.defaultView
-    if (!open || !doc || !view) return
-    // Capture, since a scroll does not bubble: whichever box scrolls, the
-    // card is placed again against what is left in view.
-    doc.addEventListener('scroll', position, true)
-    view.addEventListener('resize', position)
-    return () => {
-      doc.removeEventListener('scroll', position, true)
-      view.removeEventListener('resize', position)
-    }
-  }, [open, anchor, position])
-
-  return {
-    onPointerEnter: () => {
-      position()
-      setPointed(true)
-    },
-    onPointerLeave: () => setPointed(false),
-    onFocus: () => {
-      position()
-      setFocused(true)
-    },
-    onBlur: (event: FocusEvent<HTMLElement>) => {
-      if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setFocused(false)
-    },
-  }
-}
-
 /** How wide a log's card is, and how tall before it scrolls, where there is room. */
 const CARD_SIZE = { width: 224, height: 288 }
-
-/** Place `card`, inside `anchor`, by the room around `target` (`placeCard`). */
-function positionCard(
-  anchor: HTMLElement,
-  target: HTMLElement,
-  card: HTMLElement,
-  beside: boolean,
-): void {
-  const from = anchor.getBoundingClientRect()
-  const place = placeCard(target.getBoundingClientRect(), visibleBox(anchor), beside, CARD_SIZE)
-  card.style.left = `${place.left - from.left}px`
-  card.style.width = `${place.width}px`
-  card.style.maxHeight = `${place.maxHeight}px`
-  card.style.top = place.opens === 'down' ? `${place.edge - from.top}px` : ''
-  card.style.bottom = place.opens === 'up' ? `${from.bottom - place.edge}px` : ''
-}
-
-/**
- * The part of the page `element` can be seen in: its window, cut down by every
- * box around it that clips what overflows it — the calendar's scrolling
- * column, the mini window's scrolling body. Measured in the element's own
- * document, which for the mini window is not the one this code runs in.
- */
-function visibleBox(element: HTMLElement): Box {
-  const view = element.ownerDocument.defaultView
-  const box: Box = {
-    left: 0,
-    top: 0,
-    right: view?.innerWidth ?? Infinity,
-    bottom: view?.innerHeight ?? Infinity,
-  }
-  for (let node = element.parentElement; node && view; node = node.parentElement) {
-    const style = view.getComputedStyle(node)
-    if (style.overflowX === 'visible' && style.overflowY === 'visible') continue
-    const rect = node.getBoundingClientRect()
-    const left = rect.left + node.clientLeft
-    const top = rect.top + node.clientTop
-    box.left = Math.max(box.left, left)
-    box.top = Math.max(box.top, top)
-    box.right = Math.min(box.right, left + node.clientWidth)
-    box.bottom = Math.min(box.bottom, top + node.clientHeight)
-  }
-  return box
-}

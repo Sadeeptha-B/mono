@@ -152,7 +152,7 @@ export function MiniWindow(props: Props) {
         {/* While something runs, the window reads in bands, each the width of
             the window: the timer and the cat above; the block as the calendar
             draws it, on its side (`SegmentGlance`); the line to write and the
-            urges to count; and the footer, which holds End early. It used to be
+            urges to count; and the footer, which holds Open Mono and End early. It used to be
             two columns, the controls stacked down one and the block upright
             down the other, each too narrow for what it held. */}
         {view.kind === 'running' && active && (
@@ -176,8 +176,14 @@ export function MiniWindow(props: Props) {
             // Ending what runs is a quiet word here rather than a button among
             // the controls: it is the rarest thing done in this window, and
             // the one that cannot be taken back. The strip above already says
-            // when it ends.
+            // when it ends. Open Mono sits before it, the same kind of word:
+            // the way back to the tab while something runs, for All Tasks or
+            // the day, without hunting for the window it is in.
             <span>
+              <button type="button" onClick={openDayInTab} className={footerLinkClass}>
+                Open Mono
+              </button>
+              {' · '}
               <button
                 type="button"
                 onClick={view.segment === 'break' ? props.onEndBreak : props.onAbandon}
@@ -224,7 +230,7 @@ function openDayInTab(): void {
   window.focus()
 }
 
-/** A word in the footer that does something: Reset size, End early, Back to work. */
+/** A word in the footer that does something: Open Mono, Reset size, End early, Back to work. */
 const footerLinkClass = `text-body ${quietActionClass}`
 
 const blocksAhead = (blocks: number): string =>
@@ -300,9 +306,10 @@ function body(props: Props, view: ReturnType<typeof miniViewFor>) {
       // row to write in and End early are bands of their own below, the width
       // of the window (see the layout above).
       //
-      // No task list while the block runs, and no list of what has been logged
-      // either. The purpose already says what the block is for in one line, and
-      // a list always on top is a list of reasons to look at it. The tasks come
+      // No task list standing while the block runs, and no list of what has
+      // been logged either. The purpose already says what the block is for in
+      // one line, and a list always on top is a list of reasons to look at it.
+      // The tasks open from the purpose, on hover, in Mono's own card, and come
       // back at the end of the block, where ticking them is the point; the logs
       // are on the stage and the calendar. What this window does keep is the
       // field and the counter, because writing a line or counting an urge is

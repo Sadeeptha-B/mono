@@ -11,7 +11,9 @@ import {
   goToStage,
   openBlockBacklog,
   openMono,
+  shapeDay,
   stage,
+  startBlock,
   storedRecord,
   todayList,
 } from './support/mono'
@@ -129,10 +131,15 @@ test("the purpose heads the prompt, then what is ticked for the block, with All 
     'Fix the gate',
   )
 
-  // Starting it keeps that grouping; the column is the day again.
+  // Starting it keeps that grouping; the column is the day again, with All
+  // Tasks a press away while the block runs.
   await startButton(page).click()
   await expect(blockBacklog(page)).toHaveCount(0)
-  await expect(page.getByRole('group', { name: 'Show in this column' })).toHaveCount(0)
+  await expect(
+    page
+      .getByRole('group', { name: 'Show in this column' })
+      .getByRole('button', { name: 'Today', exact: true }),
+  ).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('link', { name: 'Tasks', exact: true }).click()
   const today = page.getByRole('main').getByRole('region', { name: 'Today', exact: true })
   await expect(today.getByRole('region', { name: 'Intention: Mono auth' })).toContainText(
@@ -512,4 +519,41 @@ test('an archived epic takes its tasks out of the prompt', async ({ page }) => {
   await openBlockBacklog(page)
   await expect(blockBacklog(page).getByRole('checkbox', { name: 'Login form' })).toHaveCount(0)
   await expect(blockBacklog(page)).not.toContainText('Login pages')
+})
+
+test('All Tasks is a press away while a block runs, and keeps today without touching the block', async ({
+  page,
+}) => {
+  await openMono(page)
+  await shapeDay(page)
+  await startBlock(page, 'Write the migration')
+  await expect(blockTasks(page)).toContainText('The task at hand')
+
+  // The column stays on the day, which is drawing the block, until asked.
+  const switcher = page.getByRole('group', { name: 'Show in this column' })
+  await expect(switcher.getByRole('button', { name: 'Today', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await switcher.getByRole('button', { name: 'All Tasks', exact: true }).click()
+
+  // A task written there is chosen for today, and shown in today's list under
+  // the tree; the block's own tasks are fixed once it has started.
+  const tree = page
+    .getByRole('complementary')
+    .getByRole('group', { name: 'Tasks for today', exact: true })
+  await addTaskIn(tree, 'Personal')
+  const field = tree.getByLabel('New task in Personal', { exact: true })
+  await field.fill('Call the bank')
+  await field.press('Enter')
+  await tree.getByRole('button', { name: 'Cancel the new task in Personal', exact: true }).click()
+  await expect(tree.getByRole('checkbox', { name: 'Call the bank' })).toBeChecked()
+  await expect(
+    page.getByRole('complementary').getByRole('region', { name: "Today's tasks", exact: true }),
+  ).toContainText('Call the bank')
+  await expect(blockTasks(page)).not.toContainText('Call the bank')
+
+  // The block over, the column is the day again.
+  await stage(page).getByRole('button', { name: 'End early' }).click()
+  await expect(switcher).toHaveCount(0)
 })

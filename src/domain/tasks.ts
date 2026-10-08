@@ -602,6 +602,29 @@ export function groupTasks(
   return tree.flatMap((node) => prune(node) ?? [])
 }
 
+/**
+ * Every open task beneath each place of a tree, at any depth — an epic's own
+ * and its outcomes' — by the place's id, in the tree's order. What ticking a
+ * whole epic or outcome takes, and what carrying one into an intention
+ * brings. A task done today is drawn in the picker's tree but is not a
+ * choice, so it is not here.
+ */
+export function openTasksBeneath(
+  tree: readonly TaskTreeNode[],
+): ReadonlyMap<string, readonly string[]> {
+  const beneath = new Map<string, string[]>()
+  const walk = (node: TaskTreeNode): string[] => {
+    const ids = [
+      ...node.tasks.filter((t) => t.status === 'open').map((t) => t.id),
+      ...node.children.flatMap(walk),
+    ]
+    beneath.set(node.id, ids)
+    return ids
+  }
+  tree.forEach(walk)
+  return beneath
+}
+
 /** The open, unarchived epics or outcomes directly under a parent. */
 export const openContainers = (
   parentId: string,

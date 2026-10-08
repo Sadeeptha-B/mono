@@ -7,7 +7,10 @@
  * Every open task in play, under its area, epic and outcome (`taskTree`), each
  * with a checkbox; a place's `⋯` offers `+ Task`, which writes a new one
  * straight into it and ticks it. What a tick means is the caller's: chosen for
- * today, or ticked for this block.
+ * today, or ticked for this block. An epic or outcome has a box of its own
+ * (`PlaceTick`), which ticks everything open beneath it at once
+ * (`onToggleMany`), and its row can be dragged onto one of today's intentions
+ * to carry all of it there; an area has neither, being a whole part of a life.
  *
  * It replaced a dropdown, which had to be placed against its button, flipped
  * upwards when there was more room above, kept on a phone's screen as the
@@ -119,6 +122,7 @@
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useMemo,
   useRef,
@@ -131,6 +135,7 @@ import {
 } from 'react'
 
 import {
+  Carry,
   dropListProps,
   SlotMark,
   slotAttrs,
@@ -144,7 +149,14 @@ import {
 } from './carry'
 import { ArchiveIcon, CheckIcon, DeleteIcon, MoveIcon, ReopenIcon } from './icons'
 import { EditGlyph, IconButton, KeepField, revealOnHover } from './ui'
-import { staysPut, stepTarget, type Item, type ItemKind, type TaskTreeNode } from '@/domain/tasks'
+import {
+  openTasksBeneath,
+  staysPut,
+  stepTarget,
+  type Item,
+  type ItemKind,
+  type TaskTreeNode,
+} from '@/domain/tasks'
 
 const LEVEL: Record<TaskTreeNode['kind'], string> = { area: 'Area', epic: 'Epic', outcome: 'Outcome' }
 
@@ -209,6 +221,45 @@ function orderRows(tree: readonly TaskTreeNode[]) {
   }
 }
 
+/**
+ * The box on an epic's or outcome's row, which ticks everything open in it
+ * at once — for today, or for the block, as a task's box does. Ticked when
+ * all of it is, mixed when some is, and pressed while mixed it ticks the rest:
+ * the commoner wish is to take the whole of it. A place with nothing open has
+ * no box, only the room one would take, so its name stays in line.
+ */
+function PlaceTick({
+  name,
+  taskIds,
+  selected,
+  onToggle,
+}: {
+  name: string
+  taskIds: readonly string[]
+  selected: ReadonlySet<string>
+  onToggle: (taskIds: readonly string[], on: boolean) => void
+}) {
+  const box = useRef<HTMLInputElement>(null)
+  const ticked = taskIds.filter((id) => selected.has(id)).length
+  const all = taskIds.length > 0 && ticked === taskIds.length
+  const some = ticked > 0 && !all
+  useEffect(() => {
+    if (box.current) box.current.indeterminate = some
+  }, [some])
+  if (taskIds.length === 0) return <span aria-hidden="true" className="size-[13px] shrink-0" />
+  return (
+    <input
+      ref={box}
+      type="checkbox"
+      checked={all}
+      onChange={() => onToggle(taskIds, !all)}
+      aria-label={`All of ${name}`}
+      title={all ? 'Untick all of it' : 'Tick all of it'}
+      className="m-0 mt-[9.5px] size-[13px] shrink-0 accent-[var(--color-deep)]"
+    />
+  )
+}
+
 /** The tree's carry takes nothing into a column; only between rows. */
 const takesNoColumn = () => false
 const movesNowhere = () => undefined
@@ -231,6 +282,7 @@ export const TaskBrowser = memo(function TaskBrowser({
   tree,
   selected,
   onToggle,
+  onToggleMany,
   onAdd,
   onRename,
   onDelete,
@@ -247,6 +299,11 @@ export const TaskBrowser = memo(function TaskBrowser({
   tree: readonly TaskTreeNode[]
   selected: readonly string[]
   onToggle: (taskId: string, on: boolean) => void
+  /**
+   * Tick or untick every open task in an epic or outcome at once, from the
+   * box on its row. Without it, a place's row has no box.
+   */
+  onToggleMany?: (taskIds: readonly string[], on: boolean) => void
   /**
    * Write a task under a place; its id, or null when the store refused it.
    * A task written here is ticked as well.
@@ -316,6 +373,11 @@ export const TaskBrowser = memo(function TaskBrowser({
     place: placeRow,
   })
   const ordering = onPlace !== undefined
+  // The carry around the tree, which takes a task — or everything open in an
+  // epic or outcome — into one of today's intentions.
+  const outer = useContext(Carry)
+  const openUnder = useMemo(() => openTasksBeneath(tree), [tree])
+  const selectedSet = useMemo(() => new Set(selected), [selected])
   /** A step through its own list, from a `⋯`, with the focus kept on the arrow pressed. */
   const step = (kind: SlotKind, id: string, parent: string, by: -1 | 1) => {
     const before = stepTarget(order.of(parent, kind), id, by)
@@ -449,16 +511,28 @@ export const TaskBrowser = memo(function TaskBrowser({
    * A place's row as the tree's carry sees it: dragged to put the place in
    * order, and a task let go on it goes last in it.
    */
-  const placeRowProps = (node: TaskTreeNode): HTMLAttributes<HTMLDivElement> => ({
-    draggable: true,
-    onDragStart: (e: DragEvent) => {
-      e.dataTransfer.effectAllowed = 'move'
-      e.dataTransfer.setData('text/plain', node.name)
-      reorder.pickUp({ id: node.id, title: node.name }, 'drag')
-    },
-    onDragEnd: reorder.putDown,
-    ...dropListProps(reorder, node.id, ['task']),
-  })
+  const placeRowProps = (node: TaskTreeNode): HTMLAttributes<HTMLDivElement> => {
+    // An epic or outcome is carried by the carry around the tree too, which
+    // takes everything open in it into one of today's intentions at once.
+    const bundled = draggable && node.kind !== 'area'
+    return {
+      draggable: true,
+      onDragStart: (e: DragEvent) => {
+        e.dataTransfer.effectAllowed = 'move'
+        e.dataTransfer.setData('text/plain', node.name)
+        if (ordering) reorder.pickUp({ id: node.id, title: node.name }, 'drag')
+        if (bundled) outer.pickUp({ id: node.id, title: node.name }, 'drag')
+      },
+      onDragEnd: () => {
+        reorder.putDown()
+        if (bundled) outer.putDown()
+      },
+      ...(ordering ? dropListProps(reorder, node.id, ['task']) : {}),
+    }
+  }
+  /** Whether a place's row drags at all: to be put in order, or to be carried into today. */
+  const dragsPlace = (node: TaskTreeNode) =>
+    renamingPlace?.id !== node.id && (ordering || (draggable && node.kind !== 'area'))
 
   const branch = (node: TaskTreeNode, depth: number, parent: string, last: boolean) => {
     const child = CHILD[node.kind]
@@ -477,12 +551,20 @@ export const TaskBrowser = memo(function TaskBrowser({
       <li key={node.id} {...(ordering ? slotAttrs(node.kind, node.id) : {})} className="relative">
         <SlotMark edge={slotEdge(reorder.aimed, parent, node.kind, node.id, last)} />
         <div
-          {...(ordering && renamingPlace?.id !== node.id ? placeRowProps(node) : {})}
+          {...(dragsPlace(node) ? placeRowProps(node) : {})}
           className={`group/row relative flex items-stretch gap-2 rounded-md px-2.5 ${
-            ordering ? 'cursor-grab active:cursor-grabbing' : ''
+            dragsPlace(node) ? 'cursor-grab active:cursor-grabbing' : ''
           } ${into ? 'bg-surface-raised' : ''}`}
         >
           {guides(depth)}
+          {onToggleMany && node.kind !== 'area' && renamingPlace?.id !== node.id && (
+            <PlaceTick
+              name={node.name}
+              taskIds={openUnder.get(node.id) ?? []}
+              selected={selectedSet}
+              onToggle={onToggleMany}
+            />
+          )}
           {renamingPlace?.id === node.id ? (
             <span className="flex min-w-0 flex-1 py-1">
               <InlineField

@@ -44,9 +44,9 @@
  *
  * The purpose names an outcome when every open task of it is ticked
  * (`purposeParts`). The block still records task ids, so nothing downstream
- * of this prompt learns that outcomes exist. There used to be a checkbox on
- * an outcome's heading here, taking all its tasks at once; it went with the
- * unticked rows it chose among.
+ * of this prompt learns that outcomes exist. Taking all of an outcome, or an
+ * epic, at once is the box on its row in All Tasks; there used to be one on an
+ * outcome's heading here, which went with the unticked rows it chose among.
  */
 
 import { useId, useMemo, useState, type ReactNode } from 'react'

@@ -1,29 +1,36 @@
 /**
  * All Tasks, in the calendar's column: the backlog drawn as a tree
- * (`TaskBrowser`) for the two questions that choose from it.
+ * (`TaskBrowser`) for the two questions that choose from it, and for a block
+ * while it runs.
  *
- * The right column is the day, always, except while today's question or the
- * purpose prompt is open. Those two choose tasks, and choosing needs the whole
- * backlog in view, which the stage has no room for. So for those two the
- * column offers a second view, switched from its header (`ColumnSwitch`): the
- * day, or All Tasks.
- * Both open on All Tasks, since that is where their answers come from, and
- * the stage beside it already shows today's own list. Whatever is chosen by
- * hand holds until the question closes, and the column is the day again.
- * `App` owns which is showing, and hides the other rather than unmounting it,
- * so a field half written in either is still there when it is switched back.
+ * The right column is the day, except while today's question or the purpose
+ * prompt is open, or a block is running. The two questions choose tasks, and
+ * choosing needs the whole backlog in view, which the stage has no room for;
+ * a block is where a task that has turned up is written down and today's list
+ * put right without leaving it. So for those three the column offers a second
+ * view, switched from its header (`ColumnSwitch`): the day, or All Tasks. The
+ * two questions open on All Tasks, since that is where their answers come
+ * from, and the stage beside it already shows today's own list. A block opens
+ * on the day, its own minutes drawn on it as they pass: All Tasks there is one
+ * press away, never in the way. Whatever is chosen by hand holds until the
+ * question or the block ends, and the column is the day again. `App` owns
+ * which is showing, and hides the other rather than unmounting it, so a field
+ * half written in either is still there when it is switched back.
  *
- * What a tick means follows the question. On today's question it chooses the
- * task for today; on the purpose prompt it ticks the task for the block,
- * through the same pick the prompt reads (`BlockPick`), and chooses it for
- * today as well (`App`). On both, a row can be dragged across onto one of
- * today's intentions on the stage — the list and the backlog share one hand,
- * `TodayCarry`, held around both columns.
+ * What a tick means follows the question. On today's question, and while a
+ * block runs, it chooses the task for today — a running block's tasks are
+ * fixed when it starts; on the purpose prompt it ticks the task for the
+ * block, through the same pick the prompt reads (`BlockPick`), and chooses it
+ * for today as well (`App`). An epic's or outcome's box ticks everything open
+ * in it the same way, at once. A row can be dragged across onto one of
+ * today's intentions — the list and the backlog share one hand, `TodayCarry`,
+ * held around both columns — and an epic's or outcome's row brings everything
+ * open in it.
  *
  * The column scrolls the tree itself, so the search is held at its head and
  * nothing here scrolls inside anything else.
  *
- * On the purpose prompt the column is split. Under the tree is the day itself,
+ * On the purpose prompt, and while a block runs, the column is split. Under the tree is the day itself,
  * today's own list (`TodayList`, as on the opening question): what today has
  * chosen, under its intentions, which are named, renamed, marked done,
  * deleted and filled by carrying tasks in, from the list itself or from the
@@ -61,19 +68,26 @@ import { useTasks } from '@/store/tasks'
 /** What the column shows. */
 export type ColumnView = 'day' | 'tasks'
 
-/** The question All Tasks is choosing for, while one is open. */
-export type ChoosingFor = 'today' | 'block'
+/**
+ * What All Tasks is offered for: today's question, the purpose prompt, or a
+ * block running — where it is for keeping the backlog and today's list, the
+ * block's own tasks being fixed once it starts.
+ */
+export type ChoosingFor = 'today' | 'block' | 'focus'
 
 export function AllTasksPane({
   choosingFor,
   blockSelected,
   onBlockTick,
+  onBlockTickMany,
   switcher,
 }: {
   choosingFor: ChoosingFor
   /** The block's ticks still in play, for the purpose prompt. */
   blockSelected: readonly string[]
   onBlockTick: (taskId: string, on: boolean) => void
+  /** The same for everything open in an epic or outcome at once. */
+  onBlockTickMany: (taskIds: readonly string[], on: boolean) => void
   /** The header's switch between the day and All Tasks. */
   switcher: ReactNode
 }) {
@@ -82,6 +96,8 @@ export function AllTasksPane({
   const intentions = useSession((s) => s.session.intentions)
   const addToToday = useSession((s) => s.addToToday)
   const removeFromToday = useSession((s) => s.removeFromToday)
+  const addAllToToday = useSession((s) => s.addAllToToday)
+  const removeAllFromToday = useSession((s) => s.removeAllFromToday)
   const addItem = useTasks((s) => s.addItem)
   const renameItem = useTasks((s) => s.renameItem)
   const deleteItem = useTasks((s) => s.deleteItem)
@@ -109,6 +125,11 @@ export function AllTasksPane({
   const chooseForToday = useCallback(
     (taskId: string, on: boolean) => (on ? addToToday(taskId) : removeFromToday(taskId)),
     [addToToday, removeFromToday],
+  )
+  const chooseAllForToday = useCallback(
+    (taskIds: readonly string[], on: boolean) =>
+      on ? addAllToToday(taskIds) : removeAllFromToday(taskIds),
+    [addAllToToday, removeAllFromToday],
   )
   const write = useCallback(
     (parentId: string, title: string) => addItem({ kind: 'task', title, parentId }),
@@ -142,7 +163,12 @@ export function AllTasksPane({
     [renameArea, renameItem, addItem, completeItem, archiveArea, archiveItem, deleteItem, items],
   )
 
-  const forToday = choosingFor === 'today'
+  // A tick chooses for today everywhere but the purpose prompt, where it is
+  // for the block being named.
+  const forToday = choosingFor !== 'block'
+  // Today's list under the tree wherever the stage beside it is not already
+  // showing it: the purpose prompt, and a block running.
+  const withToday = choosingFor !== 'today'
   return (
     // The calendar's own frame and header, so the two views read as one column
     // turned over rather than as a panel laid over it.
@@ -176,6 +202,7 @@ export function AllTasksPane({
             tree={backlog.pickerTree}
             selected={forToday ? backlog.chosen : blockSelected}
             onToggle={forToday ? chooseForToday : onBlockTick}
+            onToggleMany={forToday ? chooseAllForToday : onBlockTickMany}
             onAdd={write}
             onRename={renameItem}
             onDelete={deleteItem}
@@ -188,7 +215,7 @@ export function AllTasksPane({
           />
         )}
       </div>
-      {!forToday && backlog.hydrated && (
+      {withToday && backlog.hydrated && (
         <>
           <Splitter share={share} onShare={setShare} />
           <section
@@ -203,7 +230,7 @@ export function AllTasksPane({
               onNewIntention={nameIntention}
               renaming={renaming}
               onRenaming={setRenaming}
-              empty="Nothing chosen for today yet. Tick a task above."
+              empty="Nothing chosen for today yet. Tick a task or a place above."
             />
           </section>
         </>

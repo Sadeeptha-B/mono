@@ -56,7 +56,7 @@
  * The tasks straight under an epic are a column beside its outcomes with no
  * card, and with nothing at its head they read as one more outcome — a task
  * written into the epic was taken for an outcome that had appeared to the
- * right of `Add outcome`. So the column is headed `Not in an outcome`, small
+ * right of `Add outcome`. So the column is headed `Tasks`, small
  * and quiet, as a card's own `Outcome` is.
  *
  * Every edit here is a backlog edit — the task store writes the one record it
@@ -66,7 +66,8 @@
  * today's, and today's list shows it crossed out or stops drawing it.
  *
  * Actions are icons (`IconButton`): today, rename, done, drop, archive,
- * reopen, restore, delete. A column is narrow, and as words they took more of
+ * reopen, restore, delete. An epic's or outcome's card carries a sun too,
+ * which chooses everything open in it for today at once (`PlaceSun`). A column is narrow, and as words they took more of
  * a row than the title they acted on. Each says in its accessible name what it
  * acts on and shows its verb on hover. They show only on hover or with focus
  * in their row or card, and always on a touch screen (`revealOnHover`), as in
@@ -141,8 +142,10 @@ import {
   isLive,
   liveDescendantsOf,
   openContainers,
+  openTasksBeneath,
   openTasksUnder,
   staysPut,
+  taskTree,
   type Area,
   type Item,
 } from '@/domain/tasks'
@@ -286,6 +289,8 @@ function Backlog({ hand }: { hand: CarryHand }) {
   const waiting = useMemo(() => waitingLater(allLater), [allLater])
   const letGo = useMemo(() => letGoLater(allLater), [allLater])
   const waitingById = useMemo(() => new Map(waiting.map((l) => [l.id, l])), [waiting])
+  // What an epic's or outcome's sun chooses: every open task in play beneath it.
+  const beneath = useMemo(() => openTasksBeneath(taskTree(items, allAreas)), [items, allAreas])
   // The areas, epics and outcomes the board draws, which are carried only to
   // be put in order among their own.
   const drawnPlaces = useMemo(() => {
@@ -357,7 +362,7 @@ function Backlog({ hand }: { hand: CarryHand }) {
           into the board to become a task. */}
       <LaterSection waiting={waiting} letGo={letGo} />
 
-      <AreaList areas={areas} items={items} today={today} />
+      <AreaList areas={areas} items={items} today={today} beneath={beneath} />
 
       <div className="mt-6">
         <AddForm
@@ -650,8 +655,10 @@ function LetGoFold({ letGo }: { letGo: readonly Later[] }) {
 /** Shared down the tree: everything a task row or a card needs to act. */
 type TreeProps = {
   items: readonly Item[]
-  /** Today's tasks, for the sun on each row. */
+  /** Today's tasks, for the sun on each row and card. */
   today: Today
+  /** Every open task in play beneath each epic and outcome, for the sun on its card. */
+  beneath: ReadonlyMap<string, readonly string[]>
 }
 
 /**
@@ -865,7 +872,7 @@ function Board({
  *
  * The add slot sits in the row of outcomes rather than under the board because
  * a new outcome is a new column: it appears where the button was. The tasks
- * after it are headed `Not in an outcome`, since a column with nothing at its
+ * after it are headed `Tasks`, since a column with nothing at its
  * head read as one more outcome — see the header.
  */
 function EpicRow({
@@ -884,7 +891,16 @@ function EpicRow({
     <Row
       label={`Epic: ${epic.title}`}
       slot={{ attrs: slotAttrs('epic', epic.id), mark: <SlotMark edge={edge} /> }}
-      side={<ContainerCard item={epic} allItems={tree.items} first={first} last={last} />}
+      side={
+        <ContainerCard
+          item={epic}
+          allItems={tree.items}
+          first={first}
+          last={last}
+          taskIds={tree.beneath.get(epic.id) ?? []}
+          today={tree.today}
+        />
+      }
     >
       <Board drop={outcomeDrop}>
         {openOutcomes.map((outcome, i) => (
@@ -911,7 +927,7 @@ function EpicRow({
         </div>
         <DropZone target={epic.id} className="min-w-0">
           <h4 className="mb-2 border-b border-line px-1 pt-1 pb-1.5 text-[10px] font-medium tracking-widest text-muted uppercase">
-            Not in an outcome
+            Tasks
           </h4>
           <TaskList
             parent={epic.id}
@@ -952,7 +968,14 @@ function OutcomeColumn({
     >
       <SlotMark edge={edge} axis="grid" />
       <DropZone target={outcome.id} className="flex flex-col gap-2">
-        <ContainerCard item={outcome} allItems={tree.items} first={first} last={last} />
+        <ContainerCard
+          item={outcome}
+          allItems={tree.items}
+          first={first}
+          last={last}
+          taskIds={tree.beneath.get(outcome.id) ?? []}
+          today={tree.today}
+        />
         <TaskList
           parent={outcome.id}
           name={outcome.title}
@@ -980,17 +1003,26 @@ function OutcomeColumn({
  * The card is what a pointer drags to put it in order among its siblings —
  * outcomes across their epic's row, epics down their area — and its move
  * icons are the keyboard's way to do the same, a step at a time.
+ *
+ * Its sun chooses everything open in it for today at once (`PlaceSun`), as a
+ * task's sun chooses one, so an outcome's worth of work is one press here as
+ * it is one box in All Tasks.
  */
 function ContainerCard({
   item,
   allItems,
   first,
   last,
+  taskIds,
+  today,
 }: {
   item: Item
   allItems: readonly Item[]
   first: boolean
   last: boolean
+  /** Every open task in play beneath it. */
+  taskIds: readonly string[]
+  today: Today
 }) {
   const renameItem = useTasks((s) => s.renameItem)
   const completeItem = useTasks((s) => s.completeItem)
@@ -1014,6 +1046,7 @@ function ContainerCard({
         <span className="text-[10px] font-medium tracking-widest text-muted uppercase">{noun}</span>
         {renaming === null && (
           <span className="-mr-1.5 -mb-0.5 flex flex-wrap items-center justify-end">
+            <PlaceSun title={item.title} taskIds={taskIds} today={today} />
             <StepButtons
               title={item.title}
               axis={item.kind === 'outcome' ? 'grid' : 'list'}
@@ -1071,6 +1104,54 @@ function ContainerCard({
         </div>
       )}
     </div>
+  )
+}
+
+/**
+ * An epic's or outcome's sun: every open task in it chosen for today at once,
+ * or taken out again. Lit and saying `Today` when all of it is today's, as a
+ * task's sun says so; while only some is, lit and saying how much, and a
+ * press chooses the rest, the commoner wish being the whole of it. Otherwise
+ * an action like the card's others, shown on hover. Nothing open in it, no
+ * sun: there is nothing for today to take.
+ *
+ * Which intention the tasks go under is today's list's business, as for a
+ * single task: grouping is done where the groups are.
+ */
+function PlaceSun({
+  title,
+  taskIds,
+  today,
+}: {
+  title: string
+  taskIds: readonly string[]
+  today: Today
+}) {
+  const addAllToToday = useSession((s) => s.addAllToToday)
+  const removeAllFromToday = useSession((s) => s.removeAllFromToday)
+  if (taskIds.length === 0) return null
+  const chosen = taskIds.filter((id) => isToday(today, id)).length
+  const all = chosen === taskIds.length
+  const some = chosen > 0 && !all
+  return (
+    <button
+      type="button"
+      onClick={() => (all ? removeAllFromToday(taskIds) : addAllToToday(taskIds))}
+      aria-label={`All of ${title} for today`}
+      aria-pressed={all ? true : some ? 'mixed' : false}
+      title={all ? 'Today — take it all out' : some ? 'Add the rest to today' : 'Add all of it to today'}
+      className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1 text-xs transition hover:bg-surface-raised hover:text-bright ${
+        all || some ? 'text-deep' : `text-muted ${revealOnHover}`
+      }`}
+    >
+      <TodayIcon chosen={all} />
+      {all && <span>Today</span>}
+      {some && (
+        <span>
+          {chosen} of {taskIds.length}
+        </span>
+      )}
+    </button>
   )
 }
 

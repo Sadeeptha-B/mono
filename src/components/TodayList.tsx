@@ -37,7 +37,11 @@
  * it, rather than as one more kind of box.
  *
  * Every task sits under the places it lives in (`GroupedTasks`), each place
- * said once, so an intention gathering tasks from two areas shows both. Tasks
+ * said once, so an intention gathering tasks from two areas shows both. A
+ * place's heading carries what it heads in that group into another, all at
+ * once (`PlaceHeading`), and an epic or outcome dragged in from All Tasks
+ * brings everything open in it (`Bundle`): grouping an outcome's worth of work
+ * is one move rather than one per task. Tasks
  * finished today stay, crossed out after the open ones of their place, because
  * the list is also the day's progress; they are not carried, since there is
  * nothing left to plan about them. A task taken out with its × leaves today
@@ -71,14 +75,76 @@ import {
 import { GroupedTasks } from './GroupedTasks'
 import { DeleteIcon, DoneRingIcon } from './icons'
 import { useTodayBacklog } from './useTodayBacklog'
-import { EditGlyph, IconButton, KeepField, RenameField } from './ui'
-import type { Item } from '@/domain/tasks'
-import { isToday, tasksOfIntention, ungroupedToday } from '@/domain/today'
+import { EditGlyph, IconButton, KeepField, RenameField, revealOnHover } from './ui'
+import { openTasksBeneath, type Item, type TaskTreeNode } from '@/domain/tasks'
+import { isToday, tasksOfIntention, ungroupedToday, type Today } from '@/domain/today'
 import type { Intention } from '@/domain/types'
 import { useSession } from '@/store/session'
 
 /** The place a task under no intention is carried to. Never an intention's id. */
 const NOT_GROUPED = ':not-grouped'
+
+/**
+ * Everything open in a place, carried as one into an intention: an epic or
+ * outcome dragged from All Tasks, which brings all of it, chosen for today or
+ * not; or a place's heading in today's own list, which brings the tasks it
+ * heads there — the tasks in that place in that one group, and no others, so
+ * grouping what the day has chosen never chooses more.
+ */
+type Bundle = { id: string; title: string; taskIds: readonly string[] }
+type TodayCarried = Item | Bundle
+const isBundle = (carried: TodayCarried): carried is Bundle => 'taskIds' in carried
+
+/**
+ * A heading's carry id: the group it heads part of — an intention, or none —
+ * and the place. The same place heads part of several groups, and each is a
+ * different handful of tasks. `|` is in no id Mono makes.
+ */
+const HEADING = 'heading|'
+const headingId = (group: string, placeId: string) => `${HEADING}${group}|${placeId}`
+const headingPlace = (id: string): string | null =>
+  id.startsWith(HEADING) ? (id.split('|')[2] ?? null) : null
+
+type PlaceEntry = { name: string; kind: TaskTreeNode['kind']; open: readonly string[] }
+
+/** Every place in the tree, by id, with everything open beneath it. */
+function placeIndex(tree: readonly TaskTreeNode[]): ReadonlyMap<string, PlaceEntry> {
+  const open = openTasksBeneath(tree)
+  const index = new Map<string, PlaceEntry>()
+  const walk = (node: TaskTreeNode) => {
+    index.set(node.id, { name: node.name, kind: node.kind, open: open.get(node.id) ?? [] })
+    node.children.forEach(walk)
+  }
+  tree.forEach(walk)
+  return index
+}
+
+/** The bundle an id names, or undefined when it names none or nothing in it is open. */
+function bundleOf(
+  id: string,
+  by: CarryMode,
+  places: ReadonlyMap<string, PlaceEntry>,
+  today: Today,
+): Bundle | undefined {
+  const placeId = headingPlace(id)
+  let taskIds: readonly string[]
+  let place: PlaceEntry | undefined
+  if (placeId !== null) {
+    const group = id.slice(HEADING.length, id.length - placeId.length - 1)
+    place = places.get(placeId)
+    if (!place) return undefined
+    const inPlace = new Set(place.open)
+    const inGroup = group === NOT_GROUPED ? ungroupedToday(today) : tasksOfIntention(group, today)
+    taskIds = inGroup.filter((taskId) => inPlace.has(taskId))
+  } else {
+    // A place is carried from All Tasks only, by drag; an area is too much
+    // of a life to carry at once.
+    place = places.get(id)
+    if (by !== 'drag' || !place || place.kind === 'area') return undefined
+    taskIds = place.open
+  }
+  return taskIds.length > 0 ? { id, title: `tasks in ${place.name}`, taskIds } : undefined
+}
 
 /** An intention being renamed, and the name typed so far. */
 export type IntentionRename = { id: string; title: string }
@@ -129,30 +195,50 @@ export function TodayCarry({
   const backlog = useTodayBacklog()
   const today = useSession((s) => s.session.today)
   const linkTask = useSession((s) => s.linkTask)
+  const linkTasks = useSession((s) => s.linkTasks)
   const addToToday = useSession((s) => s.addToToday)
 
   const taskById = backlog.task
+  const places = useMemo(() => placeIndex(backlog.pickerTree), [backlog.pickerTree])
+  // A bundle is worked out once per change to the day or the backlog, so the
+  // one in hand keeps its identity across the clock's tick.
+  const bundles = useMemo(() => new Map<string, Bundle>(), [places, today])
   const find = useCallback(
-    (taskId: string, by: CarryMode) => {
-      const task = taskById(taskId)
-      // Only today's rows have a grip; a drag may come from All Tasks.
-      const inPlace = by === 'drag' || isToday(today, taskId)
-      return task?.status === 'open' && inPlace ? task : undefined
+    (id: string, by: CarryMode): TodayCarried | undefined => {
+      const task = taskById(id)
+      if (task) {
+        // Only today's rows have a grip; a drag may come from All Tasks.
+        const inPlace = by === 'drag' || isToday(today, id)
+        return task.status === 'open' && inPlace ? task : undefined
+      }
+      const known = bundles.get(id)
+      if (known) return known
+      const bundle = bundleOf(id, by, places, today)
+      if (bundle) bundles.set(id, bundle)
+      return bundle
     },
-    [taskById, today],
+    [taskById, today, places, bundles],
   )
   const takes = useCallback(
-    (task: Item, target: string) =>
-      !isToday(today, task.id) || (today[task.id] ?? NOT_GROUPED) !== target,
+    (carried: TodayCarried, target: string) =>
+      (isBundle(carried) ? carried.taskIds : [carried.id]).some(
+        (id) => !isToday(today, id) || (today[id] ?? NOT_GROUPED) !== target,
+      ),
     [today],
   )
   const move = useCallback(
-    (task: Item, target: string) => {
-      if (target !== NOT_GROUPED) linkTask(task.id, target)
-      else if (isToday(today, task.id)) linkTask(task.id, null)
-      else addToToday(task.id)
+    (carried: TodayCarried, target: string) => {
+      if (isBundle(carried)) {
+        linkTasks(carried.taskIds, target === NOT_GROUPED ? null : target)
+        // From the keyboard, focus follows to the place's heading where it landed.
+        const place = headingPlace(carried.id)
+        return place === null ? undefined : headingId(target, place)
+      }
+      if (target !== NOT_GROUPED) linkTask(carried.id, target)
+      else if (isToday(today, carried.id)) linkTask(carried.id, null)
+      else addToToday(carried.id)
     },
-    [today, linkTask, addToToday],
+    [today, linkTask, linkTasks, addToToday],
   )
   const carry = useCarryState({ find, takes, move, hand })
   // Adjusted during render, so the stale bar is never painted.
@@ -200,7 +286,7 @@ export function TodayList({
   const addIntention = useSession((s) => s.addIntention)
   const updateIntention = useSession((s) => s.updateIntention)
   const removeIntention = useSession((s) => s.removeIntention)
-  const { held } = useContext(Carry)
+  const { held, takes } = useContext(Carry)
 
   // Grouped per change to the day or the backlog, not per tick.
   const group = backlog.group
@@ -228,6 +314,10 @@ export function TodayList({
 
   const renderTask = (task: Item) => (
     <TodayTaskRow task={task} onRemove={() => removeFromToday(task.id)} />
+  )
+  // A place's heading in one group carries that group's tasks in it.
+  const placeIn = (group: string) => (node: TaskTreeNode, line: string, className: string) => (
+    <PlaceHeading group={group} node={node} line={line} className={className} />
   )
   const nothingChosen = backlog.chosen.length === 0
 
@@ -337,6 +427,7 @@ export function TodayList({
                       label={`Tasks for ${intention.title}`}
                       groups={tasks}
                       renderTask={renderTask}
+                      renderPlace={placeIn(intention.id)}
                       gutter="wide"
                       placeText="text-sm"
                     />
@@ -355,7 +446,7 @@ export function TodayList({
           a task of today's leaving its intention, or one from the backlog being
           chosen. */}
       {(groups.none.length > 0 ||
-        (held !== null && (intentions.length > 0 || !isToday(today, held.task.id)))) && (
+        (held !== null && (intentions.length > 0 || takes(NOT_GROUPED)))) && (
         <DropZone target={NOT_GROUPED} className="min-w-0">
           <section aria-label={intentions.length > 0 ? 'Not grouped' : 'Chosen today'}>
             <MoveHere target={NOT_GROUPED} name="no intention" />
@@ -364,6 +455,7 @@ export function TodayList({
                 label={intentions.length > 0 ? 'Tasks not grouped' : 'Tasks chosen today'}
                 groups={groups.none}
                 renderTask={renderTask}
+                renderPlace={placeIn(NOT_GROUPED)}
                 gutter="wide"
                 placeText="text-sm"
               />
@@ -417,6 +509,44 @@ function TodayTaskRow({ task, onRemove }: { task: Item; onRemove: () => void }) 
     </div>
   )
 }
+
+/**
+ * A place's heading in one group of today's list — an intention, or none —
+ * which carries the open tasks it heads there into another, all at once:
+ * dragged by the heading, or picked up with the grip at its end and put down
+ * with `Move here`. The grip shows on hover or with focus in the line, as a
+ * row's actions do, since most of the time a heading is only read; a heading
+ * over nothing open has none.
+ */
+function PlaceHeading({
+  group,
+  node,
+  line,
+  className,
+}: {
+  group: string
+  node: TaskTreeNode
+  line: string
+  className: string
+}) {
+  const carried = { id: headingId(group, node.id), title: `tasks in ${node.name}` }
+  const open = holdsOpen(node)
+  const { picked, dragProps } = useCarriedRow(carried, open)
+  return (
+    <div
+      {...(open ? dragProps : {})}
+      className={`group/row flex min-w-0 items-center gap-1 rounded-md ${open ? 'cursor-grab' : ''} ${
+        picked ? 'bg-surface/60 outline-1 outline-deep/70 outline-dashed' : ''
+      }`}
+    >
+      <span className={`min-w-0 ${className}`}>{line}</span>
+      {open && <CarryGrip task={carried} className={picked ? '' : revealOnHover} />}
+    </div>
+  )
+}
+
+const holdsOpen = (node: TaskTreeNode): boolean =>
+  node.tasks.some((t) => t.status === 'open') || node.children.some(holdsOpen)
 
 /**
  * A new intention written where it will stand: dashed, its ring faint, its

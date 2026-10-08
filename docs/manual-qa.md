@@ -160,6 +160,11 @@ The two-tab checks below assume it is there.
     `⤴ Later`: the window must say `1 for later`, the line must appear on the
     tab's Tasks page, and at the opening size the openers, the counts, the urges
     and the sound must still share one row.
+    Point at the purpose in the real window: the block's tasks must open at
+    once in Mono's card, inside the window at its opening size and when made
+    small, and ticking one there must tick it in the tab. Then, with the tab
+    buried behind another window, press `Open Mono` in the footer: the tab must
+    come forward on the day, not on the tasks page or the guide.
 
 ## Ambient sound
 

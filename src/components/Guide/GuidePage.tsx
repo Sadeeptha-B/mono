@@ -366,8 +366,10 @@ function sectionsFor(settings: Settings): Section[] {
             calendar draws it but on its side, with its start and end at either end:
             the line standing across it is now, so you can see how much is gone, and its
             marks are where you logged and felt the urge to leave. Point at a mark there
-            too, to read it or put a log right. End early, or Back to work on a break,
-            is the word at the start of the window's footer.
+            too, to read it or put a log right. Point at the purpose to see the block's
+            tasks, and tick one off there. <Em>Open Mono</Em> brings the tab back to the
+            day, and End early, or Back to work on a break, is the word after it at the
+            start of the window's footer.
           </P>
           <P>
             You can resize the window. If it becomes awkwardly small or large, use{' '}
@@ -451,7 +453,9 @@ function sectionsFor(settings: Settings): Section[] {
             goes. Every row has a <Em>⋯</Em>, shown when you point at it: a task's marks
             it done, renames or deletes it, or reopens one finished today; a place's
             renames, finishes, archives or adds to it, so the backlog is kept without
-            leaving the question. The switch at the top of the column turns it back to the day. If you only know the rough
+            leaving the question. An epic or an outcome has a box too, which ticks
+            everything still open in it at once, and shows a dash while only some of it
+            is ticked. The switch at the top of the column turns it back to the day. If you only know the rough
             shape of the work, write a task that says so: <Em>look into the double
             charge</Em> is a perfectly good task to start a day with.
           </P>
@@ -461,6 +465,9 @@ function sectionsFor(settings: Settings): Section[] {
             pages — with <Em>+ Intention</Em> beside the heading, and carry tasks into it by
             dragging them, from today's list or straight from <Em>All Tasks</Em>, or by
             picking one up with the dots in front of it and choosing <Em>Move here</Em>.
+            Drag an epic or an outcome from <Em>All Tasks</Em> and everything open in it
+            comes at once. A place's heading in today's list carries the tasks it heads
+            there, by dragging it or by the dots at its end.
             An intention can be narrower than an outcome or wider than an epic, whatever
             the day needs; a task belongs to one at most, and to none quite happily. The{' '}
             <Em>×</Em> on a task takes it out of today and leaves it in your backlog.
@@ -693,7 +700,7 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="Focusing"
-              asks="The timer shows time remaining by default. Click it to see time focused so far, and click again to switch back. Your choice carries into later blocks and breaks. End early sits at the far side, level with the block's name. Your purpose is under the timer, and under that two columns: the block's tasks on the left — tick one off the moment it is done — with ✎ Log and ⤴ Later beneath them, and its logs on the right, with the urge counter beneath them, level with ✎ Log."
+              asks="The timer shows time remaining by default. Click it to see time focused so far, and click again to switch back. Your choice carries into later blocks and breaks. End early sits at the far side, level with the block's name. Your purpose is under the timer, and under that two columns: the block's tasks on the left — tick one off the moment it is done — with ✎ Log and ⤴ Later beneath them, and its logs on the right, with the urge counter beneath them, level with ✎ Log. The switch at the top of the calendar's column turns it to All Tasks while the block runs, to write down a task that turned up or put today's list right; a tick there chooses for today, since the block's own tasks were settled when it started."
               choices={[
                 [
                   'Log',
@@ -775,7 +782,7 @@ function sectionsFor(settings: Settings): Section[] {
           <P>
             Each area is drawn as a board. Its epics run down the left, and beside each
             one are its outcomes as columns, each with its tasks beneath it, then the
-            tasks that sit straight under the epic, headed <Em>Not in an outcome</Em>.
+            tasks that sit straight under the epic, headed <Em>Tasks</Em>.
             The inbox is last, with its tasks beside it.
           </P>
           <P>
@@ -789,7 +796,9 @@ function sectionsFor(settings: Settings): Section[] {
           </P>
           <P>
             Each card and row carries its actions as small icons — rename, done, drop,
-            archive, delete — and hovering one says which it is. You decide when an
+            archive, delete — and hovering one says which it is. The sun on a task
+            chooses it for today; the sun on an epic's or outcome's card chooses
+            everything still open in it, and says how much is chosen when only some is. You decide when an
             epic or outcome is finished — nothing completes itself because its tasks
             ran out. <Em>Done</Em> and <Em>Archive</Em> both put it away with
             everything inside, out of the page and out of the purpose prompt; the tasks

@@ -638,3 +638,55 @@ test("a log's card stays in view in a short pop-out scrolled to its strip", asyn
     expect(box.x + box.width).toBeLessThanOrEqual(body.x + body.width)
   }
 })
+
+test("the purpose in the pop-out opens the block's tasks in Mono's own card", async ({ page }) => {
+  await stubMiniWindow(page)
+  await openMono(page)
+  await shapeDayInTab(page)
+  await startBlock(page, 'Write the migration')
+
+  const mini = page.frameLocator(MINI)
+  const purpose = mini.getByText('Write the migration')
+  const tasks = mini.getByRole('list', { name: 'Tasks in this block' })
+  await expect(tasks).toBeHidden()
+
+  // Pointed at, the card opens at once — not the browser's tooltip — inside
+  // the window, and what is in it can be ticked there.
+  await expect(purpose).not.toHaveAttribute('title')
+  await purpose.hover()
+  await expect(tasks).toContainText('The task at hand')
+  const body = (await mini.locator('.mono-scroll').boundingBox())!
+  const card = (await tasks.boundingBox())!
+  expect(card.x + card.width).toBeLessThanOrEqual(body.x + body.width)
+  expect(card.y + card.height).toBeLessThanOrEqual(body.y + body.height)
+  await tasks.getByRole('checkbox', { name: 'The task at hand done' }).check()
+  await expect(stage(page).getByRole('checkbox', { name: 'The task at hand done' })).toBeChecked()
+
+  // Held open while the focus is in it, as a log's card is; gone once the
+  // pointer and the focus have both left. The keyboard opens it the same way.
+  await mini.getByText('Deep block').click()
+  await expect(tasks).toBeHidden()
+  await purpose.focus()
+  await expect(tasks).toBeVisible()
+})
+
+test('while a block runs, Open Mono sits before End early and brings the tab back to the day', async ({
+  page,
+}) => {
+  await stubMiniWindow(page)
+  await openMono(page)
+  await shapeDayInTab(page)
+  await startBlock(page, 'Write the migration')
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+
+  const mini = page.frameLocator(MINI)
+  const open = mini.getByRole('button', { name: 'Open Mono', exact: true })
+  const end = mini.getByRole('button', { name: 'End early', exact: true })
+  const [o, e] = await Promise.all([open.boundingBox(), end.boundingBox()])
+  expect(o!.x + o!.width).toBeLessThan(e!.x)
+  expect(Math.abs(o!.y - e!.y)).toBeLessThan(2)
+
+  await open.click()
+  expect(new URL(page.url()).hash).toBe('#/')
+  await expect(stage(page).getByRole('list', { name: 'Tasks in this block' })).toBeVisible()
+})
