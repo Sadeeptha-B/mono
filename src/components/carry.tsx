@@ -29,6 +29,24 @@
  * Two surfaces on one page share a hand (`useCarryHand`): taking a task up with
  * one puts down whatever the other held, so there is one status bar and one
  * set of `Move here` at a time.
+ *
+ * A drag can also be let go *between* rows, which is how the backlog is put in
+ * order. A list that takes a row at a position (`useDropList`) works out from
+ * the pointer which of its rows the carried one would land before — its rows
+ * mark themselves with `slotAttrs` — and asks the surface whether that slot
+ * fits (`fits`); the row it would land before draws a line there
+ * (`SlotMark`), and letting go writes it (`place`). Only for a drag: the
+ * keyboard's way to reorder is a step at a time, from a grip's arrow keys or a
+ * row's own buttons, since a pick-up offering a `Move here` between every
+ * pair of rows would be most of the page.
+ *
+ * Lists nest — a task list inside an outcome's column inside an epic's row of
+ * outcomes, all in an area's band — and a drag event passes through all of
+ * them on its way up. The innermost that takes the carried row claims the
+ * event by cancelling it, and everything above, lists and columns alike,
+ * leaves a cancelled event alone. So a task over a task list lands among its
+ * tasks, and an outcome dragged over the same list falls through to the row
+ * of outcomes around it.
  */
 
 import {
@@ -47,6 +65,8 @@ import {
   type SetStateAction,
 } from 'react'
 
+import { useRefocus } from './ui'
+
 /**
  * What can be carried: a task, or on the tasks page something put down for
  * later, which is carried into the backlog to become a task there. The
@@ -57,6 +77,18 @@ export type Carried = { id: string; title: string }
 
 /** How a task is being carried: under the pointer, or picked up to be put down. */
 export type CarryMode = 'drag' | 'pick'
+
+/** What a list of rows holds, so a list holding two kinds can tell them apart. */
+export type SlotKind = 'area' | 'epic' | 'outcome' | 'task'
+
+/**
+ * A position among a list's rows: under `parent`, among its rows of `kind`,
+ * before the row `before`, or after the last when that is null.
+ */
+export type Slot = { parent: string; kind: SlotKind; before: string | null }
+
+/** The parent of the list of areas, which have none. Never an id. */
+export const TOP = ''
 
 /** The task in hand on one surface, and the verbs that carry it. */
 export type CarryContext = {
@@ -72,6 +104,13 @@ export type CarryContext = {
   moveTo: (target: string) => void
   /** The task a pick-up just put down, which takes focus when it lands. */
   landed: RefObject<string | null>
+  /** The slot a drag is over, so only its line is drawn. */
+  aimed: Slot | null
+  aim: Dispatch<SetStateAction<Slot | null>>
+  /** Whether the task in hand would go to `slot`: somewhere it is not already. */
+  fits: (slot: Slot) => boolean
+  /** Put the task in hand at `slot`, and let go of it. */
+  placeAt: (slot: Slot) => void
 }
 
 export const Carry = createContext<CarryContext>({
@@ -83,6 +122,10 @@ export const Carry = createContext<CarryContext>({
   takes: () => false,
   moveTo: () => undefined,
   landed: { current: null },
+  aimed: null,
+  aim: () => undefined,
+  fits: () => false,
+  placeAt: () => undefined,
 })
 
 /** Which of several carries on a page holds the task in hand. */
@@ -102,6 +145,8 @@ export function useCarryState<T extends Carried>({
   find,
   takes,
   move,
+  fits,
+  place,
   hand,
 }: {
   /**
@@ -118,11 +163,16 @@ export function useCarryState<T extends Carried>({
    * focus follows it there.
    */
   move: (task: T, target: string) => string | undefined | void
+  /** Whether a task would go to a slot between rows; none would, without it. */
+  fits?: (task: T, slot: Slot) => boolean
+  /** Put it down at a slot, returning what landed as `move` does. */
+  place?: (task: T, slot: Slot) => string | undefined | void
   /** Shared with the page's other carries, so only one holds a task at once. */
   hand?: CarryHand | undefined
 }): CarryContext {
   const [carrying, setCarrying] = useState<{ id: string; by: CarryMode } | null>(null)
   const [over, setOver] = useState<string | null>(null)
+  const [aimed, setAimed] = useState<Slot | null>(null)
   const landed = useRef<string | null>(null)
   const me = useId()
 
@@ -131,12 +181,14 @@ export function useCarryState<T extends Carried>({
   if (carrying && !heldTask) {
     setCarrying(null)
     setOver(null)
+    setAimed(null)
   }
 
   const carry = useMemo<CarryContext>(() => {
     const putDown = () => {
       setCarrying(null)
       setOver(null)
+      setAimed(null)
     }
     const held = heldTask && carrying ? { task: heldTask, by: carrying.by } : null
     return {
@@ -158,8 +210,17 @@ export function useCarryState<T extends Carried>({
         putDown()
       },
       landed,
+      aimed,
+      aim: setAimed,
+      fits: (slot) => held !== null && fits !== undefined && fits(held.task, slot),
+      placeAt: (slot) => {
+        if (!held || !place || !fits?.(held.task, slot)) return
+        const arrived = place(held.task, slot) ?? held.task.id
+        if (held.by === 'pick') landed.current = arrived
+        putDown()
+      },
     }
-  }, [heldTask, carrying, over, takes, move, hand, me])
+  }, [heldTask, carrying, over, aimed, takes, move, fits, place, hand, me])
 
   // Escape puts a picked-up task back down. A drag has its own Escape.
   const picked = carry.held?.by === 'pick'
@@ -194,15 +255,17 @@ export function DropZone({
   className?: string
   children: ReactNode
 }) {
-  const { held, over, hover, takes, moveTo } = useContext(Carry)
+  const { held, over, hover, takes, moveTo, aim } = useContext(Carry)
   const open = takes(target)
   const lit = open && over === target
 
+  // A list inside it that took the drag at a position has claimed it.
   const accept = (e: DragEvent) => {
-    if (!open || held?.by !== 'drag') return
+    if (!open || held?.by !== 'drag' || e.defaultPrevented) return
     e.preventDefault()
     e.dataTransfer.dropEffect = 'move'
     if (over !== target) hover(target)
+    aim(null)
   }
 
   return (
@@ -215,7 +278,7 @@ export function DropZone({
         hover((current) => (current === target ? null : current))
       }}
       onDrop={(e) => {
-        if (!open) return
+        if (!open || e.defaultPrevented) return
         e.preventDefault()
         moveTo(target)
       }}
@@ -229,6 +292,166 @@ export function DropZone({
     >
       {children}
     </div>
+  )
+}
+
+/**
+ * The drag handlers for a list that takes a carried row at a position: spread
+ * onto the element whose direct children are the rows, each marked with
+ * `slotAttrs`. `kinds` are the rows it holds, tried in order — a place in
+ * All Tasks holds both its places and its tasks.
+ *
+ * Which row the drag would land before is worked out from the pointer each
+ * time it moves, against the rows as they are drawn now: in a list down the
+ * page by the middle of each row, and in a grid that wraps (`grid`) in reading
+ * order, by the middle of each column across and its bottom edge down. Past
+ * the last, it lands last.
+ *
+ * A list holding two kinds takes a kind only where the pointer is not over a
+ * row of the other. Otherwise a task let go over an outcome in All Tasks —
+ * where it already stands last, so the outcome's own list turned it down —
+ * fell through to the epic's list and landed among the epic's tasks, below
+ * where the pointer was. And a list the pointer is over that takes nothing
+ * there lets go of any line it drew, since no `dragleave` says the pointer
+ * moved from one of its rows to another.
+ */
+export const useDropList = (
+  parent: string,
+  kinds: readonly SlotKind[],
+  axis: 'list' | 'grid' = 'list',
+): DropListProps => dropListProps(useContext(Carry), parent, kinds, axis)
+
+type DropListProps = Pick<
+  HTMLAttributes<HTMLElement>,
+  'onDragEnter' | 'onDragOver' | 'onDragLeave' | 'onDrop'
+>
+
+/**
+ * `useDropList` for a carry held in hand rather than read from the context:
+ * All Tasks keeps its own, for putting the tree in order, inside the carry of
+ * today's list its rows are also dragged into.
+ */
+export function dropListProps(
+  { held, fits, aim, hover, placeAt }: CarryContext,
+  parent: string,
+  kinds: readonly SlotKind[],
+  axis: 'list' | 'grid' = 'list',
+): DropListProps {
+  const mine = (slot: Slot | null) => slot?.parent === parent && kinds.includes(slot.kind)
+  const slotAt = (e: DragEvent<HTMLElement>): Slot | null => {
+    const over = rowUnder(e.currentTarget, e.target)?.dataset.slot
+    for (const kind of kinds) {
+      if (over !== undefined && over !== kind) continue
+      const rows = e.currentTarget.querySelectorAll<HTMLElement>(`:scope > [data-slot="${kind}"]`)
+      const slot = { parent, kind, before: rowAfter(rows, e.clientX, e.clientY, axis) }
+      if (fits(slot)) return slot
+    }
+    return null
+  }
+  const accept = (e: DragEvent<HTMLElement>) => {
+    if (held?.by !== 'drag' || e.defaultPrevented) return
+    const slot = slotAt(e)
+    if (!slot) {
+      aim((was) => (mine(was) ? null : was))
+      return
+    }
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    hover(null)
+    aim((was) => (sameSlot(was, slot) ? was : slot))
+  }
+
+  return {
+    onDragEnter: accept,
+    onDragOver: accept,
+    onDragLeave: (e) => {
+      // Leaving for one of its own rows is not leaving.
+      if (e.currentTarget.contains(e.relatedTarget as Node | null)) return
+      aim((was) => (mine(was) ? null : was))
+    },
+    onDrop: (e) => {
+      if (held?.by !== 'drag' || e.defaultPrevented) return
+      const slot = slotAt(e)
+      if (!slot) return
+      e.preventDefault()
+      placeAt(slot)
+    },
+  }
+}
+
+/** What marks an element as a row of a `useDropList`. */
+export const slotAttrs = (kind: SlotKind, id: string) => ({ 'data-slot': kind, 'data-slot-id': id })
+
+/** The row the pointer is before, by the rule `useDropList` describes; null past the last. */
+function rowAfter(
+  rows: Iterable<HTMLElement>,
+  x: number,
+  y: number,
+  axis: 'list' | 'grid',
+): string | null {
+  for (const row of rows) {
+    const box = row.getBoundingClientRect()
+    const before =
+      axis === 'list'
+        ? y < box.top + box.height / 2
+        : y < box.top || (y <= box.bottom && x < box.left + box.width / 2)
+    if (before) return row.dataset.slotId ?? null
+  }
+  return null
+}
+
+/** The direct child of `list` that `target` is in, if any. */
+function rowUnder(list: HTMLElement, target: EventTarget | null): HTMLElement | null {
+  let node = target instanceof Node ? target : null
+  while (node && node.parentNode !== list) node = node.parentNode
+  return node instanceof HTMLElement ? node : null
+}
+
+const sameSlot = (a: Slot | null, b: Slot) =>
+  a !== null && a.parent === b.parent && a.kind === b.kind && a.before === b.before
+
+/**
+ * Which edge of a row a drag's line is drawn on, if any: the top of the row it
+ * would land before, or the bottom of the last row when it would land last.
+ */
+export const useSlotEdge = (parent: string, kind: SlotKind, id: string, last: boolean) =>
+  slotEdge(useContext(Carry).aimed, parent, kind, id, last)
+
+/** `useSlotEdge`, for a carry held in hand (`dropListProps`). */
+export function slotEdge(
+  aimed: Slot | null,
+  parent: string,
+  kind: SlotKind,
+  id: string,
+  last: boolean,
+): 'before' | 'after' | null {
+  if (!aimed || aimed.parent !== parent || aimed.kind !== kind) return null
+  if (aimed.before === id) return 'before'
+  return last && aimed.before === null ? 'after' : null
+}
+
+/**
+ * The line a drag would put its row down on, drawn in the gap on that edge of
+ * the row. Laid over the page rather than in its flow, like a drop zone's
+ * outline, so it moves nothing under the pointer. The row needs `relative`.
+ */
+export function SlotMark({
+  edge,
+  axis = 'list',
+}: {
+  edge: 'before' | 'after' | null
+  axis?: 'list' | 'grid'
+}) {
+  if (edge === null) return null
+  const where =
+    axis === 'list'
+      ? `inset-x-0 h-0.5 ${edge === 'before' ? '-top-[5px]' : '-bottom-[5px]'}`
+      : `inset-y-0 w-0.5 ${edge === 'before' ? '-left-[9px]' : '-right-[9px]'}`
+  return (
+    <span
+      aria-hidden="true"
+      className={`pointer-events-none absolute z-10 rounded-full bg-deep ${where}`}
+    />
   )
 }
 
@@ -281,7 +504,19 @@ export function useCarriedRow(task: Carried, draggable = true) {
  * or puts it back. A row mounts afresh where it was moved to; the one a pick-up
  * just put down takes focus here, so the keyboard ends where the task did.
  */
-export function CarryGrip({ task, className = '' }: { task: Carried; className?: string }) {
+export function CarryGrip({
+  task,
+  onStep,
+  className = '',
+}: {
+  task: Carried
+  /**
+   * A step earlier or later in its list, from the arrow keys while the grip
+   * has focus: the keyboard's way to put a list in order.
+   */
+  onStep?: (by: -1 | 1) => void
+  className?: string
+}) {
   const { held, pickUp, putDown, landed } = useContext(Carry)
   const picked = held?.task.id === task.id && held.by === 'pick'
   const grip = useRef<HTMLButtonElement>(null)
@@ -290,15 +525,28 @@ export function CarryGrip({ task, className = '' }: { task: Carried; className?:
     landed.current = null
     grip.current?.focus()
   }, [landed, task.id])
+  const stepped = useRefocus(grip)
 
   return (
     <button
       ref={grip}
       type="button"
       onClick={() => (picked ? putDown() : pickUp(task, 'pick'))}
+      onKeyDown={(e) => {
+        const by = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0
+        if (!onStep || by === 0 || picked) return
+        e.preventDefault()
+        stepped()
+        onStep(by)
+      }}
       aria-label={`Move ${task.title}`}
       aria-pressed={picked}
-      title="Drag to move, or click to pick up"
+      {...(onStep ? { 'aria-keyshortcuts': 'ArrowUp ArrowDown' } : {})}
+      title={
+        onStep
+          ? 'Drag to move, click to pick up, or use the arrow keys to reorder'
+          : 'Drag to move, or click to pick up'
+      }
       className={`shrink-0 cursor-grab rounded px-0.5 py-0.5 transition hover:text-bright active:cursor-grabbing ${
         picked ? 'text-deep' : 'text-muted'
       } ${className}`}

@@ -44,6 +44,21 @@
  * board's hand, so picking up on one puts down the other: a task on the
  * board is not dragged into Today, it is chosen with the sun on its row.
  *
+ * The same hand puts the board in order. A task let go between two rows of a
+ * column lands there, in its own column or another; an outcome's card dragged
+ * along its epic's row of outcomes, an epic's card up or down its area, or an
+ * area's name up or down the page, lands between the two it is let go
+ * between, and never under another parent. From the keyboard a task steps
+ * through its column with the arrow keys on its grip, and a card or an area
+ * with its own move icons, among its others; see `useDropList` for how a
+ * drag works out where it would land.
+ *
+ * The tasks straight under an epic are a column beside its outcomes with no
+ * card, and with nothing at its head they read as one more outcome — a task
+ * written into the epic was taken for an outcome that had appeared to the
+ * right of `Add outcome`. So the column is headed `Not in an outcome`, small
+ * and quiet, as a card's own `Outcome` is.
+ *
  * Every edit here is a backlog edit — the task store writes the one record it
  * changed — except choosing a task for today, grouping it under an intention,
  * or marking an intention done, which are facts about today and go to the log
@@ -82,10 +97,16 @@ import {
   CarryStatus,
   DropZone,
   MoveHere,
+  SlotMark,
+  slotAttrs,
+  TOP,
   useCarriedRow,
   useCarryHand,
   useCarryState,
+  useDropList,
+  useSlotEdge,
   type CarryHand,
+  type Slot,
 } from '../carry'
 import { keepForLater } from '../Later'
 import { TodayCarry, TodayList, useIntentionRename } from '../TodayList'
@@ -95,6 +116,7 @@ import {
   DeleteIcon,
   DoneRingIcon,
   DropIcon,
+  MoveIcon,
   ReopenIcon,
   RestoreIcon,
   TodayIcon,
@@ -107,6 +129,7 @@ import {
   IconButton,
   RenameField,
   revealOnHover,
+  useRefocus,
 } from '../ui'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
 import { useSession } from '@/store/session'
@@ -117,7 +140,9 @@ import {
   childrenOf,
   isLive,
   liveDescendantsOf,
+  openContainers,
   openTasksUnder,
+  staysPut,
   type Area,
   type Item,
 } from '@/domain/tasks'
@@ -247,41 +272,84 @@ function Backlog({ hand }: { hand: CarryHand }) {
   const addArea = useTasks((s) => s.addArea)
   const unarchiveArea = useTasks((s) => s.unarchiveArea)
   const moveItem = useTasks((s) => s.moveItem)
+  const placeItem = useTasks((s) => s.placeItem)
+  const placeArea = useTasks((s) => s.placeArea)
   const fileLater = useTasks((s) => s.fileLater)
   const allLater = useTasks((s) => s.later)
 
-  const areas = activeAreas(allAreas)
   const archived = allAreas.filter((a) => isLive(a) && a.archivedAt !== undefined)
   // Per backlog snapshot, not per render: the header's timer re-renders this
   // page every second, and the backlog has not changed on most of those.
+  const areas = useMemo(() => activeAreas(allAreas), [allAreas])
   const inPlay = useMemo(() => activeTasks(items, allAreas), [items, allAreas])
   const inPlayById = useMemo(() => new Map(inPlay.map((t) => [t.id, t])), [inPlay])
   const waiting = useMemo(() => waitingLater(allLater), [allLater])
   const letGo = useMemo(() => letGoLater(allLater), [allLater])
   const waitingById = useMemo(() => new Map(waiting.map((l) => [l.id, l])), [waiting])
+  // The areas, epics and outcomes the board draws, which are carried only to
+  // be put in order among their own.
+  const drawnPlaces = useMemo(() => {
+    const byId = new Map<string, Item | CarriedArea>()
+    for (const area of areas) {
+      byId.set(area.id, { id: area.id, title: area.name, area })
+      for (const epic of openContainers(area.id, 'epic', items)) {
+        byId.set(epic.id, epic)
+        for (const outcome of openContainers(epic.id, 'outcome', items)) byId.set(outcome.id, outcome)
+      }
+    }
+    return byId
+  }, [areas, items])
 
   // The board's carry: a task goes to any column but its own, and something
   // waiting in Later goes to any column at all, becoming a task there — which
   // is a new record, so it is the task's id the keyboard's focus follows.
   const find = useCallback(
-    (id: string): Item | Later | undefined => inPlayById.get(id) ?? waitingById.get(id),
-    [inPlayById, waitingById],
+    (id: string): Carried | undefined =>
+      inPlayById.get(id) ?? waitingById.get(id) ?? drawnPlaces.get(id),
+    [inPlayById, waitingById, drawnPlaces],
   )
   const takes = useCallback(
-    (carried: Item | Later, parentId: string) => !isItem(carried) || carried.parentId !== parentId,
+    (carried: Carried, parentId: string) =>
+      isItem(carried) ? carried.kind === 'task' && carried.parentId !== parentId : !isArea(carried),
     [],
   )
   const move = useCallback(
-    (carried: Item | Later, parentId: string) => {
+    (carried: Carried, parentId: string) => {
       if (isItem(carried)) {
         moveItem(carried.id, parentId)
         return carried.id
       }
-      return fileLater(carried.id, parentId) ?? undefined
+      return isArea(carried) ? undefined : (fileLater(carried.id, parentId) ?? undefined)
     },
     [moveItem, fileLater],
   )
-  const carry = useCarryState({ find, takes, move, hand })
+  // Between two rows: a task lands there in any column, what waits in Later
+  // is filed there, and an epic, an outcome or an area only moves among its
+  // own siblings. A slot where it already stands takes nothing, so no line is
+  // drawn where letting go would change nothing.
+  const fits = useCallback(
+    (carried: Carried, { parent, kind, before }: Slot) => {
+      if (isArea(carried)) return kind === 'area' && !staysPut(areas, carried.id, before)
+      if (!isItem(carried)) return kind === 'task'
+      if (carried.kind !== kind) return false
+      if (parent !== carried.parentId) return kind === 'task'
+      const list =
+        carried.kind === 'task'
+          ? openTasksUnder(parent, items)
+          : openContainers(parent, carried.kind, items)
+      return !staysPut(list, carried.id, before)
+    },
+    [areas, items],
+  )
+  const place = useCallback(
+    (carried: Carried, { parent, before }: Slot) => {
+      if (isArea(carried)) return placeArea(carried.id, before)
+      if (!isItem(carried)) return fileLater(carried.id, parent, before) ?? undefined
+      placeItem(carried.id, parent, before)
+    },
+    [placeArea, placeItem, fileLater],
+  )
+  const carry = useCarryState({ find, takes, move, fits, place, hand })
 
   return (
     <Carry.Provider value={carry}>
@@ -289,14 +357,7 @@ function Backlog({ hand }: { hand: CarryHand }) {
           into the board to become a task. */}
       <LaterSection waiting={waiting} letGo={letGo} />
 
-      {/* One rule above the first band and one under each, so every
-          area reads as its own band and the last is closed off from
-          the control that adds another. */}
-      <div className="mt-8 border-t border-line">
-        {areas.map((area) => (
-          <AreaBand key={area.id} area={area} items={items} today={today} />
-        ))}
-      </div>
+      <AreaList areas={areas} items={items} today={today} />
 
       <div className="mt-6">
         <AddForm
@@ -377,7 +438,39 @@ function TodaySection({ hand }: { hand: CarryHand }) {
   )
 }
 
-const isItem = (carried: Item | Later): carried is Item => 'kind' in carried
+/**
+ * An area as the board's carry holds it: carried by its name, as a task is by
+ * its title, and only to be put in order.
+ */
+type CarriedArea = { id: string; title: string; area: Area }
+
+/** Everything the board carries: a task, a line from Later, or a place to reorder. */
+type Carried = Item | Later | CarriedArea
+
+const isItem = (carried: Carried): carried is Item => 'kind' in carried
+const isArea = (carried: Carried): carried is CarriedArea => 'area' in carried
+
+/**
+ * The bands, in order. One rule above the first and one under each, so every
+ * area reads as its own band and the last is closed off from the control that
+ * adds another. An area is dragged up or down by its name; inside the board's
+ * carry, since that is what carries it.
+ */
+function AreaList({ areas, ...tree }: TreeProps & { areas: readonly Area[] }) {
+  return (
+    <div className="mt-8 border-t border-line" {...useDropList(TOP, ['area'])}>
+      {areas.map((area, i) => (
+        <AreaBand
+          key={area.id}
+          area={area}
+          first={i === 0}
+          last={i === areas.length - 1}
+          {...tree}
+        />
+      ))}
+    </div>
+  )
+}
 
 /**
  * Later: what was put down to come back to, waiting to be dealt with
@@ -569,12 +662,25 @@ type TreeProps = {
  * dividing rule, so rows stacked without gaps draw one unbroken line down the
  * band. One grid holding every row would draw the same picture, but it could
  * not make an epic's row a single region holding both its card and its board.
+ *
+ * The band is a row of the list of areas and the list of its own epics at
+ * once: an area dragged over it falls through to the list of areas, and an
+ * epic is taken here.
  */
-function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
+function AreaBand({
+  area,
+  first,
+  last,
+  ...tree
+}: TreeProps & { area: Area; first: boolean; last: boolean }) {
   const renameArea = useTasks((s) => s.renameArea)
   const archiveArea = useTasks((s) => s.archiveArea)
   const deleteArea = useTasks((s) => s.deleteArea)
+  const shiftArea = useTasks((s) => s.shiftArea)
   const [renaming, setRenaming] = useState<string | null>(null)
+  const { dragProps } = useCarriedRow({ id: area.id, title: area.name }, renaming === null)
+  const edge = useSlotEdge(TOP, 'area', area.id, last)
+  const epicDrop = useDropList(area.id, ['epic'])
 
   const children = childrenOf(area.id, tree.items)
   const epics = children.filter((i) => i.kind === 'epic')
@@ -582,14 +688,17 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
   const putAway = epics.filter((e) => !isOpenContainer(e))
 
   return (
-    <div className="border-b border-line py-2">
+    <div {...slotAttrs('area', area.id)} {...epicDrop} className="relative border-b border-line py-2">
+      <SlotMark edge={edge} />
       <Row
         className="group/row"
         side={
           // A rename puts a form where the heading was, since a form cannot
-          // sit inside a heading.
+          // sit inside a heading. The heading is what drags the band.
           renaming === null ? (
-            <h2 className="text-lg text-bright wrap-break-word">{area.name}</h2>
+            <h2 {...dragProps} className="cursor-grab text-lg text-bright wrap-break-word">
+              {area.name}
+            </h2>
           ) : (
             <div className="flex">
               <RenameField
@@ -608,6 +717,13 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
       >
         {renaming === null && (
           <div className="flex flex-wrap items-center gap-x-1 gap-y-1 md:justify-end md:pt-0.5">
+            <StepButtons
+              title={area.name}
+              axis="list"
+              first={first}
+              last={last}
+              onStep={(by) => shiftArea(area.id, by)}
+            />
             <IconButton
               onClick={() => setRenaming(area.name)}
               label={`Rename ${area.name}`}
@@ -634,8 +750,14 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
         )}
       </Row>
 
-      {openEpics.map((epic) => (
-        <EpicRow key={epic.id} epic={epic} {...tree} />
+      {openEpics.map((epic, i) => (
+        <EpicRow
+          key={epic.id}
+          epic={epic}
+          first={i === 0}
+          last={i === openEpics.length - 1}
+          {...tree}
+        />
       ))}
 
       <Row
@@ -682,16 +804,20 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
 function Row({
   side,
   label,
+  slot,
   className = '',
   children,
 }: {
   side: ReactNode
   label?: string
+  /** Marks the row as one of a list a drag can reorder, and its line if one is drawn on it. */
+  slot?: { attrs: ReturnType<typeof slotAttrs>; mark: ReactNode }
   className?: string
   children?: ReactNode
 }) {
   const cells = (
     <>
+      {slot?.mark}
       <div className="min-w-0 py-2 md:border-r md:border-line md:py-3 md:pr-5">{side}</div>
       {children && (
         <div className="mb-3 ml-1 min-w-0 border-l border-line pl-3 md:mb-0 md:ml-0 md:border-l-0 md:py-3 md:pl-5">
@@ -700,11 +826,13 @@ function Row({
       )}
     </>
   )
-  const layout = `grid md:grid-cols-[14rem_minmax(0,1fr)] ${className}`
+  const layout = `grid md:grid-cols-[14rem_minmax(0,1fr)] ${slot ? 'relative' : ''} ${className}`
   return label === undefined ? (
-    <div className={layout}>{cells}</div>
+    <div {...slot?.attrs} className={layout}>
+      {cells}
+    </div>
   ) : (
-    <section aria-label={label} className={layout}>
+    <section {...slot?.attrs} aria-label={label} className={layout}>
       {cells}
     </section>
   )
@@ -714,9 +842,16 @@ function Row({
  * Columns side by side that wrap, rather than scroll, when they run out of
  * room — the page never scrolls sideways, and a phone gets one column.
  */
-function Board({ children }: { children: ReactNode }) {
+function Board({
+  drop,
+  children,
+}: {
+  /** What a row of outcomes takes from a drag, from `useDropList`. */
+  drop?: ReturnType<typeof useDropList>
+  children: ReactNode
+}) {
   return (
-    <div className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] items-start gap-4">
+    <div {...drop} className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] items-start gap-4">
       {children}
     </div>
   )
@@ -729,17 +864,37 @@ function Board({ children }: { children: ReactNode }) {
  * epic's is level with it. Below the board, what has been put away.
  *
  * The add slot sits in the row of outcomes rather than under the board because
- * a new outcome is a new column: it appears where the button was.
+ * a new outcome is a new column: it appears where the button was. The tasks
+ * after it are headed `Not in an outcome`, since a column with nothing at its
+ * head read as one more outcome — see the header.
  */
-function EpicRow({ epic, ...tree }: TreeProps & { epic: Item }) {
+function EpicRow({
+  epic,
+  first,
+  last,
+  ...tree
+}: TreeProps & { epic: Item; first: boolean; last: boolean }) {
   const children = childrenOf(epic.id, tree.items)
   const outcomes = children.filter((i) => i.kind === 'outcome')
+  const openOutcomes = outcomes.filter(isOpenContainer)
+  const edge = useSlotEdge(epic.parentId, 'epic', epic.id, last)
+  const outcomeDrop = useDropList(epic.id, ['outcome'], 'grid')
 
   return (
-    <Row label={`Epic: ${epic.title}`} side={<ContainerCard item={epic} allItems={tree.items} />}>
-      <Board>
-        {outcomes.filter(isOpenContainer).map((outcome) => (
-          <OutcomeColumn key={outcome.id} outcome={outcome} {...tree} />
+    <Row
+      label={`Epic: ${epic.title}`}
+      slot={{ attrs: slotAttrs('epic', epic.id), mark: <SlotMark edge={edge} /> }}
+      side={<ContainerCard item={epic} allItems={tree.items} first={first} last={last} />}
+    >
+      <Board drop={outcomeDrop}>
+        {openOutcomes.map((outcome, i) => (
+          <OutcomeColumn
+            key={outcome.id}
+            outcome={outcome}
+            first={i === 0}
+            last={i === openOutcomes.length - 1}
+            {...tree}
+          />
         ))}
         <div className="min-w-0">
           <AddForm
@@ -755,6 +910,9 @@ function EpicRow({ epic, ...tree }: TreeProps & { epic: Item }) {
           />
         </div>
         <DropZone target={epic.id} className="min-w-0">
+          <h4 className="mb-2 border-b border-line px-1 pt-1 pb-1.5 text-[10px] font-medium tracking-widest text-muted uppercase">
+            Not in an outcome
+          </h4>
           <TaskList
             parent={epic.id}
             name={epic.title}
@@ -776,13 +934,25 @@ function EpicRow({ epic, ...tree }: TreeProps & { epic: Item }) {
 /**
  * An outcome's column: its card, its open tasks beneath, and what it has put
  * away. The whole column takes a dropped task, card included, since the card
- * is the biggest thing in it that says which outcome this is.
+ * is the biggest thing in it that says which outcome this is. Its card is
+ * also what drags the column along its epic's row of outcomes.
  */
-function OutcomeColumn({ outcome, ...tree }: TreeProps & { outcome: Item }) {
+function OutcomeColumn({
+  outcome,
+  first,
+  last,
+  ...tree
+}: TreeProps & { outcome: Item; first: boolean; last: boolean }) {
+  const edge = useSlotEdge(outcome.parentId, 'outcome', outcome.id, last)
   return (
-    <section aria-label={`Outcome: ${outcome.title}`} className="min-w-0">
+    <section
+      {...slotAttrs('outcome', outcome.id)}
+      aria-label={`Outcome: ${outcome.title}`}
+      className="relative min-w-0"
+    >
+      <SlotMark edge={edge} axis="grid" />
       <DropZone target={outcome.id} className="flex flex-col gap-2">
-        <ContainerCard item={outcome} allItems={tree.items} />
+        <ContainerCard item={outcome} allItems={tree.items} first={first} last={last} />
         <TaskList
           parent={outcome.id}
           name={outcome.title}
@@ -806,23 +976,51 @@ function OutcomeColumn({ outcome, ...tree }: TreeProps & { outcome: Item }) {
  * takes a line of its own under them.
  *
  * One component for both, because an outcome is an epic one level down.
+ *
+ * The card is what a pointer drags to put it in order among its siblings —
+ * outcomes across their epic's row, epics down their area — and its move
+ * icons are the keyboard's way to do the same, a step at a time.
  */
-function ContainerCard({ item, allItems }: { item: Item; allItems: readonly Item[] }) {
+function ContainerCard({
+  item,
+  allItems,
+  first,
+  last,
+}: {
+  item: Item
+  allItems: readonly Item[]
+  first: boolean
+  last: boolean
+}) {
   const renameItem = useTasks((s) => s.renameItem)
   const completeItem = useTasks((s) => s.completeItem)
   const archiveItem = useTasks((s) => s.archiveItem)
   const deleteItem = useTasks((s) => s.deleteItem)
+  const shiftItem = useTasks((s) => s.shiftItem)
   const [renaming, setRenaming] = useState<string | null>(null)
+  const { dragProps } = useCarriedRow(item, renaming === null)
 
   const noun = item.kind === 'epic' ? 'Epic' : 'Outcome'
   const Heading = item.kind === 'epic' ? 'h3' : 'h4'
 
   return (
-    <div className="group/row rounded-xl border border-muted bg-surface/40 px-3 py-2.5">
+    <div
+      {...dragProps}
+      className={`group/row rounded-xl border border-muted bg-surface/40 px-3 py-2.5 ${
+        renaming === null ? 'cursor-grab' : ''
+      }`}
+    >
       <div className="flex flex-wrap items-center justify-between gap-x-2">
         <span className="text-[10px] font-medium tracking-widest text-muted uppercase">{noun}</span>
         {renaming === null && (
           <span className="-mr-1.5 -mb-0.5 flex flex-wrap items-center justify-end">
+            <StepButtons
+              title={item.title}
+              axis={item.kind === 'outcome' ? 'grid' : 'list'}
+              first={first}
+              last={last}
+              onStep={(by) => shiftItem(item.id, by)}
+            />
             <IconButton
               onClick={() => setRenaming(item.title)}
               label={`Rename ${item.title}`}
@@ -876,6 +1074,65 @@ function ContainerCard({ item, allItems }: { item: Item; allItems: readonly Item
   )
 }
 
+/**
+ * A card's or an area's pair of move icons: earlier and later in its list, up
+ * and down it, or left and right along a row of outcomes. Drawn only where
+ * there is something to move past; at either end the one that cannot move
+ * says so and stays, so the focus is not thrown out of the row by the press
+ * that brought it there, and comes back to it if the move took it away
+ * (`useRefocus`).
+ */
+function StepButtons({
+  title,
+  axis,
+  first,
+  last,
+  onStep,
+}: {
+  title: string
+  axis: 'list' | 'grid'
+  first: boolean
+  last: boolean
+  onStep: (by: -1 | 1) => void
+}) {
+  const earlier = useRef<HTMLButtonElement>(null)
+  const later = useRef<HTMLButtonElement>(null)
+  const keepEarlier = useRefocus(earlier)
+  const keepLater = useRefocus(later)
+  if (first && last) return null
+  const [back, on] = axis === 'grid' ? (['left', 'right'] as const) : (['up', 'down'] as const)
+  return (
+    <>
+      <IconButton
+        ref={earlier}
+        disabled={first}
+        onClick={() => {
+          keepEarlier()
+          onStep(-1)
+        }}
+        label={`Move ${title} ${back}`}
+        hint={`Move ${back}`}
+        className={revealOnHover}
+      >
+        <MoveIcon towards={back} />
+      </IconButton>
+      <IconButton
+        ref={later}
+        disabled={last}
+        onClick={() => {
+          keepLater()
+          onStep(1)
+        }}
+        label={`Move ${title} ${on}`}
+        hint={`Move ${on}`}
+        className={revealOnHover}
+      >
+        <MoveIcon towards={on} />
+      </IconButton>
+    </>
+  )
+}
+
 /** The open tasks directly under one parent, and the form that adds one there. */
 function TaskList({
   parent,
@@ -890,6 +1147,7 @@ function TaskList({
   empty: string
 }) {
   const open = openTasksUnder(parent, tree.items)
+  const drop = useDropList(parent, ['task'])
 
   return (
     <>
@@ -897,9 +1155,14 @@ function TaskList({
       {open.length === 0 ? (
         <p className="text-sm text-muted">{empty}</p>
       ) : (
-        <ul aria-label={listLabel} className="flex flex-col gap-2">
-          {open.map((task) => (
-            <TaskRow key={task.id} task={task} chosen={isToday(tree.today, task.id)} />
+        <ul {...drop} aria-label={listLabel} className="flex flex-col gap-2">
+          {open.map((task, i) => (
+            <TaskRow
+              key={task.id}
+              task={task}
+              chosen={isToday(tree.today, task.id)}
+              last={i === open.length - 1}
+            />
           ))}
         </ul>
       )}
@@ -1097,25 +1360,33 @@ function AddForm({
  * it, and it stays in the finished list as a decision; deleting is a mistake
  * being taken back, and leaves only a tombstone the page never shows.
  */
-function TaskRow({ task, chosen }: { task: Item; chosen: boolean }) {
+function TaskRow({ task, chosen, last }: { task: Item; chosen: boolean; last: boolean }) {
   const completeItem = useTasks((s) => s.completeItem)
   const renameItem = useTasks((s) => s.renameItem)
   const dropItem = useTasks((s) => s.dropItem)
   const deleteItem = useTasks((s) => s.deleteItem)
+  const shiftItem = useTasks((s) => s.shiftItem)
   const addToToday = useSession((s) => s.addToToday)
   const removeFromToday = useSession((s) => s.removeFromToday)
   const [renaming, setRenaming] = useState<string | null>(null)
   const { picked, dragProps } = useCarriedRow(task, renaming === null)
+  const edge = useSlotEdge(task.parentId, 'task', task.id, last)
 
   return (
     <li
       {...dragProps}
-      className={`group/row rounded-lg border px-3 py-2 ${
+      {...slotAttrs('task', task.id)}
+      className={`group/row relative rounded-lg border px-3 py-2 ${
         picked ? 'border-dashed border-deep/70 bg-surface/60' : 'border-muted/70'
       }`}
     >
+      <SlotMark edge={edge} />
       <div className="flex items-start gap-2">
-        <CarryGrip task={task} className="-ml-1.5 mt-0.5" />
+        <CarryGrip
+          task={task}
+          onStep={(by) => shiftItem(task.id, by)}
+          className="-ml-1.5 mt-0.5"
+        />
         {/* Level with the first line of the title, which now wraps: a column
             is too narrow to cut a title short and still say which task it is. */}
         <input

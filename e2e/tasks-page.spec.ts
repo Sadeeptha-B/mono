@@ -1,6 +1,6 @@
 /** The backlog's own page: areas, their inboxes, and today's grouping. */
 
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import {
   addOnTasksPage,
   addTodayTask,
@@ -581,6 +581,114 @@ test('an epic row holds its outcomes as columns beside its card, and its own tas
   expect(Math.abs(b!.y - a!.y)).toBeLessThan(2)
   await expect(first.getByRole('list', { name: 'Login pages tasks' })).toContainText('Login form')
   await expect(loose).toContainText('CSRF token')
+})
+
+test('the tasks straight under an epic are headed as not in an outcome', async ({ page }) => {
+  await openMono(page)
+  await openTasks(page)
+  await buildAuthEpic(page)
+
+  const loose = epic(page, 'Mono auth').getByRole('list', { name: 'Mono auth tasks' })
+  const heading = epic(page, 'Mono auth').getByRole('heading', { name: 'Not in an outcome' })
+  const [h, l] = await Promise.all([heading, loose].map((x) => x.boundingBox()))
+  expect(Math.abs(h!.x - l!.x)).toBeLessThan(8)
+  expect(h!.y).toBeLessThan(l!.y)
+})
+
+/** A pointer's drag in steps, as a hand would: a single jump gives the drag no move to begin on. */
+async function drag(page: Page, from: Locator, to: Locator, at: { x: number; y: number }) {
+  await from.scrollIntoViewIfNeeded()
+  const a = (await from.boundingBox())!
+  await page.mouse.move(a.x + 8, a.y + 8)
+  await page.mouse.down()
+  await page.mouse.move(a.x + 16, a.y + 16, { steps: 5 })
+  const b = (await to.boundingBox())!
+  await page.mouse.move(b.x + at.x, b.y + at.y, { steps: 10 })
+  await page.mouse.up()
+}
+
+test('tasks are put in order by dragging between rows, and a step at a time from their grips', async ({
+  page,
+}) => {
+  await openMono(page)
+  await openTasks(page)
+  for (const title of ['First', 'Second', 'Third']) await addTo(page, 'Work', title)
+  await addTo(page, 'Personal', 'Elsewhere')
+  const rows = inbox(page, 'Work').getByRole('listitem')
+  const row = (title: string) => rows.filter({ hasText: title })
+
+  // Let go over the top half of a row, it lands above that row.
+  await drag(page, row('Third'), row('First'), { x: 40, y: 4 })
+  await expect(rows).toHaveText([/Third/, /First/, /Second/])
+
+  // Between two rows of another column, it moves there, at that spot.
+  await drag(page, row('First'), inbox(page, 'Personal').getByRole('listitem'), { x: 40, y: 4 })
+  await expect(inbox(page, 'Personal').getByRole('listitem')).toHaveText([/First/, /Elsewhere/])
+  await expect(rows).toHaveText([/Third/, /Second/])
+
+  // From the keyboard the grip steps it, keeping the focus as it goes.
+  const grip = main(page).getByRole('button', { name: 'Move Third', exact: true })
+  await grip.focus()
+  await page.keyboard.press('ArrowDown')
+  await expect(rows).toHaveText([/Second/, /Third/])
+  await expect(grip).toBeFocused()
+  await page.keyboard.press('ArrowUp')
+  await expect(rows).toHaveText([/Third/, /Second/])
+  await expect(grip).toBeFocused()
+
+  // Kept on the disk, so a reload draws it the same way.
+  await expect
+    .poll(async () => {
+      const stored = await storedItems(page)
+      const order = (title: string) =>
+        (stored.find((r) => r.title === title) as { order?: number } | undefined)?.order ?? 0
+      return order('Third') < order('Second')
+    })
+    .toBe(true)
+  await page.reload()
+  await expect(rows).toHaveText([/Third/, /Second/])
+})
+
+test('outcomes, epics and areas are put in order by dragging, and by their move icons', async ({
+  page,
+}) => {
+  await openMono(page)
+  await openTasks(page)
+  await buildAuthEpic(page)
+  await addOnTasksPage(page, 'outcome', 'Mono auth', 'Password reset')
+  await addOnTasksPage(page, 'epic', 'Work', 'Billing')
+  const x = async (title: string) => (await outcome(page, title).boundingBox())!.x
+  const y = async (locator: Locator) => (await locator.boundingBox())!.y
+
+  // An outcome's card dragged over the left half of another lands before it.
+  await drag(
+    page,
+    outcome(page, 'Password reset').getByRole('heading', { name: 'Password reset' }),
+    outcome(page, 'Login pages'),
+    { x: 10, y: 20 },
+  )
+  expect(await x('Password reset')).toBeLessThan(await x('Login pages'))
+
+  // Its move icons do the same a step at a time; at the end of the row the one
+  // that cannot move stays, and keeps the focus.
+  const right = main(page).getByRole('button', { name: 'Move Password reset right', exact: true })
+  await right.click()
+  expect(await x('Password reset')).toBeGreaterThan(await x('Login pages'))
+  await expect(right).toBeFocused()
+  await expect(right).toHaveAttribute('aria-disabled', 'true')
+
+  // Epics step up and down their area.
+  await main(page).getByRole('button', { name: 'Move Billing up', exact: true }).click()
+  expect(await y(epic(page, 'Billing'))).toBeLessThan(await y(epic(page, 'Mono auth')))
+
+  // Areas by their names, and by their own icons. Tall enough to hold both
+  // bands, since a drag cannot point at what is scrolled out of sight.
+  await page.setViewportSize({ width: 1280, height: 1600 })
+  const heading = (name: string) => main(page).getByRole('heading', { name, level: 2 })
+  await drag(page, heading('Personal'), heading('Work'), { x: 10, y: 2 })
+  expect(await y(heading('Personal'))).toBeLessThan(await y(heading('Work')))
+  await main(page).getByRole('button', { name: 'Move Work up', exact: true }).click()
+  expect(await y(heading('Work'))).toBeLessThan(await y(heading('Personal')))
 })
 
 test('an import brings its backlog with it, replacing the one here, and it is saved', async ({

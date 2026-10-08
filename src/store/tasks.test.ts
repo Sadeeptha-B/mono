@@ -2,7 +2,16 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDBDatabase, IDBFactory } from 'fake-indexeddb'
 
 import { letGoLater, waitingLater } from '@/domain/later'
-import { activeAreas, activeTasks, inboxOf, isGone, type Area, type Item } from '@/domain/tasks'
+import {
+  activeAreas,
+  activeTasks,
+  inboxOf,
+  isGone,
+  openContainers,
+  openTasksUnder,
+  type Area,
+  type Item,
+} from '@/domain/tasks'
 import { openTaskDb, type BacklogContents } from './taskDb'
 
 /**
@@ -404,6 +413,123 @@ describe('editing', () => {
     const stored = (await openTab(factory)).useTasks.getState().items.find((i) => i.id === 'edge')!
     expect(stored).toMatchObject({ title: 'Renamed once', updatedAt: last })
     expect(stored.deletedAt).toBeUndefined()
+  })
+})
+
+describe('ordering', () => {
+  /** The titles of a parent's open tasks, in the order a list draws them. */
+  const titlesUnder = (tab: TasksModule, parentId: string) =>
+    openTasksUnder(parentId, tab.useTasks.getState().items).map((i) => i.title)
+
+  async function threeTasks() {
+    const tab = await openTab(factory)
+    const work = workOf(tab)
+    const add = (title: string) =>
+      tab.useTasks.getState().addItem({ kind: 'task', title, parentId: work })!
+    return { tab, work, a: add('A'), b: add('B'), c: add('C') }
+  }
+
+  it('reorders a task among its siblings with one write, and keeps the order through a reload', async () => {
+    const { tab, work, a, c } = await threeTasks()
+    const others = () => tab.useTasks.getState().items.filter((i) => i.id !== c)
+    const untouched = others()
+
+    tab.useTasks.getState().placeItem(c, work, a)
+    expect(titlesUnder(tab, work)).toEqual(['C', 'A', 'B'])
+    others().forEach((item, i) => expect(item).toBe(untouched[i]))
+    tab.useTasks.getState().placeItem(c, work, null)
+    expect(titlesUnder(tab, work)).toEqual(['A', 'B', 'C'])
+
+    tab.useTasks.getState().placeItem(a, work, c)
+    await settle()
+    expect(titlesUnder(await openTab(factory), work)).toEqual(['B', 'A', 'C'])
+  })
+
+  it('moves a task to a spot among another parent’s tasks', async () => {
+    const { tab, work, b } = await threeTasks()
+    const personal = activeAreas(tab.useTasks.getState().areas)[1]!.id
+    const { addItem, placeItem } = tab.useTasks.getState()
+    const x = addItem({ kind: 'task', title: 'X', parentId: personal })!
+    addItem({ kind: 'task', title: 'Y', parentId: personal })
+
+    placeItem(b, personal, x)
+    expect(titlesUnder(tab, personal)).toEqual(['B', 'X', 'Y'])
+    expect(titlesUnder(tab, work)).toEqual(['A', 'C'])
+  })
+
+  it('numbers the siblings again when two share an order, and draws them as asked', async () => {
+    const tab = await openTab(factory)
+    const work = workOf(tab)
+    const tied = ['A', 'B', 'C'].map((title) => ({ ...taskIn(work, title), order: 1 }))
+    await tab.useTasks.getState().replaceAll({ areas: tab.useTasks.getState().areas, items: tied })
+
+    tab.useTasks.getState().placeItem('c', work, 'b')
+    expect(titlesUnder(tab, work)).toEqual(['A', 'C', 'B'])
+    await settle()
+    expect(titlesUnder(await openTab(factory), work)).toEqual(['A', 'C', 'B'])
+  })
+
+  it('steps a task through the open tasks only, past one put away between', async () => {
+    const { tab, work, a, b } = await threeTasks()
+    tab.useTasks.getState().completeItem(b)
+
+    tab.useTasks.getState().shiftItem(a, 1)
+    expect(titlesUnder(tab, work)).toEqual(['C', 'A'])
+    // Already last: nothing to step past, and nothing written.
+    const before = tab.useTasks.getState().items
+    tab.useTasks.getState().shiftItem(a, 1)
+    expect(tab.useTasks.getState().items).toBe(before)
+  })
+
+  it('reorders outcomes within their epic, but never moves one under an area', async () => {
+    const tab = await openTab(factory)
+    const work = workOf(tab)
+    const { addItem } = tab.useTasks.getState()
+    const epic = addItem({ kind: 'epic', title: 'Mono auth', parentId: work })!
+    const login = addItem({ kind: 'outcome', title: 'Login pages', parentId: epic })!
+    addItem({ kind: 'task', title: 'Loose', parentId: epic })
+    addItem({ kind: 'outcome', title: 'Password reset', parentId: epic })
+
+    tab.useTasks.getState().shiftItem(login, 1)
+    const outcomes = () =>
+      openContainers(epic, 'outcome', tab.useTasks.getState().items).map((o) => o.title)
+    expect(outcomes()).toEqual(['Password reset', 'Login pages'])
+
+    tab.useTasks.getState().placeItem(login, work, null)
+    expect(tab.useTasks.getState().items.find((i) => i.id === login)?.parentId).toBe(epic)
+  })
+
+  it('reorders areas, stepping through the active ones', async () => {
+    const tab = await openTab(factory)
+    const [work, personal] = activeAreas(tab.useTasks.getState().areas)
+    const names = () => activeAreas(tab.useTasks.getState().areas).map((a) => a.name)
+
+    tab.useTasks.getState().shiftArea(personal!.id, -1)
+    expect(names()).toEqual(['Personal', 'Work'])
+    tab.useTasks.getState().placeArea(personal!.id, null)
+    expect(names()).toEqual(['Work', 'Personal'])
+    tab.useTasks.getState().shiftArea(work!.id, -1)
+    expect(names()).toEqual(['Work', 'Personal'])
+  })
+
+  it('refuses to reorder what is gone, or before a sibling that has left', async () => {
+    const { tab, work, a, b, c } = await threeTasks()
+    tab.useTasks.getState().deleteItem(c)
+    const before = tab.useTasks.getState().items
+
+    tab.useTasks.getState().placeItem(c, work, a)
+    tab.useTasks.getState().placeItem(a, work, c)
+    tab.useTasks.getState().placeItem(b, work, 'nowhere')
+    expect(tab.useTasks.getState().items).toBe(before)
+  })
+
+  it('files a Later before a sibling when asked, and last otherwise', async () => {
+    const { tab, work, b } = await threeTasks()
+    const { addLater, fileLater } = tab.useTasks.getState()
+
+    fileLater(addLater('Before B')!, work, b)
+    fileLater(addLater('At the end')!, work)
+    expect(titlesUnder(tab, work)).toEqual(['A', 'Before B', 'B', 'C', 'At the end'])
   })
 })
 

@@ -75,6 +75,25 @@ export const ReopenIcon = ({ className = '' }: { className?: string }) => (
 )
 
 /**
+ * An arrow one way: a step earlier or later in a list, up and down it or, for
+ * a row of columns, across it. One drawing turned four ways, so the four read
+ * as one family of move.
+ */
+const TURN = { up: 0, right: 90, down: 180, left: 270 } as const
+
+export const MoveIcon = ({
+    towards,
+    className = '',
+}: {
+    towards: keyof typeof TURN
+    className?: string
+}) => (
+    <Icon className={className}>
+        <path d="M8 13V3M4.5 6.5L8 3l3.5 3.5" transform={`rotate(${TURN[towards]} 8 8)`} />
+    </Icon>
+)
+
+/**
  * A step down and a step up, for a count: the urge counter. Drawn as a pair
  * because the typed `−` and `+` are cut differently in most fonts — one sat
  * wider and heavier than the other on the same button.

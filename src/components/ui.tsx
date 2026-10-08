@@ -9,6 +9,7 @@
  */
 
 import {
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -17,6 +18,8 @@ import {
   type MouseEvent,
   type PointerEvent,
   type ReactNode,
+  type Ref,
+  type RefObject,
 } from 'react'
 
 import { coerceBoundedMinutes } from './minutes'
@@ -68,6 +71,30 @@ export const revealOnHover =
   'opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:opacity-100'
 
 /**
+ * Keeps the focus on a control whose row it moves: a grip's arrow keys, or a
+ * card's own move buttons. Call what it returns just before the move.
+ *
+ * Reordering keyed rows, React moves some of them in the document, and an
+ * element moved while it has focus loses it, to the page. Which row React
+ * moves depends on the direction, so a step one way kept the focus and the
+ * step back lost it. After the next render, focus comes back to `control` —
+ * only if it was lost, never taken from wherever it has gone since.
+ */
+export function useRefocus(control: RefObject<HTMLElement | null>): () => void {
+  const armed = useRef(false)
+  useEffect(() => {
+    if (!armed.current) return
+    armed.current = false
+    const el = control.current
+    const doc = el?.ownerDocument
+    if (el && doc && (doc.activeElement === null || doc.activeElement === doc.body)) el.focus()
+  })
+  return useCallback(() => {
+    armed.current = true
+  }, [])
+}
+
+/**
  * A word that does something, drawn as a word rather than a button: End early
  * and Back to work while something runs, on the stage and in the mini window,
  * and the mini window's Reset size. Kept for the rare actions that should be
@@ -101,24 +128,41 @@ export function IconButton({
   hint,
   onClick,
   danger = false,
+  disabled = false,
+  focusKey,
   className = '',
+  ref,
   children,
 }: {
   label: string
   hint: string
   onClick: () => void
   danger?: boolean
+  /**
+   * Can do nothing now — a move past the end of a list. Said and drawn, but
+   * still focusable, so the focus is not thrown out of a row of controls by
+   * the press that brought this one to the end.
+   */
+  disabled?: boolean
+  /** Its name to a surface that hands focus back by key (All Tasks' `data-focus-key`). */
+  focusKey?: string
   className?: string
+  ref?: Ref<HTMLButtonElement>
   children: ReactNode
 }) {
   return (
     <button
+      ref={ref}
+      {...(focusKey ? { 'data-focus-key': focusKey } : {})}
       type="button"
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
       aria-label={label}
+      aria-disabled={disabled || undefined}
       title={hint}
-      className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md text-sm leading-none text-muted transition hover:bg-surface-raised ${
-        danger ? 'hover:text-commit' : 'hover:text-bright'
+      className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md text-sm leading-none transition ${
+        disabled
+          ? 'cursor-default text-muted/40'
+          : `text-muted hover:bg-surface-raised ${danger ? 'hover:text-commit' : 'hover:text-bright'}`
       } ${className}`}
     >
       {children}

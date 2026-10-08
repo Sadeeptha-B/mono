@@ -775,8 +775,17 @@ function sectionsFor(settings: Settings): Section[] {
           <P>
             Each area is drawn as a board. Its epics run down the left, and beside each
             one are its outcomes as columns, each with its tasks beneath it, then the
-            tasks that sit straight under the epic. The inbox is last, with its tasks
-            beside it.
+            tasks that sit straight under the epic, headed <Em>Not in an outcome</Em>.
+            The inbox is last, with its tasks beside it.
+          </P>
+          <P>
+            Everything on the board can be put in the order you want it. Drag a task
+            between two others, in its own column or another; drag an outcome's card
+            along its row, an epic's card up or down, or an area by its name. A line
+            shows where it will land. Without a mouse, focus a task's dots and use the
+            arrow keys, or use the arrows among a card's or an area's icons. The same
+            works in <Em>All Tasks</Em>, with the arrows in each row's <Em>⋯</Em>, and
+            today's list follows the order you set.
           </P>
           <P>
             Each card and row carries its actions as small icons — rename, done, drop,
