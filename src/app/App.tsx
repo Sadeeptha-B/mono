@@ -189,6 +189,9 @@ function PageDidNotLoad({
   )
 }
 
+/** One empty list, so All Tasks is handed the same one on every tick with nothing running. */
+const NO_TASKS: readonly string[] = []
+
 export function App() {
   const now = useNow()
   useReconciliation()
@@ -424,6 +427,21 @@ export function App() {
     if (on) useSession.getState().addAllToToday(taskIds)
     setBlockPick((pick) => tickTasks(pick, taskIds, on))
   }, [])
+  // While a block runs, All Tasks ticks for it: what it holds is the block's
+  // own record rather than a pick, and the machine refuses anything that would
+  // leave it with no task. Only from All Tasks — the stage and the pop-out tick
+  // a block's tasks done, and never change which they are.
+  const runningTasks =
+    session.active?.kind === 'block' ? session.active.taskIds : NO_TASKS
+  const tickRunning = useCallback((taskIds: readonly string[], on: boolean) => {
+    const { addToBlock, removeFromBlock } = useSession.getState()
+    if (on) addToBlock(taskIds)
+    else removeFromBlock(taskIds)
+  }, [])
+  const tickOneRunning = useCallback(
+    (taskId: string, on: boolean) => tickRunning([taskId], on),
+    [tickRunning],
+  )
   const columnSwitch = <ColumnSwitch view={columnView} onView={showColumn} />
 
   const startTodayTimer = (at: Ms) =>
@@ -901,9 +919,9 @@ export function App() {
                 <AllTasksPane
                   key={`${store.generation}:${choosingFor}`}
                   choosingFor={choosingFor}
-                  blockSelected={blockSelected}
-                  onBlockTick={tickForBlock}
-                  onBlockTickMany={tickAllForBlock}
+                  blockSelected={choosingFor === 'focus' ? runningTasks : blockSelected}
+                  onBlockTick={choosingFor === 'focus' ? tickOneRunning : tickForBlock}
+                  onBlockTickMany={choosingFor === 'focus' ? tickRunning : tickAllForBlock}
                   switcher={columnSwitch}
                 />
               </div>

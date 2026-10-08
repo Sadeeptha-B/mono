@@ -77,6 +77,13 @@ export type MonoEvent =
   /** The running block's most recent urge, taken back as a mis-tap. */
   | { type: 'block/urgeTakenBack'; at: Ms }
   /**
+   * A task taken on by the running block, from All Tasks, and so chosen for
+   * today as well; or one let go by it. The block keeps at least one: a
+   * removal that would leave it with none is ignored.
+   */
+  | { type: 'block/taskAdded'; at: Ms; taskId: string }
+  | { type: 'block/taskRemoved'; at: Ms; taskId: string }
+  /**
    * A log's text corrected, in the running block or one already in history.
    * The log keeps its own `at`: a fixed typo is not a later thought.
    */
@@ -380,6 +387,29 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
         ...state,
         active: { ...state.active, urges: state.active.urges.slice(0, -1) },
       }
+
+    // What a running block is for can grow or shrink while it runs, as work
+    // turns out bigger or smaller than it was named; the purpose stays the
+    // sentence it was started with. A task taken on is today's, as one a
+    // block starts with is. Like logs, these ride on the segment, and with
+    // nothing running they are dropped.
+    case 'block/taskAdded':
+      if (state.active?.kind !== 'block' || state.active.taskIds.includes(event.taskId)) {
+        return state
+      }
+      return {
+        ...state,
+        active: { ...state.active, taskIds: [...state.active.taskIds, event.taskId] },
+        today: chooseAll(state.today, [event.taskId]),
+      }
+
+    case 'block/taskRemoved': {
+      if (state.active?.kind !== 'block') return state
+      const taskIds = state.active.taskIds.filter((id) => id !== event.taskId)
+      // Every block is for at least one task; and one it never had is no news.
+      if (taskIds.length === 0 || taskIds.length === state.active.taskIds.length) return state
+      return { ...state, active: { ...state.active, taskIds } }
+    }
 
     // Corrections reach a block in history as well as the running one: a
     // mistype is often only seen on the calendar afterwards. Blank text is
