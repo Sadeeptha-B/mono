@@ -146,6 +146,17 @@ export const SettingsIcon = ({ className = '' }: { className?: string }) => (
     </Icon>
 )
 
+/**
+ * An arrow turning up and away: put this down for later. The drawn form of
+ * the `⤴` beside `✎ Log` on a running block, which is the same act.
+ */
+export const LaterIcon = ({ className = '' }: { className?: string }) => (
+    <Icon className={className}>
+        <path d="M3 13V9.5a3 3 0 0 1 3-3h7" />
+        <path d="M10 3.5l3 3-3 3" />
+    </Icon>
+)
+
 /** A window with an arrow leaving it: the timer, kept on top elsewhere. */
 export const PopOutIcon = ({ className = '' }: { className?: string }) => (
     <Icon className={className}>

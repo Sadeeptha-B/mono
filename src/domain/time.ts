@@ -116,6 +116,12 @@ export function nextHalfHour(at: Ms): Ms {
 /** "2:05 PM" — for the clock and timeline labels. */
 export const formatClock = (at: Ms): string => format(at, 'h:mm a')
 
+/**
+ * "Tue 7 Oct, 2:05 PM" — for an instant read on another day than its own,
+ * like when something was put down for later.
+ */
+export const formatDayAndClock = (at: Ms): string => format(at, 'EEE d MMM, h:mm a')
+
 /** "45m", "1h 05m", "0m" — for durations, never for instants. */
 export function formatDuration(ms: Ms): string {
   const totalMinutes = Math.max(0, Math.floor(ms / 60_000))

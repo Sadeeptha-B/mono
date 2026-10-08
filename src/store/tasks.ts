@@ -1,5 +1,6 @@
 /**
- * The backlog store: areas and work items, in memory and in IndexedDB.
+ * The backlog store: areas, work items, and what is put down for later, in
+ * memory and in IndexedDB.
  *
  * The second of Mono's two stores, and deliberately not part of the first. The
  * session store holds the day's event log and is rebuilt from it; this holds
@@ -62,11 +63,25 @@
  * newer generation, or a write that comes back `superseded`, drops everything
  * pending and reloads from disk: those edits were made to a backlog that no
  * longer exists. A notice no newer than what this tab already holds changes
- * nothing.
+ * nothing. Either way, and for an import made here, `replaced` is bumped, so
+ * drafts of the old backlog's records are let go rather than saved over the
+ * new one.
+ *
+ * **Filing something from Later is one judgement, not two writes.** The task
+ * and the Later's tombstone go to the disk together as a `Filing`, which it
+ * takes whole or refuses whole (`taskDb.ts`). A refused filing is undone
+ * here: the task goes, with any edit to it still owed, and the line is
+ * waiting again, as the disk has it.
+ *
+ * Every edit here is refused while an import lands. The adds say so by
+ * returning null, and a field that empties itself once something is kept
+ * must check it: `addLater`'s null is what keeps a line in the field it was
+ * typed into (`keepForLater`), as a refused title stays in the tasks page's.
  */
 
 import { create } from 'zustand'
 
+import { letGo, newLater, restore, type Later, type LaterSource } from '@/domain/later'
 import {
   archive,
   canParent,
@@ -89,7 +104,14 @@ import {
 import type { Ms } from '@/domain/types'
 import { newId } from './ids'
 import { useStorageHealth } from './storageHealth'
-import { openTaskDb, type BacklogContents, type TaskDb, type WriteResult } from './taskDb'
+import {
+  openTaskDb,
+  type BacklogContents,
+  type BacklogReplacement,
+  type Filing,
+  type TaskDb,
+  type WriteResult,
+} from './taskDb'
 
 const CHANNEL = 'mono.tasks'
 
@@ -103,6 +125,16 @@ const SEED_AREAS = ['Work', 'Personal'] as const
 type TaskStore = BacklogContents & {
   /** False until IndexedDB has been read. The task UI waits on this. */
   hydrated: boolean
+  /**
+   * Bumped whenever the backlog is *replaced* rather than edited: an import
+   * here, or one made in another tab and taken from the disk (`reload`). The
+   * session's `generation` for the backlog, and for the same reason: a draft
+   * held by id — a rename half typed — is an answer about a record the
+   * replacement may have changed under the same id, and saving it would write
+   * it over what was imported. Surfaces holding such drafts are keyed by it.
+   * Not persisted, and set only where the replacement happens.
+   */
+  replaced: number
 
   addArea: (name: string) => string | null
   renameArea: (id: string, name: string) => void
@@ -152,17 +184,62 @@ type TaskStore = BacklogContents & {
    * all the backlog only ever lives in memory, so the import is taken there and
    * the warning stays up.
    */
-  replaceAll: (contents: BacklogContents) => Promise<void>
+  replaceAll: (contents: BacklogReplacement) => Promise<void>
+
+  /*
+   * Later: lines put down to come back to (`domain/later.ts`). Records of the
+   * backlog's own kind — versioned, tombstoned, written and heard from other
+   * tabs exactly as areas and items are — but they hang from nothing, so
+   * nothing above one can take it with it.
+   */
+
+  /**
+   * Put something down for later. Returns its id, or null when it is blank.
+   * Where it was written, when that was a block, is the caller's to say: this
+   * store knows nothing about the day. The interface says it in one place,
+   * `keepForLater`, which every field that puts a line down goes through.
+   */
+  addLater: (title: string, from?: LaterSource) => string | null
+  retitleLater: (id: string, title: string) => void
+  letGoLater: (id: string) => void
+  restoreLater: (id: string) => void
+  deleteLater: (id: string) => void
+  /**
+   * Make it a task under an area or another item, and delete it, the task
+   * being what it became. Shown at once, and sent as one filing that the disk
+   * takes whole or refuses whole (`Filing`): refused when another tab got
+   * there first — filing it, or deleting where it was going — and then the
+   * task goes and the line is waiting again. Returns the task's id, or null
+   * when the Later is let go or gone, or the parent cannot hold a task.
+   */
+  fileLater: (id: string, parentId: string) => string | null
 }
 
 /** What tabs tell each other. Both carry the generation the sender is on. */
 type Message =
-  | { type: 'changed'; generation: number; areas: Area[]; items: Item[] }
+  | { type: 'changed'; generation: number; areas: Area[]; items: Item[]; later?: Later[] }
   | { type: 'replaced'; generation: number }
 
 let db: Promise<TaskDb> | null = null
 let channel: BroadcastChannel | null = null
-const pending = { areas: new Map<string, Area>(), items: new Map<string, Item>() }
+const pending = {
+  areas: new Map<string, Area>(),
+  items: new Map<string, Item>(),
+  later: new Map<string, Later>(),
+  /** Filings owed, by the Later's id: judged by the disk as one (`Filing`). */
+  filings: new Map<string, Filing>(),
+}
+const nothingPending = () =>
+  pending.areas.size === 0 &&
+  pending.items.size === 0 &&
+  pending.later.size === 0 &&
+  pending.filings.size === 0
+const clearPending = () => {
+  pending.areas.clear()
+  pending.items.clear()
+  pending.later.clear()
+  pending.filings.clear()
+}
 /** The disk's generation as this tab last saw it. See `taskDb.ts`. */
 let generation = 0
 /** False until the first read has set `generation`; nothing flushes before. */
@@ -189,6 +266,10 @@ export const useTasks = create<TaskStore>()((set, get) => {
     set((s) => ({ items: upsert(s.items, item) }))
     save({ items: [item] })
   }
+  const putLater = (later: Later) => {
+    set((s) => ({ later: upsert(s.later, later) }))
+    save({ later: [later] })
+  }
   // Both refuse an edit with no version to give it (`nextVersion`), before
   // anything changes, rather than write a record the importer would drop.
   const editArea = (id: string, edit: (area: Area, at: Ms) => Area | null) => {
@@ -214,11 +295,23 @@ export const useTasks = create<TaskStore>()((set, get) => {
     const next = edit(item, at)
     if (next) putItem({ ...next, updatedAt: version })
   }
+  const editLater = (id: string, edit: (later: Later, at: Ms) => Later | null) => {
+    if (importing()) return
+    const later = get().later.find((l) => l.id === id)
+    if (!later || !isLive(later)) return
+    const at = Date.now()
+    const version = nextVersion(later.updatedAt, at)
+    if (version === null) return
+    const next = edit(later, at)
+    if (next) putLater({ ...next, updatedAt: version })
+  }
 
   return {
     hydrated: false,
+    replaced: 0,
     areas: [],
     items: [],
+    later: [],
 
     addArea: (name) => {
       if (name.trim() === '' || importing()) return null
@@ -286,9 +379,55 @@ export const useTasks = create<TaskStore>()((set, get) => {
       // Raised now, not when the job's turn comes: from this moment an edit
       // would be to the backlog the import is about to replace.
       importsInFlight += 1
-      return schedule(() => replace(contents)).finally(() => {
+      const whole = { ...contents, later: contents.later ?? [] }
+      return schedule(() => replace(whole)).finally(() => {
         importsInFlight -= 1
       })
+    },
+
+    addLater: (title, from) => {
+      if (title.trim() === '' || importing()) return null
+      const id = newId()
+      putLater(newLater({ id, title, from }, Date.now()))
+      return id
+    },
+
+    retitleLater: (id, title) =>
+      editLater(id, (later, at) =>
+        title.trim() === '' || title.trim() === later.title
+          ? null
+          : { ...later, title: title.trim(), updatedAt: at },
+      ),
+
+    letGoLater: (id) =>
+      editLater(id, (later, at) => (later.letGoAt !== undefined ? null : letGo(later, at))),
+
+    restoreLater: (id) =>
+      editLater(id, (later, at) => (later.letGoAt === undefined ? null : restore(later, at))),
+
+    deleteLater: (id) => editLater(id, (later, at) => ({ ...later, deletedAt: at })),
+
+    fileLater: (id, parentId) => {
+      if (importing()) return null
+      const { later, areas, items } = get()
+      const record = later.find((l) => l.id === id)
+      if (!record || !isLive(record) || record.letGoAt !== undefined) return null
+      const parent = parentKindOf(parentId, areas, items)
+      if (parent === null || !canParent('task', parent)) return null
+      const at = Date.now()
+      const version = nextVersion(record.updatedAt, at)
+      if (version === null) return null
+      const taskId = newId()
+      const siblings = items.filter((i) => i.parentId === parentId)
+      const task = newItem(
+        { id: taskId, kind: 'task', title: record.title, parentId, order: nextOrder(siblings) },
+        at,
+      )
+      const gone: Later = { ...record, deletedAt: at, updatedAt: version }
+      set((s) => ({ items: upsert(s.items, task), later: upsert(s.later, gone) }))
+      pending.filings.set(record.id, { task, later: gone, waiting: record })
+      void schedule(flush)
+      return taskId
     },
   }
 })
@@ -340,7 +479,7 @@ export function whenHydrated(): Promise<void> {
 
 async function load(): Promise<void> {
   let open: TaskDb | null = null
-  let stored: BacklogContents = { areas: [], items: [] }
+  let stored: BacklogContents = { areas: [], items: [], later: [] }
   try {
     open = await db!
   } catch {
@@ -350,7 +489,7 @@ async function load(): Promise<void> {
   if (open) {
     try {
       const read = await open.readAll()
-      stored = { areas: read.areas, items: read.items }
+      stored = { areas: read.areas, items: read.items, later: read.later }
       generation = read.generation
     } catch {
       useStorageHealth.getState().noteFailure(Date.now(), 'tasks')
@@ -369,7 +508,7 @@ async function load(): Promise<void> {
       // than its areas beside the empty items read a moment earlier.
       try {
         const snapshot = await open.seedIfEmpty(seeds)
-        stored = { areas: snapshot.areas, items: snapshot.items }
+        stored = { areas: snapshot.areas, items: snapshot.items, later: snapshot.later }
         generation = snapshot.generation
         landed = true
       } catch {
@@ -377,7 +516,7 @@ async function load(): Promise<void> {
       }
     }
     if (!landed) {
-      stored = { areas: seeds, items: stored.items }
+      stored = { ...stored, areas: seeds }
       for (const seed of seeds) pending.areas.set(seed.id, seed)
     }
   }
@@ -389,10 +528,11 @@ async function load(): Promise<void> {
   useTasks.setState({
     areas: merge(stored.areas, memory.areas, 'base'),
     items: merge(stored.items, memory.items, 'base'),
+    later: merge(stored.later, memory.later, 'base'),
     hydrated: true,
   })
   ready = true
-  if (pending.areas.size > 0 || pending.items.size > 0) void schedule(flush)
+  if (!nothingPending()) void schedule(flush)
 }
 
 /** Close the database and the channel. For tests, which open one per case. */
@@ -408,6 +548,7 @@ export function closeTasks(): void {
 function save(changes: Partial<BacklogContents>): void {
   for (const area of changes.areas ?? []) pending.areas.set(area.id, area)
   for (const item of changes.items ?? []) pending.items.set(item.id, item)
+  for (const later of changes.later ?? []) pending.later.set(later.id, later)
   void schedule(flush)
 }
 
@@ -440,12 +581,34 @@ async function flush(): Promise<void> {
     return
   }
 
-  const batch = { areas: [...pending.areas.values()], items: [...pending.items.values()] }
-  if (batch.areas.length === 0 && batch.items.length === 0) return
+  // A filing goes whole. It carries the latest edit to its task, made since it
+  // was filed, and stands in for any copy of its Later still owed — the
+  // waiting copy it holds is what the disk keeps if it is refused — so
+  // neither record also goes on its own, to be judged apart from it.
+  const owed = [...pending.filings.values()]
+  const filings = owed.map((f) => {
+    const edited = pending.items.get(f.task.id)
+    return edited === undefined ? f : { ...f, task: edited }
+  })
+  const filedTasks = new Set(filings.map((f) => f.task.id))
+  const filedLater = new Set(filings.map((f) => f.later.id))
+  const batch: BacklogContents = {
+    areas: [...pending.areas.values()],
+    items: [...pending.items.values()].filter((i) => !filedTasks.has(i.id)),
+    later: [...pending.later.values()].filter((l) => !filedLater.has(l.id)),
+  }
+  if (
+    batch.areas.length === 0 &&
+    batch.items.length === 0 &&
+    batch.later.length === 0 &&
+    filings.length === 0
+  ) {
+    return
+  }
 
   let result: WriteResult
   try {
-    result = await open.write(batch, generation)
+    result = await open.write({ ...batch, filings }, generation)
   } catch {
     useStorageHealth.getState().noteFailure(Date.now(), 'tasks')
     return
@@ -464,31 +627,73 @@ async function flush(): Promise<void> {
   for (const item of batch.items) {
     if (pending.items.get(item.id) === item) pending.items.delete(item.id)
   }
+  for (const later of batch.later) {
+    if (pending.later.get(later.id) === later) pending.later.delete(later.id)
+  }
+  filings.forEach((filing, i) => {
+    const id = filing.later.id
+    if (pending.filings.get(id) === owed[i]) pending.filings.delete(id)
+    if (pending.items.get(filing.task.id) === filing.task) pending.items.delete(filing.task.id)
+    // Covered by the filing whichever way it went: by its tombstone, or by
+    // the waiting copy the disk kept instead.
+    pending.later.delete(id)
+  })
+
+  // A filing the disk refused never happened: the task goes, edits to it
+  // owed since included, and the line is waiting again — as the disk has it
+  // when the disk kept its own, as it was filed when the disk took that.
+  const refused = new Set(result.refused)
+  const undone = filings.filter((f) => refused.has(f.later.id))
+  const landed = filings.filter((f) => !refused.has(f.later.id))
+  const disksLater = new Map(result.stale.later.map((l) => [l.id, l]))
+  const keptWaiting = undone.filter((f) => !disksLater.has(f.later.id)).map((f) => f.waiting)
+  if (undone.length > 0) {
+    const tasks = new Set(undone.map((f) => f.task.id))
+    for (const id of tasks) pending.items.delete(id)
+    useTasks.setState((s) => ({
+      items: s.items.filter((i) => !tasks.has(i.id)),
+      later: undone.reduce(
+        (list, f) => upsert(list, disksLater.get(f.later.id) ?? f.waiting),
+        s.later,
+      ),
+    }))
+  }
+
   // The disk kept its own copies of these. Believe it, and stop owing ours.
   // Usually its copy is newer and would win anyway; a move refused for
   // leaving a deleted subtree hands back an *older* one, which version order
   // alone would let this tab's refused copy outrank — so where memory still
   // holds exactly what was sent, the disk's copy replaces it outright.
-  const sent = new Map<string, Area | Item>([...batch.areas, ...batch.items].map((r) => [r.id, r]))
-  const theDisks = <T extends Area | Item>(list: readonly T[], kept: readonly T[]): T[] => {
+  const sent = new Map<string, Area | Item | Later>(
+    [...batch.areas, ...batch.items, ...batch.later].map((r) => [r.id, r]),
+  )
+  const theDisks = <T extends Area | Item | Later>(list: readonly T[], kept: readonly T[]): T[] => {
     const byId = new Map(kept.map((r) => [r.id, r]))
     return list.map((r) => (byId.has(r.id) && sent.get(r.id) === r ? byId.get(r.id)! : r))
   }
   useTasks.setState((s) => ({
     areas: theDisks(s.areas, result.stale.areas),
     items: theDisks(s.items, result.stale.items),
+    later: theDisks(s.later, result.stale.later),
   }))
   adoptNewer(result.stale)
-  if (pending.areas.size === 0 && pending.items.size === 0) {
+  if (nothingPending()) {
     useStorageHealth.getState().noteSuccess('tasks')
   }
 
-  const staleIds = new Set([...result.stale.areas, ...result.stale.items].map((r) => r.id))
+  const staleIds = new Set(
+    [...result.stale.areas, ...result.stale.items, ...result.stale.later].map((r) => r.id),
+  )
   channel?.postMessage({
     type: 'changed',
     generation,
     areas: batch.areas.filter((a) => !staleIds.has(a.id)),
-    items: batch.items.filter((i) => !staleIds.has(i.id)),
+    items: [...batch.items.filter((i) => !staleIds.has(i.id)), ...landed.map((f) => f.task)],
+    later: [
+      ...batch.later.filter((l) => !staleIds.has(l.id)),
+      ...landed.map((f) => f.later),
+      ...keptWaiting,
+    ],
   } satisfies Message)
 }
 
@@ -510,9 +715,13 @@ async function replace(contents: BacklogContents): Promise<void> {
     // each from another tab would clear them without saving what the import
     // left out.
     diskless = true
-    pending.areas.clear()
-    pending.items.clear()
-    useTasks.setState({ areas: contents.areas, items: contents.items })
+    clearPending()
+    useTasks.setState((s) => ({
+      areas: contents.areas,
+      items: contents.items,
+      later: contents.later,
+      replaced: s.replaced + 1,
+    }))
     useStorageHealth.getState().noteFailure(Date.now(), 'tasks')
     return
   }
@@ -520,9 +729,13 @@ async function replace(contents: BacklogContents): Promise<void> {
   generation = await open.replaceAll(contents)
   // Edits have been refused since the import was asked for, so everything
   // still pending was an edit to the backlog it replaced.
-  pending.areas.clear()
-  pending.items.clear()
-  useTasks.setState({ areas: contents.areas, items: contents.items })
+  clearPending()
+  useTasks.setState((s) => ({
+    areas: contents.areas,
+    items: contents.items,
+    later: contents.later,
+    replaced: s.replaced + 1,
+  }))
   useStorageHealth.getState().noteSuccess('tasks')
   channel?.postMessage({ type: 'replaced', generation } satisfies Message)
 }
@@ -535,9 +748,13 @@ async function reload(open: TaskDb): Promise<void> {
   try {
     const read = await open.readAll()
     generation = read.generation
-    pending.areas.clear()
-    pending.items.clear()
-    useTasks.setState({ areas: read.areas, items: read.items })
+    clearPending()
+    useTasks.setState((s) => ({
+      areas: read.areas,
+      items: read.items,
+      later: read.later,
+      replaced: s.replaced + 1,
+    }))
     useStorageHealth.getState().noteSuccess('tasks')
   } catch {
     useStorageHealth.getState().noteFailure(Date.now(), 'tasks')
@@ -562,7 +779,9 @@ async function reload(open: TaskDb): Promise<void> {
  * edited in between was stamped past them, so it is kept.
  */
 function adoptNewer(incoming: BacklogContents): void {
-  if (incoming.areas.length === 0 && incoming.items.length === 0) return
+  if (incoming.areas.length === 0 && incoming.items.length === 0 && incoming.later.length === 0) {
+    return
+  }
   for (const area of incoming.areas) {
     const owed = pending.areas.get(area.id)
     if (owed && !outranks(owed, area)) pending.areas.delete(area.id)
@@ -571,9 +790,14 @@ function adoptNewer(incoming: BacklogContents): void {
     const owed = pending.items.get(item.id)
     if (owed && !outranks(owed, item)) pending.items.delete(item.id)
   }
+  for (const later of incoming.later) {
+    const owed = pending.later.get(later.id)
+    if (owed && !outranks(owed, later)) pending.later.delete(later.id)
+  }
   useTasks.setState((s) => ({
     areas: merge(s.areas, incoming.areas, 'incoming'),
     items: merge(s.items, incoming.items, 'incoming'),
+    later: merge(s.later, incoming.later, 'incoming'),
   }))
 }
 
@@ -618,8 +842,10 @@ async function receive(message: Message): Promise<void> {
 }
 
 function adopt(message: Extract<Message, { type: 'changed' }>): void {
-  adoptNewer({ areas: message.areas, items: message.items })
-  if (!diskless && pending.areas.size === 0 && pending.items.size === 0) {
+  // A tab still on a build from before Later sends none, which is no news
+  // about it rather than news that there is none.
+  adoptNewer({ areas: message.areas, items: message.items, later: message.later ?? [] })
+  if (!diskless && nothingPending()) {
     useStorageHealth.getState().noteSuccess('tasks')
   }
 }

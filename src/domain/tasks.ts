@@ -431,15 +431,26 @@ export const isGone = (itemId: string, items: readonly Item[], areas: readonly A
  * (`isGone`). A cycle needs no check of its own: tasks hold nothing, epics sit only
  * under areas and outcomes only under epics, so any loop puts something under
  * a parent that cannot hold it.
+ *
+ * What is put down for later (`domain/later.ts`) holds no place and is held by
+ * none, but shares the id space: the disk keeps one record per id, so two
+ * lines under one id lose one on the next reload, and the tasks page finds a
+ * carried record by id across tasks and Later alike.
  */
 export function backlogProblem(contents: {
   areas: readonly Area[]
   items: readonly Item[]
+  later?: readonly { id: string }[]
 }): string | null {
   const kinds = new Map<string, ParentKind>()
   for (const record of [...contents.areas, ...contents.items]) {
     if (kinds.has(record.id)) return 'two of its records share an id'
     kinds.set(record.id, 'kind' in record ? record.kind : 'area')
+  }
+  const later = new Set<string>()
+  for (const { id } of contents.later ?? []) {
+    if (kinds.has(id) || later.has(id)) return 'two of its records share an id'
+    later.add(id)
   }
   for (const item of contents.items) {
     const parent = kinds.get(item.parentId)

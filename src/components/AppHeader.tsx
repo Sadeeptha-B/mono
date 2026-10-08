@@ -11,9 +11,11 @@
  *    revisited rarely, so it is reached from where it is relevant — Settings,
  *    and the opening questions about hours and commitments — rather than from
  *    a permanent tab. The guide is read rather than worked in, so it is a tool.
- *  - **Tools** are icons: the room (its own swatch), the pop-out, the guide and
- *    settings. Each keeps its old name as its accessible name and shows it on
- *    hover, so nothing has become harder to find by name, only smaller.
+ *  - **Tools** are icons: Later, the room (its own swatch), the pop-out, the
+ *    guide and settings. Each keeps its name as its accessible name and shows
+ *    it on hover, so nothing has become harder to find by name, only smaller.
+ *    Later comes first, nearest what you are doing, because it is the one
+ *    reached for in the middle of something else.
  *
  * Two things stay as words because they are rare and matter when they appear:
  * `Not saving`, and the running timer a page other than the day carries
@@ -26,6 +28,7 @@
 import type { ReactNode } from 'react'
 
 import { HeaderMark } from './HeaderMark'
+import { LaterMenu } from './LaterMenu'
 import { StorageWarning } from './StorageWarning'
 import { GuideIcon, SettingsIcon } from './icons'
 import { headerIconClass } from './ui'
@@ -50,7 +53,11 @@ export function AppHeader({
   status?: ReactNode
 }) {
   return (
-    <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+    // The gaps close up below `sm` so the mark, the places and five tools still
+    // make one row at a phone's 390 pixels. On a real phone there are four:
+    // no mobile browser has document picture-in-picture, and the pop-out
+    // draws nothing without it.
+    <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 sm:gap-x-4">
       <div className="flex items-center gap-3 sm:gap-5">
         <HeaderMark phase={phase} home={current === 'day'} />
         {/* Real links, so either opens in its own tab and survives a reload,
@@ -68,11 +75,12 @@ export function AppHeader({
 
       {/* `ml-auto` keeps the tools on the right when a narrow screen wraps
           them under the places. */}
-      <div className="ml-auto flex flex-wrap items-center justify-end gap-1">
+      <div className="ml-auto flex flex-wrap items-center justify-end gap-0.5 sm:gap-1">
         {/* Nothing at all unless the browser has started refusing to save,
             which is the one failure worth a permanent place on screen. */}
         <StorageWarning onOpenSettings={onOpenSettings} />
         {status}
+        <LaterMenu idPrefix={`${current}-header`} />
         <RoomMenu idPrefix={`${current}-header`} />
         <PopOutButton mini={mini} />
         <a

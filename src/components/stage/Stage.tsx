@@ -13,7 +13,7 @@
  * answer. They open in place on the calendar now.
  */
 
-import { LogComposer, LogList, UrgeCounter } from '../BlockLog'
+import { BlockComposer, LogList, UrgeCounter } from '../BlockLog'
 import { BlockTasks } from '../BlockTasks'
 import { FocusTimer } from '../FocusTimer'
 import { BlockCompletePanel, BreakDurationPanel } from './BreakPanels'
@@ -202,8 +202,10 @@ export function Stage(props: Props) {
               and how it is going on the right. The list of logs is the
               stage's; the mini window, always on top, says how many and
               opens one at a time from its strip. A second row of the same
-              grid holds the controls, so ✎ Log under the tasks and the urges
-              under the logs stand level however long either list is. Each
+              grid holds the controls, so ✎ Log and ⤴ Later under the tasks
+              and the urges under the logs stand level however long either
+              list is. What is put down for later is not listed here at all:
+              it is not about this block, and waits on the tasks page. Each
               cell is a box of its own even when empty, so a list with nothing
               in it yet cannot pull the controls up into its place. */}
           <div className="grid gap-x-8 sm:grid-cols-2">
@@ -212,7 +214,7 @@ export function Stage(props: Props) {
               <LogList />
             </div>
             <div className="mt-3 max-w-md">
-              <LogComposer />
+              <BlockComposer />
             </div>
             <div className="mt-3 flex items-center gap-3">
               <UrgeCounter />

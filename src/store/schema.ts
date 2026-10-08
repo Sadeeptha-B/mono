@@ -24,6 +24,7 @@ import {
   type Area,
   type Item,
 } from '@/domain/tasks'
+import type { Later } from '@/domain/later'
 import { isDayKey, isWallClock } from '@/domain/recurrence'
 import { dayKey, isInstant } from '@/domain/time'
 import {
@@ -46,8 +47,12 @@ import {
 /** What `localStorage` holds, and what an export wraps with its version. */
 export type PersistedShape = { events: MonoEvent[]; dayKey: string | null }
 
-/** The backlog, as an export carries it. Tombstones included. */
-export type ExportedBacklog = { areas: Area[]; items: Item[] }
+/**
+ * The backlog, as an export carries it. Tombstones included. Later since v8;
+ * a file without it imports as having nothing put down for later (see
+ * `BacklogReplacement`).
+ */
+export type ExportedBacklog = { areas: Area[]; items: Item[]; later?: Later[] }
 
 /**
  * An export: the log, and since v4 the backlog beside it.
@@ -94,6 +99,8 @@ export type ExportedShape = PersistedShape & { version: number; tasks?: Exported
  * and is now `block/logged`, `block/logEdited` and `block/logRemoved` with a
  * `logId`. Older names are read on every path, whatever the version stamped
  * beside them (`renameLegacyLogEvent`), since no newer event can carry them.
+ * An export's backlog also gained what was put down for later, which a v7
+ * build would drop without a word.
  */
 export const SCHEMA_VERSION = 8
 
@@ -870,9 +877,14 @@ function sanitiseBacklog(value: unknown): ExportedBacklog | null {
   if (!isRecord(value) || !Array.isArray(value.areas) || !Array.isArray(value.items)) {
     return null
   }
-  const backlog = {
+  const backlog: ExportedBacklog = {
     areas: value.areas.map(sanitiseArea).filter(isPresent),
     items: value.items.map(sanitiseItem).filter(isPresent),
+    // Nothing else refers to a Later, so one that cannot be read is dropped
+    // on its own, and a list that is not one reads as none.
+    ...(Array.isArray(value.later)
+      ? { later: value.later.map(sanitiseLater).filter(isPresent) }
+      : {}),
   }
   // Checked after the unreadable records are dropped, not before: a dropped
   // area or epic is exactly what would leave its children belonging to
@@ -954,6 +966,42 @@ function sanitiseItem(value: unknown): Item | null {
     updatedAt,
     ...(doneAt === undefined ? {} : { doneAt }),
     ...(archivedAt === undefined ? {} : { archivedAt }),
+    ...(deletedAt === undefined ? {} : { deletedAt }),
+  }
+}
+
+/**
+ * Something put down for later. Where it came from is a nicety, so one that
+ * cannot be read is left off rather than costing the record.
+ */
+function sanitiseLater(value: unknown): Later | null {
+  if (!isRecord(value)) return null
+  const id = sanitiseString(value.id)
+  const title = sanitiseText(value.title)
+  const createdAt = sanitiseInstant(value.createdAt)
+  const updatedAt = sanitiseVersion(value.updatedAt)
+  const letGoAt = sanitiseOptionalInstant(value.letGoAt)
+  const deletedAt = sanitiseOptionalInstant(value.deletedAt)
+  if (
+    id === null ||
+    title === null ||
+    createdAt === null ||
+    updatedAt === null ||
+    letGoAt === null ||
+    deletedAt === null
+  ) {
+    return null
+  }
+  const source = isRecord(value.from) ? value.from : null
+  const blockId = source && sanitiseString(source.blockId)
+  const purpose = source && sanitiseString(source.purpose)
+  return {
+    id,
+    title,
+    createdAt,
+    updatedAt,
+    ...(blockId && purpose !== null ? { from: { blockId, purpose } } : {}),
+    ...(letGoAt === undefined ? {} : { letGoAt }),
     ...(deletedAt === undefined ? {} : { deletedAt }),
   }
 }

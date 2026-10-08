@@ -585,4 +585,14 @@ describe('backlogProblem', () => {
       /share an id/,
     )
   })
+
+  it('refuses something put down for later under an id already used, there or anywhere', () => {
+    const items = [item('form', 'task', 'work')]
+    expect(backlogProblem({ areas: [work], items, later: [{ id: 'l' }, { id: 'm' }] })).toBeNull()
+    expect(backlogProblem({ areas: [work], items, later: [{ id: 'l' }, { id: 'l' }] })).toMatch(
+      /share an id/,
+    )
+    expect(backlogProblem({ areas: [work], items, later: [{ id: 'form' }] })).toMatch(/share an id/)
+    expect(backlogProblem({ areas: [work], items, later: [{ id: work.id }] })).toMatch(/share an id/)
+  })
 })

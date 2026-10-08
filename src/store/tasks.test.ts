@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { IDBDatabase, IDBFactory } from 'fake-indexeddb'
 
+import { letGoLater, waitingLater } from '@/domain/later'
 import { activeAreas, activeTasks, inboxOf, isGone, type Area, type Item } from '@/domain/tasks'
 import { openTaskDb, type BacklogContents } from './taskDb'
 
@@ -1182,5 +1183,288 @@ describe('deleting', () => {
 
     expect(visible(tab)).toEqual(['Moved first'])
     expect(visible(await openTab(factory))).toEqual(['Moved first'])
+  })
+})
+
+describe('later', () => {
+  const titles = (tab: TasksModule) =>
+    waitingLater(tab.useTasks.getState().later).map((l) => l.title)
+
+  it('persists through its whole life, keeping the block it came from', async () => {
+    const tab = await openTab(factory)
+    const from = { blockId: 'b1', purpose: 'Draft the schema' }
+    const id = tab.useTasks.getState().addLater('  Try WebGPU ', from)!
+    expect(tab.useTasks.getState().addLater('   ')).toBeNull()
+
+    tab.useTasks.getState().retitleLater(id, 'Try WebGPU for the scene')
+    tab.useTasks.getState().letGoLater(id)
+    await settle()
+    let reloaded = await openTab(factory)
+    expect(titles(reloaded)).toEqual([])
+    expect(letGoLater(reloaded.useTasks.getState().later)).toMatchObject([
+      { id, title: 'Try WebGPU for the scene', from },
+    ])
+
+    reloaded.useTasks.getState().restoreLater(id)
+    await settle()
+    reloaded = await openTab(factory)
+    expect(titles(reloaded)).toEqual(['Try WebGPU for the scene'])
+
+    reloaded.useTasks.getState().deleteLater(id)
+    await settle()
+    const after = await openTab(factory)
+    expect(after.useTasks.getState().later).toMatchObject([{ id, deletedAt: expect.any(Number) }])
+    expect(titles(after)).toEqual([])
+  })
+
+  it('reaches another tab, and so does its delete', async () => {
+    const a = await openTab(factory)
+    await settle()
+    const b = await openTab(factory)
+
+    const id = a.useTasks.getState().addLater('Shared thought')!
+    await vi.waitFor(() => expect(titles(b)).toEqual(['Shared thought']))
+    a.useTasks.getState().deleteLater(id)
+    await vi.waitFor(() => expect(titles(b)).toEqual([]))
+  })
+
+  it('becomes a task where it is filed, gone in the same write that adds the task', async () => {
+    const tab = await openTab(factory)
+    await settle()
+    const work = workOf(tab)
+    const id = tab.useTasks.getState().addLater('Look into WebGPU')!
+    await settle()
+
+    const writes = vi.spyOn(IDBDatabase.prototype, 'transaction')
+    const taskId = tab.useTasks.getState().fileLater(id, work)!
+    await settle()
+    expect(writes.mock.calls.filter((call) => call[1] === 'readwrite')).toHaveLength(1)
+    writes.mockRestore()
+
+    const reloaded = await openTab(factory)
+    expect(inboxOf(work, reloaded.useTasks.getState().items)).toMatchObject([
+      { id: taskId, kind: 'task', title: 'Look into WebGPU', status: 'open' },
+    ])
+    expect(titles(reloaded)).toEqual([])
+    expect(reloaded.useTasks.getState().later.find((l) => l.id === id)?.deletedAt).toBeTypeOf(
+      'number',
+    )
+  })
+
+  it('is filed only while it waits, and only where a task can go', async () => {
+    const tab = await openTab(factory)
+    const [work, personal] = activeAreas(tab.useTasks.getState().areas).map((a) => a.id)
+    const store = () => tab.useTasks.getState()
+    const epic = store().addItem({ kind: 'epic', title: 'Epic', parentId: work! })!
+
+    const waiting = store().addLater('Waiting')!
+    expect(store().fileLater(waiting, 'nowhere')).toBeNull()
+    store().deleteArea(personal!)
+    expect(store().fileLater(waiting, personal!)).toBeNull()
+
+    const letGo = store().addLater('Let go')!
+    store().letGoLater(letGo)
+    expect(store().fileLater(letGo, work!)).toBeNull()
+
+    expect(store().fileLater(waiting, epic)).toBeTypeOf('string')
+    expect(store().fileLater(waiting, work!)).toBeNull()
+    expect(visible(tab)).toEqual(['Epic', 'Waiting'])
+  })
+
+  it('is filed once when two tabs file it before hearing each other', async () => {
+    const a = await openTab(factory)
+    await settle()
+    const b = await openTab(factory)
+    const id = a.useTasks.getState().addLater('Look into WebGPU')!
+    await vi.waitFor(() => expect(titles(b)).toEqual(['Look into WebGPU']))
+    const [work, personal] = activeAreas(a.useTasks.getState().areas).map((x) => x.id)
+
+    // Both in the same tick: neither has heard of the other's filing.
+    a.useTasks.getState().fileLater(id, work!)
+    b.useTasks.getState().fileLater(id, personal!)
+    await settle()
+
+    const filed = (tab: TasksModule) =>
+      visible(tab).filter((title) => title === 'Look into WebGPU')
+    await vi.waitFor(() => expect(filed(a)).toHaveLength(1))
+    await vi.waitFor(() => expect(filed(b)).toHaveLength(1))
+    const reloaded = await openTab(factory)
+    expect(filed(reloaded)).toHaveLength(1)
+    expect(titles(reloaded)).toEqual([])
+  })
+
+  it('stays waiting when it is filed into a place another tab has just deleted', async () => {
+    const a = await openTab(factory)
+    await settle()
+    const b = await openTab(factory)
+    const id = a.useTasks.getState().addLater('Call the plumber')!
+    await vi.waitFor(() => expect(titles(b)).toEqual(['Call the plumber']))
+    const personal = activeAreas(a.useTasks.getState().areas)[1]!.id
+
+    a.useTasks.getState().deleteArea(personal)
+    b.useTasks.getState().fileLater(id, personal)
+    await settle()
+
+    // The tab that filed it learns of the delete and gets the line back.
+    await vi.waitFor(() => expect(titles(b)).toEqual(['Call the plumber']))
+    expect(b.useTasks.getState().items.some((i) => i.title === 'Call the plumber')).toBe(false)
+    const reloaded = await openTab(factory)
+    expect(titles(reloaded)).toEqual(['Call the plumber'])
+    expect(reloaded.useTasks.getState().items).toEqual([])
+  })
+
+  it('stays waiting when filed into a new epic whose area was deleted elsewhere', async () => {
+    const tab = await openTab(factory)
+    const id = tab.useTasks.getState().addLater('Call the plumber')!
+    await settle()
+    const personal = activeAreas(tab.useTasks.getState().areas)[1]!
+    // Deleted by a tab this one has not heard from yet.
+    await savedElsewhere({ areas: [deleted(personal)] })
+
+    // The epic and the filing go to the disk in the same write.
+    const epic = tab.useTasks.getState().addItem({ kind: 'epic', title: 'House', parentId: personal.id })!
+    tab.useTasks.getState().fileLater(id, epic)
+    await settle()
+
+    expect(titles(tab)).toEqual(['Call the plumber'])
+    const reloaded = await openTab(factory)
+    expect(titles(reloaded)).toEqual(['Call the plumber'])
+    expect(reloaded.useTasks.getState().items.some((i) => i.title === 'Call the plumber')).toBe(false)
+  })
+
+  it('is not filed from a copy another tab has since changed, and shows that change', async () => {
+    const tab = await openTab(factory)
+    const work = workOf(tab)
+    const renamed = tab.useTasks.getState().addLater('Shcema notes')!
+    const letGo = tab.useTasks.getState().addLater('Learn the cello')!
+    await settle()
+    const copy = (id: string) => tab.useTasks.getState().later.find((l) => l.id === id)!
+    // Corrected in one tab and let go in another, neither heard here yet.
+    await savedElsewhere({
+      later: [
+        { ...copy(renamed), title: 'Schema notes', updatedAt: copy(renamed).updatedAt + 1 },
+        { ...copy(letGo), letGoAt: 5, updatedAt: copy(letGo).updatedAt + 1 },
+      ],
+    })
+
+    tab.useTasks.getState().fileLater(renamed, work)
+    tab.useTasks.getState().fileLater(letGo, work)
+    await settle()
+
+    expect(titles(tab)).toEqual(['Schema notes'])
+    expect(letGoLater(tab.useTasks.getState().later).map((l) => l.title)).toEqual([
+      'Learn the cello',
+    ])
+    const reloaded = await openTab(factory)
+    expect(visible(reloaded)).toEqual([])
+    expect(titles(reloaded)).toEqual(['Schema notes'])
+
+    // Filed again from the copy it now holds, it lands.
+    reloaded.useTasks.getState().fileLater(renamed, workOf(reloaded))
+    await settle()
+    expect(visible(await openTab(factory))).toEqual(['Schema notes'])
+  })
+
+  it('refuses a line put down while an import is landing, saying so', async () => {
+    const tab = await openTab(factory)
+    await settle()
+    const held = holdNext('readwrite')
+    const importing = tab.useTasks.getState().replaceAll({ areas: [areaNamed('only')], items: [] })
+    await held.holding
+    expect(tab.useTasks.getState().addLater('Lost in the import')).toBeNull()
+    held.release()
+    await importing
+    held.spy.mockRestore()
+    expect(tab.useTasks.getState().addLater('After it')).toBeTypeOf('string')
+  })
+
+  it('files a line written in a block once it is saved, and after a reload', async () => {
+    const tab = await openTab(factory)
+    const from = { blockId: 'b1', purpose: 'Draft the schema' }
+    const saved = tab.useTasks.getState().addLater('Try WebGPU', from)!
+    const reloadedToo = tab.useTasks.getState().addLater('Read the spec', from)!
+    await settle()
+
+    // Saved: the disk's copy is a clone of this one, and must still count as it.
+    tab.useTasks.getState().fileLater(saved, workOf(tab))
+    await settle()
+    expect(visible(tab)).toEqual(['Try WebGPU'])
+
+    const reloaded = await openTab(factory)
+    reloaded.useTasks.getState().fileLater(reloadedToo, workOf(reloaded))
+    await settle()
+    expect(titles(reloaded)).toEqual([])
+    const after = await openTab(factory)
+    expect(visible(after)).toEqual(['Read the spec', 'Try WebGPU'])
+    expect(titles(after)).toEqual([])
+  })
+
+  it('stays waiting when filed into an epic the same write moves under an area deleted elsewhere', async () => {
+    const tab = await openTab(factory)
+    const [work, personal] = activeAreas(tab.useTasks.getState().areas)
+    const epic = tab.useTasks.getState().addItem({ kind: 'epic', title: 'House', parentId: work!.id })!
+    const id = tab.useTasks.getState().addLater('Call the plumber')!
+    await settle()
+    await savedElsewhere({ areas: [deleted(personal!)] })
+
+    // The move and the filing go to the disk in the same write.
+    tab.useTasks.getState().moveItem(epic, personal!.id)
+    tab.useTasks.getState().fileLater(id, epic)
+    await settle()
+
+    expect(titles(tab)).toEqual(['Call the plumber'])
+    const reloaded = await openTab(factory)
+    expect(titles(reloaded)).toEqual(['Call the plumber'])
+    expect(reloaded.useTasks.getState().items.some((i) => i.title === 'Call the plumber')).toBe(false)
+  })
+
+  it('carries an edit to the new task made before the filing reached the disk', async () => {
+    const tab = await openTab(factory)
+    await settle()
+    const id = tab.useTasks.getState().addLater('Look into WebGPU')!
+    const taskId = tab.useTasks.getState().fileLater(id, workOf(tab))!
+    tab.useTasks.getState().renameItem(taskId, 'Read the WebGPU spec')
+    await settle()
+
+    const reloaded = await openTab(factory)
+    expect(visible(reloaded)).toEqual(['Read the WebGPU spec'])
+    expect(titles(reloaded)).toEqual([])
+  })
+
+  it('says when the backlog was replaced, here or in another tab', async () => {
+    const a = await openTab(factory)
+    await settle()
+    const b = await openTab(factory)
+    const before = b.useTasks.getState().replaced
+
+    await a.useTasks.getState().replaceAll({ areas: [areaNamed('only')], items: [] })
+    expect(a.useTasks.getState().replaced).toBe(before + 1)
+    await vi.waitFor(() => expect(b.useTasks.getState().replaced).toBe(before + 1))
+
+    // An edit is not a replacement.
+    a.useTasks.getState().addLater('Not a replacement')
+    await vi.waitFor(() => expect(titles(b)).toEqual(['Not a replacement']))
+    expect(b.useTasks.getState().replaced).toBe(before + 1)
+  })
+
+  it('goes with an import, which brings its own or none', async () => {
+    const tab = await openTab(factory)
+    tab.useTasks.getState().addLater('Before the import')
+    const imported = {
+      id: 'imported',
+      title: 'From the file',
+      createdAt: 1,
+      updatedAt: 1,
+    }
+    await tab.useTasks.getState().replaceAll({
+      areas: [areaNamed('only')],
+      items: [],
+      later: [imported],
+    })
+    expect(titles(tab)).toEqual(['From the file'])
+    expect(titles(await openTab(factory))).toEqual(['From the file'])
+
+    await tab.useTasks.getState().replaceAll({ areas: [areaNamed('only')], items: [] })
+    expect(tab.useTasks.getState().later).toEqual([])
   })
 })

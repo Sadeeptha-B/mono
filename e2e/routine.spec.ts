@@ -49,7 +49,7 @@ async function morningOf(page: Page, date: number) {
   await page.clock.fastForward('00:02')
 }
 
-test('the header is two places and four tools, on one row on a phone', async ({ page }) => {
+test('the header is two places and its tools, on one row on a phone', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openMono(page)
 
@@ -59,6 +59,7 @@ test('the header is two places and four tools, on one row on a phone', async ({ 
 
   // The tools keep the names they had as words.
   const tools = [
+    page.getByRole('button', { name: 'Later', exact: true }),
     page.getByRole('button', { name: /^Room/ }),
     page.getByRole('link', { name: 'Guide', exact: true }),
     page.getByRole('button', { name: 'Settings', exact: true }),

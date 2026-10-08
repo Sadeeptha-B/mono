@@ -47,18 +47,24 @@ import {
   type SetStateAction,
 } from 'react'
 
-import type { Item } from '@/domain/tasks'
+/**
+ * What can be carried: a task, or on the tasks page something put down for
+ * later, which is carried into the backlog to become a task there. The
+ * gesture needs only something to find again and a title to say it is moving;
+ * what putting it down writes is each surface's own (`move`).
+ */
+export type Carried = { id: string; title: string }
 
 /** How a task is being carried: under the pointer, or picked up to be put down. */
 export type CarryMode = 'drag' | 'pick'
 
 /** The task in hand on one surface, and the verbs that carry it. */
 export type CarryContext = {
-  held: { task: Item; by: CarryMode } | null
+  held: { task: Carried; by: CarryMode } | null
   /** The place a drag is over, so only that one lights up. */
   over: string | null
   hover: Dispatch<SetStateAction<string | null>>
-  pickUp: (task: Item, by: CarryMode) => void
+  pickUp: (task: Carried, by: CarryMode) => void
   putDown: () => void
   /** Whether the task in hand would go to `target`: anywhere but where it is. */
   takes: (target: string) => boolean
@@ -92,7 +98,7 @@ export function useCarryHand(): CarryHand {
  * by identity, so a caller keeps them stable — they change with the backlog or
  * the day, not with the clock.
  */
-export function useCarryState({
+export function useCarryState<T extends Carried>({
   find,
   takes,
   move,
@@ -103,10 +109,15 @@ export function useCarryState({
    * asked with how it was taken up, since a surface may hold a drag and a
    * pick-up to different terms.
    */
-  find: (taskId: string, by: CarryMode) => Item | undefined
+  find: (taskId: string, by: CarryMode) => T | undefined
   /** Whether a task would go to `target`. */
-  takes: (task: Item, target: string) => boolean
-  move: (task: Item, target: string) => void
+  takes: (task: T, target: string) => boolean
+  /**
+   * Put it down. Returns the id of what landed when that is not what was
+   * carried — something filed from Later lands as a new task — so a pick-up's
+   * focus follows it there.
+   */
+  move: (task: T, target: string) => string | undefined | void
   /** Shared with the page's other carries, so only one holds a task at once. */
   hand?: CarryHand | undefined
 }): CarryContext {
@@ -141,9 +152,9 @@ export function useCarryState({
       takes: (target) => held !== null && takes(held.task, target),
       moveTo: (target) => {
         if (!held || !takes(held.task, target)) return
-        move(held.task, target)
+        const arrived = move(held.task, target) ?? held.task.id
         // From the keyboard, focus goes with the task to where it landed.
-        if (held.by === 'pick') landed.current = held.task.id
+        if (held.by === 'pick') landed.current = arrived
         putDown()
       },
       landed,
@@ -248,7 +259,7 @@ export function MoveHere({ target, name }: { target: string; name: string }) {
  * so, and the button that picks it up without a pointer. A row being edited
  * passes `draggable: false`, so that selecting its text selects text.
  */
-export function useCarriedRow(task: Item, draggable = true) {
+export function useCarriedRow(task: Carried, draggable = true) {
   const { held, pickUp, putDown } = useContext(Carry)
   const picked = held?.task.id === task.id && held.by === 'pick'
   const dragProps: HTMLAttributes<HTMLElement> & { draggable: boolean } = {
@@ -270,7 +281,7 @@ export function useCarriedRow(task: Item, draggable = true) {
  * or puts it back. A row mounts afresh where it was moved to; the one a pick-up
  * just put down takes focus here, so the keyboard ends where the task did.
  */
-export function CarryGrip({ task, className = '' }: { task: Item; className?: string }) {
+export function CarryGrip({ task, className = '' }: { task: Carried; className?: string }) {
   const { held, pickUp, putDown, landed } = useContext(Carry)
   const picked = held?.task.id === task.id && held.by === 'pick'
   const grip = useRef<HTMLButtonElement>(null)

@@ -8,10 +8,12 @@
  * `App` swaps the view without unmounting anything, so a block keeps running
  * while you are here, and the header says what the timer would be saying.
  *
- * Two parts, in the order a morning uses them. **Today** is the tasks chosen
+ * Three parts, in the order a morning uses them. **Today** is the tasks chosen
  * for the day, gathered under the intentions some of them are carried into —
  * the same list as on the opening question (`TodayList`), kept in the event
- * log like everything else about the day. **Areas** are the backlog itself, one band
+ * log like everything else about the day. **Later** is what was put down to
+ * come back to, waiting to be carried into the board as a task, let go or
+ * deleted (`LaterSection`). **Areas** are the backlog itself, one band
  * each, drawn as a board rather than as a general-purpose tree, because three
  * levels is the whole depth the model allows. A rule splits every band in two.
  * Down the left is what the area is made of: its name, one card per epic, and
@@ -35,7 +37,9 @@
  * column, or, from the keyboard or a touch screen, picked up with the grip on
  * its row and put down with the `Move here` that every other column then
  * offers. Only open tasks are carried, and every column on the page takes one,
- * because every column is a place a task can live. Today's list carries its
+ * because every column is a place a task can live. Something waiting in Later
+ * is carried by the same hand into any column, and becomes a task there in
+ * the one write that takes it out of Later (`fileLater`). Today's list carries its
  * own tasks between intentions the same way, with its own targets but the
  * board's hand, so picking up on one puts down the other: a task on the
  * board is not dragged into Today, it is chosen with the sun on its row.
@@ -83,6 +87,7 @@ import {
   useCarryState,
   type CarryHand,
 } from '../carry'
+import { keepForLater } from '../Later'
 import { TodayCarry, TodayList, useIntentionRename } from '../TodayList'
 import {
   ArchiveIcon,
@@ -117,7 +122,8 @@ import {
   type Item,
 } from '@/domain/tasks'
 import { isToday, type Today } from '@/domain/today'
-import type { TimerMode } from '@/domain/time'
+import { LATER_MAX_LENGTH, letGoLater, waitingLater, type Later } from '@/domain/later'
+import { formatDayAndClock, type TimerMode } from '@/domain/time'
 import type { ActiveSegment, Ms } from '@/domain/types'
 
 export function TasksPage({
@@ -134,37 +140,31 @@ export function TasksPage({
   mini: MiniWindowControls
 }) {
   const phase = useSession((s) => s.phase)
-  const today = useSession((s) => s.session.today)
   const generation = useSession((s) => s.generation)
 
   const hydrated = useTasks((s) => s.hydrated)
-  const allAreas = useTasks((s) => s.areas)
-  const items = useTasks((s) => s.items)
-  const addArea = useTasks((s) => s.addArea)
-  const unarchiveArea = useTasks((s) => s.unarchiveArea)
-  const moveItem = useTasks((s) => s.moveItem)
-
-  const areas = activeAreas(allAreas)
-  const archived = allAreas.filter((a) => isLive(a) && a.archivedAt !== undefined)
-  // Per backlog snapshot, not per render: the header's timer re-renders this
-  // page every second, and the backlog has not changed on most of those.
-  const inPlay = useMemo(() => activeTasks(items, allAreas), [items, allAreas])
-  const inPlayById = useMemo(() => new Map(inPlay.map((t) => [t.id, t])), [inPlay])
+  const replaced = useTasks((s) => s.replaced)
   const [addField, setAddField] = useState<string | null>(null)
+  const [drafts, setDrafts] = useState<ReadonlyMap<string, string>>(() => new Map())
+  const draft = useCallback((key: string, update: (was: string | null) => string | null) => {
+    setDrafts((all) => {
+      const was = all.get(key) ?? null
+      const next = update(was)
+      if (next === was) return all
+      const changed = new Map(all)
+      if (next === null) changed.delete(key)
+      else changed.set(key, next)
+      return changed
+    })
+  }, [])
   // Stable across the timer's once-a-second render, so no field re-runs its
   // fold check for a tick.
-  const addFields = useMemo(() => ({ current: addField, claim: setAddField }), [addField])
-
-  // The board's hand: a task goes to any column but its own. Shared with
-  // today's, so only one of the two holds a task at a time.
-  const hand = useCarryHand()
-  const find = useCallback((taskId: string) => inPlayById.get(taskId), [inPlayById])
-  const takes = useCallback((task: Item, parentId: string) => task.parentId !== parentId, [])
-  const move = useCallback(
-    (task: Item, parentId: string) => moveItem(task.id, parentId),
-    [moveItem],
+  const addFields = useMemo(
+    () => ({ current: addField, claim: setAddField, drafts, draft }),
+    [addField, drafts, draft],
   )
-  const carry = useCarryState({ find, takes, move, hand })
+  // Shared by today's carry and the backlog's, so only one holds anything at a time.
+  const hand = useCarryHand()
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink lg:h-dvh">
@@ -191,7 +191,8 @@ export function TasksPage({
           <h1 className="text-3xl font-light text-bright sm:text-4xl">Tasks</h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
             Everything you mean to do, by area of life. A task sitting straight under an
-            area is that area's inbox — file it deeper later, or never.
+            area is that area's inbox — file it deeper later, or never. What you put down
+            for later waits above them until you decide what it is.
           </p>
 
           {!hydrated ? (
@@ -203,65 +204,137 @@ export function TasksPage({
                   what is being typed about today belongs to one particular
                   day, and the midnight reset or an import must not carry it
                   into the next, nor a task half carried between intentions.
-                  Only this; the backlog's own add fields describe long-lived
-                  records and keep what is typed in them. */}
+                  The backlog below is keyed by its own replacements instead
+                  (`Backlog`): it outlives the day, so a midnight reset keeps
+                  what is typed in it. */}
               <section aria-label="Today" className="mt-8 border-t border-line pt-6">
                 <div className="max-w-3xl">
                   <TodaySection key={generation} hand={hand} />
                 </div>
               </section>
 
-              <Carry.Provider value={carry}>
-                {/* One rule above the first band and one under each, so every
-                    area reads as its own band and the last is closed off from
-                    the control that adds another. */}
-                <div className="mt-8 border-t border-line">
-                  {areas.map((area) => (
-                    <AreaBand key={area.id} area={area} items={items} today={today} />
-                  ))}
-                </div>
-
-                <div className="mt-6">
-                  <AddForm
-                    opener="Add area"
-                    variant="prominent"
-                    label="New area"
-                    placeholder="Health, Home, Side project"
-                    maxLength={60}
-                    className="max-w-md"
-                    onAdd={addArea}
-                  />
-
-                  {archived.length > 0 && (
-                    <details className="mt-4">
-                      <summary className="cursor-pointer text-xs text-muted hover:text-body">
-                        Archived ({archived.length})
-                      </summary>
-                      <ul className="mt-2 flex max-w-md flex-col gap-1.5">
-                        {archived.map((area) => (
-                          <li key={area.id} className="group/row flex items-center justify-between gap-3 text-sm">
-                            <span className="min-w-0 wrap-break-word text-muted">{area.name}</span>
-                            <IconButton
-                              onClick={() => unarchiveArea(area.id)}
-                              label={`Restore ${area.name}`}
-                              hint="Restore"
-                              className={revealOnHover}
-                            >
-                              <RestoreIcon />
-                            </IconButton>
-                          </li>
-                        ))}
-                      </ul>
-                    </details>
-                  )}
-                </div>
-                <CarryStatus />
-              </Carry.Provider>
+              <Backlog key={replaced} hand={hand} />
             </AddFields.Provider>
           )}
         </main>
       </div>
     </div>
+  )
+}
+
+/**
+ * Later and the areas, with the carry that moves tasks between columns and
+ * files what waits in Later into them.
+ *
+ * Keyed by the backlog's replacements (`replaced`), so an import — here, or
+ * in another tab — starts it again. The drafts held in here name records by
+ * id: a rename half typed, a task picked up. A replacement can bring back the
+ * same id with different contents, and a rename kept across it would be saved
+ * over what was imported, so they go with the backlog they were about, the
+ * way the day's drafts go with the session's `generation`.
+ *
+ * What is typed into an `Add …` field names no record, and is not held in
+ * here but by the page, above the key (`AddFields`). It outlasts the
+ * replacement: a line refused while an import was landing — every edit is
+ * refused then — is still in its field once the import has landed, to be
+ * kept. Keying the whole of this let those go too, the one moment the
+ * refusal had promised to keep them.
+ */
+function Backlog({ hand }: { hand: CarryHand }) {
+  const today = useSession((s) => s.session.today)
+  const allAreas = useTasks((s) => s.areas)
+  const items = useTasks((s) => s.items)
+  const addArea = useTasks((s) => s.addArea)
+  const unarchiveArea = useTasks((s) => s.unarchiveArea)
+  const moveItem = useTasks((s) => s.moveItem)
+  const fileLater = useTasks((s) => s.fileLater)
+  const allLater = useTasks((s) => s.later)
+
+  const areas = activeAreas(allAreas)
+  const archived = allAreas.filter((a) => isLive(a) && a.archivedAt !== undefined)
+  // Per backlog snapshot, not per render: the header's timer re-renders this
+  // page every second, and the backlog has not changed on most of those.
+  const inPlay = useMemo(() => activeTasks(items, allAreas), [items, allAreas])
+  const inPlayById = useMemo(() => new Map(inPlay.map((t) => [t.id, t])), [inPlay])
+  const waiting = useMemo(() => waitingLater(allLater), [allLater])
+  const letGo = useMemo(() => letGoLater(allLater), [allLater])
+  const waitingById = useMemo(() => new Map(waiting.map((l) => [l.id, l])), [waiting])
+
+  // The board's carry: a task goes to any column but its own, and something
+  // waiting in Later goes to any column at all, becoming a task there — which
+  // is a new record, so it is the task's id the keyboard's focus follows.
+  const find = useCallback(
+    (id: string): Item | Later | undefined => inPlayById.get(id) ?? waitingById.get(id),
+    [inPlayById, waitingById],
+  )
+  const takes = useCallback(
+    (carried: Item | Later, parentId: string) => !isItem(carried) || carried.parentId !== parentId,
+    [],
+  )
+  const move = useCallback(
+    (carried: Item | Later, parentId: string) => {
+      if (isItem(carried)) {
+        moveItem(carried.id, parentId)
+        return carried.id
+      }
+      return fileLater(carried.id, parentId) ?? undefined
+    },
+    [moveItem, fileLater],
+  )
+  const carry = useCarryState({ find, takes, move, hand })
+
+  return (
+    <Carry.Provider value={carry}>
+      {/* Inside the board's carry, since what waits here is carried
+          into the board to become a task. */}
+      <LaterSection waiting={waiting} letGo={letGo} />
+
+      {/* One rule above the first band and one under each, so every
+          area reads as its own band and the last is closed off from
+          the control that adds another. */}
+      <div className="mt-8 border-t border-line">
+        {areas.map((area) => (
+          <AreaBand key={area.id} area={area} items={items} today={today} />
+        ))}
+      </div>
+
+      <div className="mt-6">
+        <AddForm
+          draftKey="area"
+          opener="Add area"
+          variant="prominent"
+          label="New area"
+          placeholder="Health, Home, Side project"
+          maxLength={60}
+          className="max-w-md"
+          onAdd={addArea}
+        />
+
+        {archived.length > 0 && (
+          <details className="mt-4">
+            <summary className="cursor-pointer text-xs text-muted hover:text-body">
+              Archived ({archived.length})
+            </summary>
+            <ul className="mt-2 flex max-w-md flex-col gap-1.5">
+              {archived.map((area) => (
+                <li key={area.id} className="group/row flex items-center justify-between gap-3 text-sm">
+                  <span className="min-w-0 wrap-break-word text-muted">{area.name}</span>
+                  <IconButton
+                    onClick={() => unarchiveArea(area.id)}
+                    label={`Restore ${area.name}`}
+                    hint="Restore"
+                    className={revealOnHover}
+                  >
+                    <RestoreIcon />
+                  </IconButton>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </div>
+      <CarryStatus />
+    </Carry.Provider>
   )
 }
 
@@ -301,6 +374,183 @@ function TodaySection({ hand }: { hand: CarryHand }) {
         empty="Nothing chosen for today yet. Choose a task with the sun on its row below."
       />
     </TodayCarry>
+  )
+}
+
+const isItem = (carried: Item | Later): carried is Item => 'kind' in carried
+
+/**
+ * Later: what was put down to come back to, waiting to be dealt with
+ * (`domain/later.ts`), oldest first, above the areas it will be filed into.
+ *
+ * Dealt with three ways, all here, away from the timer. Carried into any
+ * column of the board — dragged, or picked up with its grip and put down with
+ * `Move here`, the board's own gesture — it becomes a task there and leaves
+ * the list. Let go, it moves to a fold under the list, where it can be
+ * brought back, for the reason a dropped task is kept: deciding not to is a
+ * decision. Deleted, it goes. Its title can be rewritten first, since what is
+ * written in a hurry is often not yet a task's name.
+ *
+ * Where it was written, when that was a block, is shown under it — what the
+ * block was for and when — because a line put down mid-thought often only
+ * makes sense beside what the thought was interrupting.
+ */
+function LaterSection({ waiting, letGo }: { waiting: readonly Later[]; letGo: readonly Later[] }) {
+  return (
+    <section aria-label="Later" className="mt-8 border-t border-line pt-6">
+      <div className="max-w-xl">
+        <h2 className="text-xs font-medium tracking-widest text-muted uppercase">Later</h2>
+        {waiting.length === 0 ? (
+          <p className="mt-2 text-sm text-muted">
+            Nothing waiting. Put something down with Later in the header, or beside ✎ Log
+            while a block runs.
+          </p>
+        ) : (
+          <>
+            <p className="mt-2 text-sm text-muted">
+              Carry one into a column below to make it a task there.
+            </p>
+            <ul aria-label="Waiting for later" className="mt-3 flex flex-col gap-2">
+              {waiting.map((later) => (
+                <LaterRow key={later.id} later={later} />
+              ))}
+            </ul>
+          </>
+        )}
+        <AddForm
+          draftKey="later"
+          opener="Add to Later"
+          label="New for later"
+          placeholder="Something for later"
+          maxLength={LATER_MAX_LENGTH}
+          onAdd={keepForLater}
+        />
+        {letGo.length > 0 && <LetGoFold letGo={letGo} />}
+      </div>
+    </section>
+  )
+}
+
+/** One line waiting in Later: carry it, rewrite it, let it go, or delete it. */
+function LaterRow({ later }: { later: Later }) {
+  const retitleLater = useTasks((s) => s.retitleLater)
+  const letGoLater = useTasks((s) => s.letGoLater)
+  const deleteLater = useTasks((s) => s.deleteLater)
+  const [renaming, setRenaming] = useState<string | null>(null)
+  const { picked, dragProps } = useCarriedRow(later, renaming === null)
+
+  return (
+    <li
+      {...dragProps}
+      className={`group/row rounded-lg border px-3 py-2 ${
+        picked ? 'border-dashed border-deep/70 bg-surface/60' : 'border-muted/70'
+      }`}
+    >
+      <div className="flex items-start gap-2">
+        <CarryGrip task={later} className="-ml-1.5 mt-0.5" />
+        {renaming === null ? (
+          <>
+            <span className="min-w-0 flex-1 text-sm text-bright wrap-break-word">{later.title}</span>
+            <span className="-my-0.5 -mr-1.5 flex shrink-0">
+              <IconButton
+                onClick={() => setRenaming(later.title)}
+                label={`Rename ${later.title}`}
+                hint="Rename"
+                className={revealOnHover}
+              >
+                <EditGlyph />
+              </IconButton>
+              <IconButton
+                onClick={() => letGoLater(later.id)}
+                label={`Let go of ${later.title}`}
+                hint="Let go"
+                className={revealOnHover}
+              >
+                <DropIcon />
+              </IconButton>
+              <IconButton
+                danger
+                onClick={() => deleteLater(later.id)}
+                label={`Delete ${later.title}`}
+                hint="Delete"
+                className={revealOnHover}
+              >
+                <DeleteIcon />
+              </IconButton>
+            </span>
+          </>
+        ) : (
+          <RenameField
+            label={`Rename ${later.title}`}
+            value={renaming}
+            onChange={setRenaming}
+            onSave={() => {
+              retitleLater(later.id, renaming)
+              setRenaming(null)
+            }}
+            onCancel={() => setRenaming(null)}
+            maxLength={LATER_MAX_LENGTH}
+          />
+        )}
+      </div>
+      <p className="mt-1 pl-5 text-xs text-muted wrap-break-word">
+        {later.from && (
+          <>
+            From <span className="text-body">{later.from.purpose}</span>
+            {' · '}
+          </>
+        )}
+        {formatDayAndClock(later.createdAt)}
+      </p>
+    </li>
+  )
+}
+
+/**
+ * What was let go, folded under the list, each able to come back or be
+ * deleted. Drawn only while open, as the board's put-away cards are.
+ */
+function LetGoFold({ letGo }: { letGo: readonly Later[] }) {
+  const restoreLater = useTasks((s) => s.restoreLater)
+  const deleteLater = useTasks((s) => s.deleteLater)
+  const [open, setOpen] = useState(false)
+  return (
+    <details className="mt-4" onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className="cursor-pointer text-xs text-muted hover:text-body">
+        Let go ({letGo.length})
+      </summary>
+      {open && (
+        <ul aria-label="Let go" className="mt-2 flex flex-col gap-1.5">
+          {letGo.map((later) => (
+            <li
+              key={later.id}
+              className="group/row flex items-start gap-2 rounded-lg border border-line px-3 py-1.5"
+            >
+              <span className="min-w-0 flex-1 text-sm text-muted wrap-break-word">{later.title}</span>
+              <span className="-my-0.5 -mr-1.5 flex shrink-0">
+                <IconButton
+                  onClick={() => restoreLater(later.id)}
+                  label={`Bring back ${later.title}`}
+                  hint="Bring back"
+                  className={revealOnHover}
+                >
+                  <RestoreIcon />
+                </IconButton>
+                <IconButton
+                  danger
+                  onClick={() => deleteLater(later.id)}
+                  label={`Delete ${later.title}`}
+                  hint="Delete"
+                  className={revealOnHover}
+                >
+                  <DeleteIcon />
+                </IconButton>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </details>
   )
 }
 
@@ -391,6 +641,7 @@ function AreaBand({ area, ...tree }: TreeProps & { area: Area }) {
       <Row
         side={
           <AddForm
+            draftKey={`epic:${area.id}`}
             opener="Add epic"
             openerLabel={`Add an epic to ${area.name}`}
             label={`New epic in ${area.name}`}
@@ -492,6 +743,7 @@ function EpicRow({ epic, ...tree }: TreeProps & { epic: Item }) {
         ))}
         <div className="min-w-0">
           <AddForm
+            draftKey={`outcome:${epic.id}`}
             variant="slot"
             opener="Add outcome"
             openerLabel={`Add an outcome to ${epic.title}`}
@@ -652,6 +904,7 @@ function TaskList({
         </ul>
       )}
       <AddForm
+        draftKey={`task:${parent}`}
         opener="Add task"
         openerLabel={`Add a task to ${name}`}
         label={`New task in ${name}`}
@@ -673,15 +926,25 @@ const FOLD_CLASS = {
 } as const
 
 /**
- * Which add field was opened last, page-wide, so opening one can fold the
- * others. `null` once the last one opened has been folded by hand.
+ * The page's add fields: which was opened last, so opening one can fold the
+ * others (`null` once the last one opened has been folded by hand), and what
+ * is typed in each, by the field's `draftKey`.
+ *
+ * The drafts are the page's, not each field's, so they outlast a field being
+ * drawn again: `Backlog` is started again when the backlog is replaced, and
+ * what was being written into it is not part of what was replaced. Absent is
+ * folded; an empty string is open with nothing typed.
  */
 const AddFields = createContext<{
   current: string | null
   claim: (id: string | null) => void
+  drafts: ReadonlyMap<string, string>
+  draft: (key: string, update: (was: string | null) => string | null) => void
 }>({
   current: null,
   claim: () => undefined,
+  drafts: new Map(),
+  draft: () => undefined,
 })
 
 /**
@@ -705,8 +968,14 @@ const AddFields = createContext<{
  * — usually not the button below it that was aimed at. Opening another field
  * is itself a finished click, so folding in answer to it moves nothing that
  * matters.
+ *
+ * What is typed is held by the page under `draftKey` (`AddFields`), so a field
+ * drawn again — after an import replaces the backlog — comes back open with
+ * what was in it. It takes the focus only when a click opens it, never when it
+ * comes back by itself, which would take the focus from wherever it had gone.
  */
 function AddForm({
+  draftKey,
   opener,
   openerLabel,
   variant = 'inline',
@@ -716,6 +985,11 @@ function AddForm({
   className = '',
   onAdd,
 }: {
+  /**
+   * Where it adds, and what: `task:<parent id>`, `later`. Stable across the
+   * field being drawn again, which a React id is not, and unique on the page.
+   */
+  draftKey: string
   /** The heading: `Add task`, `Add outcome`. */
   opener: string
   /** The heading's accessible name, when its text alone does not say where. */
@@ -733,22 +1007,24 @@ function AddForm({
   /** Returns the new id, or null when the store refused it. */
   onAdd: (title: string) => string | null
 }) {
-  const id = useId()
-  const { current, claim } = useContext(AddFields)
+  const { current, claim, drafts, draft } = useContext(AddFields)
   /** What is typed while open, or null while folded. */
-  const [title, setTitle] = useState<string | null>(null)
+  const title = drafts.get(draftKey) ?? null
+  const setTitle = (next: string | null) => draft(draftKey, () => next)
   const open = title !== null
+  // Opened by a click in this drawing of the field, and so the focus's.
+  const [asked, setAsked] = useState(false)
 
   // Another field was opened: fold this one if nothing has been typed in it.
   useEffect(() => {
-    if (current !== null && current !== id) setTitle((t) => (t === '' ? null : t))
-  }, [current, id])
+    if (current !== null && current !== draftKey) draft(draftKey, (t) => (t === '' ? null : t))
+  }, [current, draftKey, draft])
 
   const field = useRef<HTMLInputElement>(null)
 
   const fold = () => {
     setTitle(null)
-    if (current === id) claim(null)
+    if (current === draftKey) claim(null)
   }
 
   // Keeps what is typed, if anything, and folds; a refusal keeps it open.
@@ -766,7 +1042,8 @@ function AddForm({
         open={open}
         onOpen={() => {
           setTitle('')
-          claim(id)
+          setAsked(true)
+          claim(draftKey)
         }}
         onCancel={fold}
         cancelLabel={`Cancel ${label.charAt(0).toLowerCase()}${label.slice(1)}`}
@@ -788,8 +1065,9 @@ function AddForm({
             onKeyDown={(e) => e.key === 'Escape' && fold()}
             placeholder={placeholder}
             aria-label={label}
-            // Opened by a click asking for exactly this field.
-            autoFocus
+            // Opened by a click asking for exactly this field; not when it is
+            // drawn again with what was typed in it.
+            autoFocus={asked}
             maxLength={maxLength}
             className={`${fieldClass} py-1.5 text-sm`}
           />

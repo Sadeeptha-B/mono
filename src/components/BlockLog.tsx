@@ -1,6 +1,7 @@
 /**
  * What gets written into a running block: lines about how it is going, and a
- * count of the urges to leave it.
+ * count of the urges to leave it — and, from the same place, a line put down
+ * for later, which is about something else and is not kept on the block.
  *
  * Here rather than in the stage, for `BlockTasks`'s reason: the stage, the mini
  * window and the calendar all show these, and one set of components is how
@@ -28,15 +29,17 @@
 import { Fragment, useCallback, useState, type ReactNode } from 'react'
 
 import { DeleteIcon, MinusIcon, PlusIcon } from './icons'
+import { keepForLater, useKeptInBlock } from './Later'
 import {
   EditGlyph,
   GhostButton,
   IconButton,
+  LineField,
   RenameField,
   SectionHeading,
-  fieldClass,
   revealOnHover,
 } from './ui'
+import { LATER_MAX_LENGTH } from '@/domain/later'
 import { formatClock } from '@/domain/time'
 import type { BlockLog } from '@/domain/types'
 import { useSession } from '@/store/session'
@@ -111,17 +114,17 @@ export function UrgeCounter() {
 }
 
 /**
- * The mini window's row while a block runs: the log to the left, the urges to
- * the right, and whatever the window puts after them — the sound. The stage
- * lays the same two out apart, the log under the block's tasks and the urges
- * under its logs, level with each other; this window has one row to give them.
- * End early is on neither: both put it out of the way, as a quiet word.
+ * The mini window's row while a block runs: the log and Later to the left, the
+ * urges to the right, and whatever the window puts after them — the sound. The
+ * stage lays the same out apart, the openers under the block's tasks and the
+ * urges under its logs, level with each other; this window has one row to give
+ * them. End early is on neither: both put it out of the way, as a quiet word.
  */
 export function BlockControls({ after }: { after?: ReactNode }) {
   return (
     <div className="flex items-center gap-3">
       <div className="flex min-w-0 flex-1 items-center gap-2">
-        <LogComposer compact />
+        <BlockComposer compact />
       </div>
       <UrgeCounter />
       {after}
@@ -130,7 +133,14 @@ export function BlockControls({ after }: { after?: ReactNode }) {
 }
 
 /**
- * `✎ Log`, and the field it opens in its own place.
+ * `✎ Log` and `⤴ Later`, and the field either opens in their place.
+ *
+ * Two things a line written during a block can be. A log is about this block
+ * and stays on it; Later is about anything else and goes to the tasks page to
+ * be dealt with (`Later.tsx`). The choice is made by which is pressed, before
+ * a word is written, because it is a different question each time — how is
+ * this going, or what is this pulling me towards — and a field that asked
+ * afterwards would be asking it at the moment the line was meant to be let go.
  *
  * Closed until asked for. Always open, a field read as something the block was
  * waiting for, and in the mini window it was most of what there was to look
@@ -138,101 +148,81 @@ export function BlockControls({ after }: { after?: ReactNode }) {
  * line is kept or let go.
  *
  * Whether it is open is held here, by a component that lives exactly as long
- * as the block's controls do, so the next block starts with it closed. Compact
- * is the mini window's, which says how many lines there are beside the button,
- * since it lists none.
+ * as the block's controls do, so the next block starts with it closed. Beside
+ * the openers it says how many lines the block has put down for later, since
+ * those are listed nowhere on it; compact is the mini window's, which also
+ * says how many logs there are, since it lists none.
  */
-export function LogComposer({ compact = false }: { compact?: boolean }) {
+export function BlockComposer({ compact = false }: { compact?: boolean }) {
   const block = useRunningBlock()
-  const [writing, setWriting] = useState(false)
+  const logBlock = useSession((s) => s.logBlock)
+  const kept = useKeptInBlock()
+  const [writing, setWriting] = useState<'log' | 'later' | null>(null)
   if (!block) return null
-  if (writing) return <LogField compact={compact} onDone={() => setWriting(false)} />
 
-  const count = block.logs.length
+  const done = () => setWriting(null)
+  if (writing === 'log') {
+    return (
+      <LineField
+        label="Log"
+        placeholder="How is it going?"
+        submit="Log"
+        closeLabel="Close the log"
+        maxLength={LOG_MAX_LENGTH}
+        compact={compact}
+        onKeep={logBlock}
+        onDone={done}
+      />
+    )
+  }
+  if (writing === 'later') {
+    return (
+      <LineField
+        label="Later"
+        placeholder="Something for later"
+        submit="Keep"
+        closeLabel="Close Later"
+        maxLength={LATER_MAX_LENGTH}
+        compact={compact}
+        onKeep={(title) => keepForLater(title) !== null}
+        onDone={done}
+      />
+    )
+  }
+
+  const opener = `shrink-0 ${compact ? 'px-3 py-1 text-xs' : 'px-3 py-1.5'}`
+  const counts = [
+    ...(compact && block.logs.length > 0 ? [`${block.logs.length} logged`] : []),
+    ...(kept > 0 ? [`${kept} for later`] : []),
+  ]
+  // A row of its own with its own gap: on the stage its cell is a plain box,
+  // and the two openers drawn there as inline siblings touched.
   return (
-    <>
+    <div className="flex min-w-0 flex-wrap items-center gap-2">
       <GhostButton
         type="button"
-        onClick={() => setWriting(true)}
+        onClick={() => setWriting('log')}
         aria-label="Write a log"
         title="Write a line about how it is going"
-        className={`shrink-0 ${compact ? 'px-3 py-1 text-xs' : 'px-3 py-1.5'}`}
+        className={opener}
       >
         <EditGlyph /> Log
       </GhostButton>
-      {compact && count > 0 && <span className="tnum text-[10px] text-muted">{count} logged</span>}
-    </>
-  )
-}
-
-/**
- * The field a line is written in, once `✎ Log` has been pressed. Enter or
- * `Log` keeps the line and closes the field; Escape or × closes it without.
- * A blank line is not kept. It takes the focus as it opens, because the press
- * that opened it asked for exactly this.
- *
- * The draft belongs to the field and goes with it: closed, or the block ended,
- * the half-written line goes, as a half-named purpose goes with its prompt.
- *
- * It takes no width of its own: the input's `size` is one character, so the
- * field is as wide as its place leaves it — the stage's column under the
- * block's tasks, or the mini window's row beside the counter. A box the width
- * of the stage read as the thing the stage was for; a line is a sideline to
- * the block, and should look it.
- */
-function LogField({ compact = false, onDone }: { compact?: boolean; onDone: () => void }) {
-  const logBlock = useSession((s) => s.logBlock)
-  const [draft, setDraft] = useState('')
-
-  const save = () => {
-    if (draft.trim() === '') return
-    logBlock(draft)
-    setDraft('')
-    onDone()
-  }
-
-  return (
-    <form
-      className="min-w-0 flex-1"
-      onSubmit={(e) => {
-        e.preventDefault()
-        save()
-      }}
-    >
-      <div className="flex items-center gap-2">
-        <input
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.preventDefault()
-              onDone()
-            }
-          }}
-          aria-label="Log"
-          placeholder="How is it going?"
-          maxLength={LOG_MAX_LENGTH}
-          size={1}
-          autoFocus
-          className={`${fieldClass} ${compact ? 'px-2.5 py-1 text-xs' : 'px-3 py-1.5 text-sm'}`}
-        />
-        <GhostButton
-          type="submit"
-          disabled={draft.trim() === ''}
-          className={`shrink-0 disabled:cursor-not-allowed disabled:opacity-40 ${compact ? 'px-3 py-1 text-xs' : 'px-3 py-1.5'}`}
-        >
-          Log
-        </GhostButton>
-        <button
-          type="button"
-          onClick={onDone}
-          aria-label="Close the log"
-          className="shrink-0 px-0.5 text-muted transition hover:text-bright"
-        >
-          ×
-        </button>
-      </div>
-    </form>
+      <GhostButton
+        type="button"
+        onClick={() => setWriting('later')}
+        aria-label="Put something down for later"
+        title="Put down something to come back to, off this block"
+        className={opener}
+      >
+        <span aria-hidden="true">⤴</span> Later
+      </GhostButton>
+      {counts.length > 0 && (
+        <span className={`tnum text-muted ${compact ? 'text-[10px]' : 'text-xs'}`}>
+          {counts.join(' · ')}
+        </span>
+      )}
+    </div>
   )
 }
 
