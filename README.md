@@ -219,7 +219,8 @@ shaped around:
   for a mis-tap; both are on the stage and in the pop-out, where pointing at
   the purpose shows the block's tasks. The calendar's column can turn to All
   Tasks while a block runs, where a task can be taken on by the block or let
-  go — the only place a running block's tasks change. The calendar draws
+  go — the only place a running block's tasks change, and never its last
+  one. A task written there waits in the backlog until it is ticked. The calendar draws
   them on the block at the minutes they happened, and pointing at a log's mark
   shows it, to edit or delete. The count is noticing, not a score: nothing else
   in Mono reads it.

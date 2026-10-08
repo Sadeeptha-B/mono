@@ -22,8 +22,11 @@
  * through the same pick the prompt reads (`BlockPick`), and chooses it for
  * today as well (`App`). While a block runs it ticks for that block: the task
  * is taken on, and chosen for today, or let go and left today's — the one
- * place a running block's tasks change, and never its last one. An epic's or outcome's box ticks everything open
- * in it the same way, at once. A row can be dragged across onto one of
+ * place a running block's tasks change. Its last one stays ticked, and says
+ * why when pointed at (`keepsOne`). A task written here while a block runs is
+ * not ticked: what turns up in a block is usually not for that block, so it
+ * waits in the backlog until it is ticked. An epic's or outcome's box ticks
+ * everything open in it the same way, at once. A row can be dragged across onto one of
  * today's intentions — the list and the backlog share one hand, `TodayCarry`,
  * held around both columns — and an epic's or outcome's row brings everything
  * open in it.
@@ -215,6 +218,8 @@ export function AllTasksPane({
             elsewhere={under}
             draggable
             onPlace={place}
+            tickWritten={choosingFor !== 'focus'}
+            keepsOne={choosingFor === 'focus'}
           />
         )}
       </div>
