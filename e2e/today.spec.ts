@@ -3,13 +3,14 @@
  * them are grouped under, and the timer the question carries.
  */
 
-import { expect, test, type Page } from '@playwright/test'
+import { expect, test, type Locator, type Page } from '@playwright/test'
 import {
   addIntention,
   addOnTasksPage,
   addTaskIn,
   addTodayTask,
   goToStage,
+  openBlockBacklog,
   openMono,
   stage,
   startDay,
@@ -664,6 +665,43 @@ test('a whole outcome or epic is ticked for today at once', async ({ page }) => 
   await box('All of Mono auth').uncheck()
   await expect(box('Login form')).not.toBeChecked()
   await expect(todayList(page)).not.toContainText('CSRF token')
+})
+
+test('a place in All Tasks folds to its name, and stays folded from one question to the next', async ({
+  page,
+}) => {
+  await openMono(page)
+  await buildLoginPages(page)
+  const tree = todayBrowser(page)
+  const name = (browser: Locator) => browser.getByRole('button', { name: 'Epic: Mono auth', exact: true })
+  const search = tree.getByLabel('Find a task in Tasks for today')
+
+  await expect(name(tree)).toHaveAttribute('aria-expanded', 'true')
+  await name(tree).click()
+  await expect(name(tree)).toHaveAttribute('aria-expanded', 'false')
+  await expect(tree).not.toContainText('Outcome: Login pages')
+  await expect(tree.getByText('CSRF token', { exact: true })).toHaveCount(0)
+  await expect(tree).toContainText('3 open')
+  // Folded, its box still takes all of it.
+  await tree.getByRole('checkbox', { name: 'All of Mono auth', exact: true }).check()
+  await expect(todayList(page)).toContainText('Session cookie')
+
+  // A search looks through the fold, and the fold is there again after it.
+  await search.fill('cookie')
+  await expect(tree.getByText('Session cookie', { exact: true })).toBeVisible()
+  await search.fill('')
+  await expect(tree.getByText('Session cookie', { exact: true })).toHaveCount(0)
+
+  // The block's purpose prompt draws All Tasks afresh, folded as it was left.
+  await start(page).click()
+  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+  const block = await openBlockBacklog(page)
+  await expect(name(block)).toHaveAttribute('aria-expanded', 'false')
+  // Writing into it opens it, so what is written is seen.
+  await addTaskIn(block, 'Mono auth')
+  await expect(name(block)).toHaveAttribute('aria-expanded', 'true')
+  await expect(block.getByLabel('New task in Mono auth', { exact: true })).toBeFocused()
+  await expect(block.getByText('CSRF token', { exact: true })).toBeVisible()
 })
 
 test('an outcome is carried into an intention whole, from All Tasks or by its heading in today', async ({

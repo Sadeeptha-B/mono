@@ -34,6 +34,12 @@
  * A search narrows the tree as it is typed (`shown.ts`); Escape in the search
  * clears it.
  *
+ * A place's name folds it down to its own row, and opens it again, so a
+ * crowded backlog can be read a part at a time; a folded place says how much
+ * is open in it. The folds are the tab's (`folds.ts`), so they hold from one
+ * question to the next. A search looks through them, since what it finds has
+ * to be drawn to be chosen, and `+ Task` opens the place it writes into.
+ *
  * A task found here can be put right without leaving: its `⋯` marks it done,
  * renames it in place or deletes it, as the tasks page's own row would, and
  * one finished today can be reopened from its crossed-out row (`rows.tsx`).
@@ -76,7 +82,8 @@ import { PlaceBranch, TreeContext, type Tree } from './allTasks/branch'
 import { useTreeEditors } from './allTasks/editors'
 import { useFocusReturn } from './allTasks/focusReturn'
 import { useTreeOrdering } from './allTasks/ordering'
-import { narrow } from './allTasks/shown'
+import { useFolds } from './allTasks/folds'
+import { foldAway, narrow } from './allTasks/shown'
 import type { PlaceActions, PlaceInOrder } from './allTasks/types'
 import { openTasksBeneath, type TaskTreeNode } from '@/domain/tasks'
 
@@ -146,10 +153,16 @@ export const TaskBrowser = memo(function TaskBrowser({
   // Per tree and search, not per render: the order below is read from it.
   const needle = query.trim().toLowerCase()
   const shown = useMemo(() => narrow(tree, needle), [tree, needle])
+  // A search looks through the folds: what it finds is drawn.
+  const tabFolds = useFolds((s) => s.folded)
+  const folded = needle === '' ? tabFolds : NONE_FOLDED
+  const drawn = useMemo(() => foldAway(shown, folded), [shown, folded])
+  const toggleFold = useFolds((s) => s.toggle)
+  const unfold = useFolds((s) => s.unfold)
 
   const root = useRef<HTMLDivElement>(null)
   const search = useRef<HTMLInputElement>(null)
-  const editors = useTreeEditors(shown, root)
+  const editors = useTreeEditors(drawn, folded, root)
   const { adding, setAdding, renamingPlace, setRenamingPlace, renaming, setRenaming } = editors
   const focus = useFocusReturn(root, search)
   const ordering = useTreeOrdering(shown, onPlace, focus.focusNext)
@@ -215,6 +228,9 @@ export const TaskBrowser = memo(function TaskBrowser({
     places,
     selected: selectedSet,
     openUnder,
+    folded,
+    toggleFold,
+    unfold,
     onToggle,
     onToggleMany,
     onDelete,
@@ -281,6 +297,8 @@ export const TaskBrowser = memo(function TaskBrowser({
     </div>
   )
 })
+
+const NONE_FOLDED: ReadonlySet<string> = new Set()
 
 function SearchGlyph({ className = '' }: { className?: string }) {
   return (

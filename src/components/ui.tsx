@@ -377,7 +377,7 @@ export function AddFold({
 }
 
 /** A chevron pointing at what it would show: right while folded, down while open. */
-function Caret({ open }: { open: boolean }) {
+export function Caret({ open }: { open: boolean }) {
   return (
     <svg
       aria-hidden="true"

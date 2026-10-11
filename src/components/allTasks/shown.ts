@@ -6,7 +6,8 @@
  * A search narrows the tree as it is typed: a task stays when its title or a
  * place above it matches, a place when it, a place above it or anything beneath
  * it does — so searching for an epic shows the whole epic, and searching for a
- * task shows the path down to it.
+ * task shows the path down to it. A search looks through folds, so what it
+ * finds is drawn whatever was folded over it.
  */
 
 import type { Item, TaskTreeNode } from '@/domain/tasks'
@@ -38,4 +39,20 @@ export function narrow(tree: readonly TaskTreeNode[], needle: string): readonly 
     return children.length > 0 || tasks.length > 0 ? { ...node, children, tasks } : null
   }
   return tree.flatMap((node) => prune(node) ?? [])
+}
+
+/**
+ * The tree as its folds leave it: a folded place keeps its row and draws
+ * nothing under it (`folds.ts`). What an editor or popup asks before it is
+ * drawn, so one held on a row a fold has hidden is let go rather than coming
+ * back when the place opens.
+ */
+export function foldAway(
+  tree: readonly TaskTreeNode[],
+  folded: ReadonlySet<string>,
+): readonly TaskTreeNode[] {
+  if (folded.size === 0) return tree
+  const fold = (node: TaskTreeNode): TaskTreeNode =>
+    folded.has(node.id) ? { ...node, children: [], tasks: [] } : { ...node, children: node.children.map(fold) }
+  return tree.map(fold)
 }

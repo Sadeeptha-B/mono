@@ -10,7 +10,9 @@
  * another tab took it. Held up here by id, without the rule the state outlived
  * the row, and when the task came back — its epic reopened, the search
  * cleared — the old editor came back with it. So each is let go during render,
- * and the stale one is never painted and never mounts again on its own.
+ * and the stale one is never painted and never mounts again on its own. A
+ * place folded over a row hides it as a search does (`foldAway`), and so does
+ * folding the place a new task's field is open in.
  *
  * A field is focused by the press that opens it, never by mounting. The two
  * used to be the same thing, and then every other reason a field mounts took
@@ -29,7 +31,10 @@ import type { ItemKind, TaskTreeNode } from '@/domain/tasks'
 export type Editors = ReturnType<typeof useTreeEditors>
 
 export function useTreeEditors(
+  /** The tree as drawn: narrowed by the search, then by the folds. */
   shown: readonly TaskTreeNode[],
+  /** The places folded, which keep their row but not what is under it. */
+  folded: ReadonlySet<string>,
   root: RefObject<HTMLElement | null>,
 ) {
   /** The place something new is being written into, if any: what, and what is typed. */
@@ -49,7 +54,7 @@ export function useTreeEditors(
 
   // An editor whose subject is no longer drawn closes — see the header.
   if (renaming && drawnTask(shown, renaming.taskId)?.status !== 'open') setRenaming(null)
-  if (adding && !drawsPlace(shown, adding.parentId)) setAdding(null)
+  if (adding && (!drawsPlace(shown, adding.parentId) || folded.has(adding.parentId))) setAdding(null)
   if (renamingPlace && !drawsPlace(shown, renamingPlace.id)) setRenamingPlace(null)
   if (confirming !== null && !drawsPlace(shown, confirming)) setConfirming(null)
   if (menu !== null && !drawsPlace(shown, menu) && !drawnTask(shown, menu)) setMenu(null)
