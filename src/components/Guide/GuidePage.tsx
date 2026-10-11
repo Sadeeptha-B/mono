@@ -433,9 +433,11 @@ function sectionsFor(settings: Settings): Section[] {
             is.
           </P>
           <P>
-            None of them gates another. The dots move between them in any order,
-            nothing you have typed is lost by switching, and <Em>Start the day</Em>{' '}
-            finishes from whichever you are looking at. With nothing fixed today and the
+            None of them gates another. <Em>Back</Em> and <Em>Next</Em> under each
+            question step through them in order, the dots move between them in any
+            order, nothing you have typed is lost by switching, and{' '}
+            <Em>Start the day</Em>, under them, finishes from whichever you are
+            looking at. With nothing fixed today and the
             usual hours, one task is the whole of it. The questions stay answerable
             afterwards — between blocks the dots go back to any of them, because a
             meeting that appears at four is no different from one you knew about at
