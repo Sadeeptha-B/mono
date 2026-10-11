@@ -746,6 +746,48 @@ test('an outcome is carried into an intention whole, from All Tasks or by its he
   ).toBeFocused()
 })
 
+test("an outcome's heading in today is made an intention of its name, and fills it again", async ({
+  page,
+}) => {
+  await openMono(page)
+  await buildLoginPages(page)
+  const tree = todayBrowser(page)
+  const list = todayList(page)
+  const notGrouped = list.getByRole('region', { name: 'Not grouped' })
+  await tree.getByRole('checkbox', { name: 'Login form', exact: true }).check()
+  await tree.getByRole('checkbox', { name: 'CSRF token', exact: true }).check()
+
+  // Only an outcome's heading offers it; the epic's own task stays where it is.
+  await expect(list.getByRole('button', { name: /^Make Mono auth/ })).toHaveCount(0)
+  await list.getByText('Login pages', { exact: true }).hover()
+  await list.getByRole('button', { name: 'Make Login pages an intention', exact: true }).click()
+  await expect(intention(page, 'Login pages')).toContainText('Login form')
+  await expect(intention(page, 'Login pages')).not.toContainText('CSRF token')
+  await expect(notGrouped).toContainText('CSRF token')
+  // The heading pressed has gone from its group; the focus follows it.
+  await expect(
+    intention(page, 'Login pages').getByRole('button', {
+      name: 'Move tasks in Login pages',
+      exact: true,
+    }),
+  ).toBeFocused()
+  // Inside the intention it has nothing left to do.
+  await expect(
+    intention(page, 'Login pages').getByRole('button', { name: /^(Make|Move) Login pages/ }),
+  ).toHaveCount(0)
+
+  // More of the outcome ticked lands under no intention, and its heading
+  // there fills the intention already named rather than naming a second.
+  await tree.getByRole('checkbox', { name: 'Session cookie', exact: true }).check()
+  await expect(notGrouped).toContainText('Session cookie')
+  await notGrouped.getByText('Login pages', { exact: true }).hover()
+  await notGrouped
+    .getByRole('button', { name: 'Move Login pages into intention Login pages', exact: true })
+    .click()
+  await expect(intention(page, 'Login pages')).toContainText('Session cookie')
+  await expect(list.getByRole('region', { name: /^Intention: / })).toHaveCount(1)
+})
+
 test("a task's × in today's list shows on hover or focus, not at rest", async ({ page }) => {
   await openMono(page)
   await goToStage(page, 'Today')

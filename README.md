@@ -206,7 +206,8 @@ shaped around:
   All Tasks, the whole backlog in the calendar's column and kept from there; an
   epic or outcome can be ticked whole. Tasks can
   then be dragged into intentions, one at a time or a whole place at once,
-  which may be narrower than an outcome or wider than an epic. The
+  which may be narrower than an outcome or wider than an epic; an outcome's
+  heading in today's list makes it an intention of its own name in one press. The
   next day offers what was left unfinished, and adds nothing by itself. The
   question carries its own timer, which stops at zero and records nothing.
 - **Every focus block is for at least one task**, ticked in All Tasks beside

@@ -24,6 +24,7 @@ import {
 } from '@/domain/events'
 import { initialPhase, transition, type Action, type Phase } from '@/domain/machine'
 import { dayKey, regionsForDay } from '@/domain/time'
+import { intentionNamed } from '@/domain/today'
 import {
   migratePersisted,
   readImport,
@@ -202,6 +203,13 @@ type SessionStore = {
    * nothing; with `null`, those not yet today are chosen for it, under none.
    */
   linkTasks: (taskIds: readonly string[], intentionId: string | null) => void
+  /**
+   * Group tasks under the open intention of this name, naming one if there is
+   * none (`intentionNamed`): an outcome's heading in today's list made an
+   * intention. The naming and the linking are the events they always were,
+   * appended together, so replay needs nothing new. Returns the intention's id.
+   */
+  gatherUnder: (title: string, taskIds: readonly string[]) => string
 
   /**
    * Write a line into the running block, count an urge, or take the last one
@@ -378,6 +386,23 @@ export const useSession = create<SessionStore>()(
             : [{ type: 'intention/taskLinked', at, taskId, intentionId }]
         })
         if (events.length > 0) get().append(...events)
+      },
+
+      gatherUnder: (title, taskIds) => {
+        const { intentions, today } = get().session
+        const at = Date.now()
+        const named = intentionNamed(intentions, title)
+        const id = named?.id ?? newId()
+        const events: MonoEvent[] = named
+          ? []
+          : [{ type: 'intention/added', at, intention: { id, title: title.trim() } }]
+        for (const taskId of taskIds) {
+          if (today[taskId] !== id) {
+            events.push({ type: 'intention/taskLinked', at, taskId, intentionId: id })
+          }
+        }
+        if (events.length > 0) get().append(...events)
+        return id
       },
 
       logBlock: (text) => get().dispatch({ type: 'logBlock', at: Date.now(), text }),
