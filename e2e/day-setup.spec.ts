@@ -112,6 +112,39 @@ test('the opening questions can be re-opened once the day is under way', async (
   await expect(page.getByText(/Working until 4:00 PM/)).toBeVisible()
 })
 
+test('Back and Next step through the questions, and finishing stands apart', async ({ page }) => {
+  await openMono(page)
+  const back = stage(page).getByRole('button', { name: /^Back/ })
+  const next = stage(page).getByRole('button', { name: /^Next/ })
+  const current = carousel(page).locator('[aria-current="step"]')
+
+  // The first question has nowhere to go back to, but keeps the button.
+  await expect(back).toHaveAttribute('aria-disabled', 'true')
+  await expect(next).toHaveAccessibleName('Next: Hours')
+  await next.click()
+  await expect(
+    stage(page).getByRole('heading', { name: 'Are these your hours today?' }),
+  ).toBeVisible()
+  await expect(current).toHaveAccessibleName('Hours')
+  // Two steps, worded the same on every question, and where they lead in their names.
+  await expect(
+    stage(page).getByRole('group', { name: 'Between the questions' }).getByRole('button'),
+  ).toHaveText(['Back', 'Next'])
+  await expect(back).toHaveAccessibleName('Back to Commitments')
+
+  await next.click()
+  await expect(current).toHaveAccessibleName('Today')
+  // At the last question Next stays where it was, unable, and keeps the focus.
+  await expect(next).toHaveAttribute('aria-disabled', 'true')
+  await expect(next).toBeFocused()
+  await next.press('Enter')
+  await expect(current).toHaveAccessibleName('Today')
+
+  await back.click()
+  await expect(current).toHaveAccessibleName('Hours')
+  await expect(stage(page).getByRole('button', { name: 'Start the day', exact: true })).toBeDisabled()
+})
+
 test('the strip never offers the questions while a block is running', async ({ page }) => {
   // The other half of the rule above. Naming the block is the product, so the
   // strip must not become a way to click past it.

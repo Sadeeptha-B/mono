@@ -15,6 +15,17 @@
  * Nothing typed is lost by changing your mind about which question to answer
  * first.
  *
+ * Under each question are `Back` and `Next` as quiet words (`StepNav`), and
+ * across a rule under them the button that finishes, at the far end, with
+ * its note beside it. Each step
+ * used to be a button named after the question it led to, so the hours
+ * question offered `Start the day`, `Commitments` and `Today` side by side:
+ * three buttons to read and weigh before the obvious move, which is the next
+ * question. Now the way through is two fixed words, where they lead is said
+ * when pointed at and by the strip, and finishing is the one button. A row of
+ * steps of their own, between the question and the finish, was tried and gave
+ * the commitments question three levels of buttons under its `Done`.
+ *
  * Starting the day does need one task chosen for it, though, which is the
  * asymmetry between this question and the first. A day with nothing fixed in
  * it is ordinary, and "nothing" had to become a complete answer there or a day
@@ -72,7 +83,7 @@ import {
   type CommitmentDraft,
 } from '../CommitmentFields'
 import { resolveHours, TodayHoursFields } from '../TodayHours'
-import { RepeatIcon } from '../icons'
+import { MoveIcon, RepeatIcon } from '../icons'
 import { TodayOnlyNote } from '../Timeline/SegmentEditor'
 import { RoutineLink } from '../RoutineLink'
 import { TodayPanel, type TodayTimer } from './TodayPanel'
@@ -278,6 +289,7 @@ export function DaySetupPanel({
   }
   const previous = previousSetupStage(stage)
   const next = nextSetupStage(stage)
+  const note = footnote({ stage, revisiting, noHours, noTasks, commitments: commitments.length })
 
   return (
     <div className="max-w-md">
@@ -391,30 +403,77 @@ export function DaySetupPanel({
       )}
 
       {/* Outside the forms above, so that Enter in a field adds a commitment
-          or a task rather than ending the setup. */}
-      <div className="mt-5 flex flex-wrap items-center gap-2 border-t border-line pt-4">
+          or a task rather than moving on or ending the setup. */}
+      <StepNav previous={previous} next={next} onStage={onStage} />
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-x-4 gap-y-2 border-t border-line pt-4">
+        {note !== '' && (
+          <p className="min-w-0 flex-1 basis-48 text-xs leading-relaxed text-muted">{note}</p>
+        )}
+        {/* At the far end, past the note on why it will not go yet. */}
         <PrimaryButton
           type="button"
           onClick={onDone}
           disabled={!revisiting && (noHours || noTasks)}
+          className="ml-auto"
         >
           {revisiting ? 'Focus' : 'Start the day'}
         </PrimaryButton>
-        {/* Named after the question they lead to, like its dot in the strip. */}
-        {previous && (
-          <GhostButton type="button" onClick={() => onStage(previous)}>
-            {setupStageName(previous)}
-          </GhostButton>
-        )}
-        {next && (
-          <GhostButton type="button" onClick={() => onStage(next)}>
-            {setupStageName(next)}
-          </GhostButton>
-        )}
-        <p className="w-full text-xs leading-relaxed text-muted">
-          {footnote({ stage, revisiting, noHours, noTasks, commitments: commitments.length })}
-        </p>
       </div>
+    </div>
+  )
+}
+
+/**
+ * `Back` and `Next` between the questions, under each question and above the
+ * rule that sets the finish apart: Back at the left, Next at the right, so the
+ * hand learns where they are and the eye need not read them. Words rather than buttons, as End early is a word,
+ * so the one button under a question is the one that finishes. Where they lead is in their names and
+ * on hover, as the strip's dots say theirs, rather than written on them.
+ *
+ * At either end the one that cannot move stays, said and drawn as unable,
+ * rather than going: the press that brought the panel to the last question
+ * would otherwise leave the focus on nothing, and the other button would jump
+ * across the row. The same rule as a row's arrows at the end of its list.
+ */
+function StepNav({
+  previous,
+  next,
+  onStage,
+}: {
+  previous: SetupStageId | null
+  next: SetupStageId | null
+  onStage: (stage: SetupStageId) => void
+}) {
+  const step = (to: SetupStageId | null, way: 'back' | 'next') => {
+    const word = way === 'back' ? 'Back' : 'Next'
+    // Begins with the word it shows, so a name said and a name seen agree.
+    const name =
+      to === null
+        ? word
+        : way === 'back'
+          ? `Back to ${setupStageName(to)}`
+          : `Next: ${setupStageName(to)}`
+    return (
+      <button
+        type="button"
+        onClick={to === null ? undefined : () => onStage(to)}
+        aria-label={name}
+        aria-disabled={to === null || undefined}
+        {...(to === null ? {} : { title: setupStageName(to) })}
+        className={`inline-flex items-center gap-1.5 rounded-md px-2 py-1.5 text-sm transition focus-visible:outline-2 focus-visible:outline-bright ${
+          to === null ? 'cursor-default text-muted/40' : 'text-body hover:text-bright'
+        }`}
+      >
+        {way === 'back' && <MoveIcon towards="left" />}
+        {word}
+        {way === 'next' && <MoveIcon towards="right" />}
+      </button>
+    )
+  }
+  return (
+    <div role="group" aria-label="Between the questions" className="mt-4 -mx-2 flex items-center justify-between gap-2">
+      {step(previous, 'back')}
+      {step(next, 'next')}
     </div>
   )
 }
