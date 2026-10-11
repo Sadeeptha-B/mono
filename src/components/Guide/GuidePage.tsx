@@ -470,7 +470,10 @@ function sectionsFor(settings: Settings): Section[] {
             picking one up with the dots in front of it and choosing <Em>Move here</Em>.
             Drag an epic or an outcome from <Em>All Tasks</Em> and everything open in it
             comes at once. A place's heading in today's list carries the tasks it heads
-            there, by dragging it or by the dots at its end.
+            there, by dragging it or by the dots at its end. An outcome's heading has a
+            ring with a plus at its end, which makes it an intention of its own name,
+            holding the tasks under it there; pressed again once you have ticked more of
+            the outcome, it adds them to that intention rather than making another.
             An intention can be narrower than an outcome or wider than an epic, whatever
             the day needs; a task belongs to one at most, and to none quite happily. The{' '}
             <Em>×</Em> on a task takes it out of today and leaves it in your backlog.

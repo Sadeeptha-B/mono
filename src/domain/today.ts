@@ -13,6 +13,8 @@
  * carried from one intention to another is shown where it now belongs.
  */
 
+import type { Intention } from './types'
+
 /** Today's tasks, each with the intention it is under or `null` — see `SessionState.today`. */
 export type Today = Readonly<Record<string, string | null>>
 
@@ -33,6 +35,22 @@ export const ungroupedToday = (today: Today): string[] =>
   Object.entries(today)
     .filter(([, id]) => id === null)
     .map(([taskId]) => taskId)
+
+/**
+ * The open intention a name already belongs to, if any: where an outcome's
+ * tasks go when its heading is made an intention, so pressing it again after
+ * ticking more of the outcome fills the one it made rather than naming a
+ * second. Matched as a person reads a name, ignoring case and the space
+ * around it. One marked done is left alone: the day has said it got what it
+ * wanted from it, and filling it again would undo that without asking.
+ */
+export const intentionNamed = (
+  intentions: readonly Intention[],
+  title: string,
+): Intention | undefined => {
+  const name = title.trim().toLowerCase()
+  return intentions.find((i) => i.done !== true && i.title.trim().toLowerCase() === name)
+}
 
 /**
  * What the last day left to offer again: the tasks it chose that are still

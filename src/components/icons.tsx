@@ -130,6 +130,17 @@ export const DoneRingIcon = ({ done, className = '' }: { done: boolean; classNam
 )
 
 /**
+ * The intention's ring with a plus in it: make this an intention. The ring is
+ * the one drawn in front of every intention, so the button says what it makes.
+ */
+export const IntendIcon = ({ className = '' }: { className?: string }) => (
+    <Icon className={className}>
+        <circle cx="8" cy="8" r="6" />
+        <path d="M5.5 8h5M8 5.5v5" />
+    </Icon>
+)
+
+/**
  * A small sun: chosen for today. Filled once chosen, for the reason the done
  * ring is — the two states should differ by more than a thin stroke.
  */

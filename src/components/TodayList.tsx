@@ -41,7 +41,9 @@
  * place's heading carries what it heads in that group into another, all at
  * once (`PlaceHeading`), and an epic or outcome dragged in from All Tasks
  * brings everything open in it (`Bundle`): grouping an outcome's worth of work
- * is one move rather than one per task. Tasks
+ * is one move rather than one per task. An outcome's heading can also be made
+ * an intention of its own name (`MakeIntention`), since an intention so often
+ * turns out to be one outcome of an epic. Tasks
  * finished today stay, crossed out after the open ones of their place, because
  * the list is also the day's progress; they are not carried, since there is
  * nothing left to plan about them. A task taken out with its × leaves today
@@ -75,11 +77,17 @@ import {
   type CarryPayload,
 } from './carry'
 import { GroupedTasks } from './GroupedTasks'
-import { DeleteIcon, DoneRingIcon } from './icons'
+import { DeleteIcon, DoneRingIcon, IntendIcon } from './icons'
 import { useTodayBacklog } from './useTodayBacklog'
 import { EditGlyph, IconButton, KeepField, RenameField, revealOnHover } from './ui'
 import { deepestHolding, openTasksBeneath, type Item, type TaskTreeNode } from '@/domain/tasks'
-import { isToday, tasksOfIntention, ungroupedToday, type Today } from '@/domain/today'
+import {
+  intentionNamed,
+  isToday,
+  tasksOfIntention,
+  ungroupedToday,
+  type Today,
+} from '@/domain/today'
 import type { Intention } from '@/domain/types'
 import { useSession } from '@/store/session'
 
@@ -543,8 +551,44 @@ function PlaceHeading({
       }`}
     >
       <span className={`min-w-0 ${className}`}>{line}</span>
+      {open && node.kind === 'outcome' && <MakeIntention group={group} node={node} />}
       {open && <CarryGrip task={carried} className={picked ? '' : revealOnHover} />}
     </div>
+  )
+}
+
+/**
+ * The button on an outcome's heading that makes it an intention: named after
+ * the outcome, holding the open tasks the heading heads in its group — what
+ * carrying the heading would take, and no more, so making an intention never
+ * chooses anything (`gatherUnder`). Where an open intention already has the
+ * outcome's name, it fills that one instead, so a second press after more of
+ * the outcome is ticked does not name it twice; inside that intention it is
+ * not offered, having nothing left to do there.
+ *
+ * The heading it was pressed on leaves its group, so the focus follows to the
+ * same heading's grip under the intention, as a pick-up's does when it lands.
+ */
+function MakeIntention({ group, node }: { group: string; node: TaskTreeNode }) {
+  const intentions = useSession((s) => s.session.intentions)
+  const gatherUnder = useSession((s) => s.gatherUnder)
+  const { landed } = useContext(Carry)
+  const into = intentionNamed(intentions, node.name)
+  if (into?.id === group) return null
+  return (
+    <IconButton
+      onClick={() => {
+        // Cut from this group by the list, so these are its tasks in this place.
+        const taskIds = openTasksBeneath([node]).get(node.id) ?? []
+        const id = gatherUnder(node.name, taskIds)
+        landed.current = headingKey(id, node.id)
+      }}
+      label={into ? `Move ${node.name} into intention ${into.title}` : `Make ${node.name} an intention`}
+      hint={into ? 'Move into its intention' : 'Make an intention'}
+      className={`-my-1 ${revealOnHover}`}
+    >
+      <IntendIcon />
+    </IconButton>
   )
 }
 

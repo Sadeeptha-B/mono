@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   carriedOver,
+  intentionNamed,
   isToday,
   tasksOfIntention,
   todayTaskIds,
@@ -41,5 +42,23 @@ describe('carriedOver', () => {
 
   it('offers each task once', () => {
     expect(carriedOver(['a', 'a'], {}, ['a'])).toEqual(['a'])
+  })
+})
+
+describe('intentionNamed', () => {
+  const intentions = [
+    { id: 'old', title: 'Login pages', done: true },
+    { id: 'billing', title: 'Billing fix' },
+    { id: 'login', title: '  Login Pages ' },
+  ]
+
+  it('finds an open intention by its name, as a person reads it', () => {
+    expect(intentionNamed(intentions, 'login pages')?.id).toBe('login')
+    expect(intentionNamed(intentions, 'Billing fix ')?.id).toBe('billing')
+  })
+
+  it('leaves one marked done alone, and finds nothing for a name not given', () => {
+    expect(intentionNamed(intentions.slice(0, 2), 'Login pages')).toBeUndefined()
+    expect(intentionNamed(intentions, 'Login')).toBeUndefined()
   })
 })

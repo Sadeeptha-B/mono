@@ -513,4 +513,29 @@ describe('choosing and grouping several tasks at once', () => {
     linkTasks(['a', 'd'], null)
     expect(useSession.getState().session.today).toEqual({ a: null, b: admin, c: admin, d: null })
   })
+
+  it("gathers tasks under the intention of an outcome's name, naming it only the first time", () => {
+    const { addToToday, gatherUnder, updateIntention } = useSession.getState()
+    addToToday('a')
+    addToToday('b')
+
+    const login = gatherUnder(' Login pages ', ['a'])
+    expect(useSession.getState().session.intentions).toEqual([{ id: login, title: 'Login pages' }])
+    expect(useSession.getState().session.today).toEqual({ a: login, b: null })
+
+    // Again, with more of the outcome ticked: the same intention, and only
+    // what is not under it yet is written.
+    const before = written().length
+    expect(gatherUnder('Login pages', ['a', 'b'])).toBe(login)
+    expect(useSession.getState().session.today).toEqual({ a: login, b: login })
+    expect(written().slice(before)).toEqual(['intention/taskLinked'])
+
+    // Once marked done it is left alone, and the name is given afresh.
+    updateIntention(login, { done: true })
+    addToToday('c')
+    const again = gatherUnder('Login pages', ['c'])
+    expect(again).not.toBe(login)
+    expect(useSession.getState().session.intentions).toHaveLength(2)
+    expect(useSession.getState().session.today).toEqual({ a: login, b: login, c: again })
+  })
 })
