@@ -7,6 +7,11 @@
  * dozen props handed down each one, since every level needs all of it. It is
  * built again each time the tree draws, which is when every branch draws
  * anyway.
+ *
+ * A place's name is the button that folds it (`folds.ts`), rather than a caret
+ * of its own beside the box: a caret there would push the place's box over its
+ * tasks' boxes, so the two levels read as one list. Folded, the place draws
+ * its row alone, with how many open tasks are in it.
  */
 
 import { createContext, useContext, type HTMLAttributes } from 'react'
@@ -14,7 +19,7 @@ import { createContext, useContext, type HTMLAttributes } from 'react'
 import { dragInto, dropListProps, SlotMark, slotAttrs, slotEdge, type CarryContext } from '../carry'
 import type { Editors } from './editors'
 import type { Ordering } from './ordering'
-import { DoneOption, InlineField, LEVEL, More, PlaceTick, PlaceTools, TaskOption } from './rows'
+import { DoneOption, FoldName, InlineField, LEVEL, More, PlaceTick, PlaceTools, TaskOption } from './rows'
 import type { PlaceActions } from './types'
 import type { TaskTreeNode } from '@/domain/tasks'
 
@@ -27,6 +32,10 @@ export type Tree = {
   selected: ReadonlySet<string>
   /** Everything open beneath each place, by its id: what its box ticks. */
   openUnder: ReadonlyMap<string, readonly string[]>
+  /** The places folded down to their row, unless a search is looking through them. */
+  folded: ReadonlySet<string>
+  toggleFold: (placeId: string) => void
+  unfold: (placeId: string) => void
   onToggle: (taskId: string, on: boolean) => void
   onToggleMany: ((taskIds: readonly string[], on: boolean) => void) | undefined
   onDelete: (taskId: string) => void
@@ -108,13 +117,16 @@ export function PlaceBranch({
   const open = menu === node.id
   const openTasks = node.tasks.filter((t) => t.status === 'open')
   const lastTask = openTasks[openTasks.length - 1]?.id
-  // A task about to go last into a place with nothing open in it has no
-  // row to draw a line under, so the place's own row lights instead.
+  const folded = tree.folded.has(node.id)
+  // Something to fold: a place with nothing under it has only its row.
+  const holds = node.children.length > 0 || node.tasks.length > 0
+  // A task about to go last into a place with nothing open in it, or folded,
+  // has no row drawn to put a line under, so the place's own row lights instead.
   const into =
     reorder.aimed?.parent === node.id &&
     reorder.aimed.kind === 'task' &&
     reorder.aimed.before === null &&
-    lastTask === undefined
+    (lastTask === undefined || folded)
   return (
     <li {...(ordering ? slotAttrs(node.kind, node.id) : {})} className="relative">
       <SlotMark edge={slotEdge(reorder.aimed, parent, node.kind, node.id, last)} />
@@ -152,12 +164,13 @@ export function PlaceBranch({
           </span>
         ) : (
           <>
-            <span className="min-w-0 flex-1 py-1.5 text-sm wrap-break-word">
-              <span className="text-muted">{LEVEL[node.kind]}: </span>
-              <span className={depth === 0 ? 'font-medium text-bright' : 'text-body'}>
-                {node.name}
-              </span>
-            </span>
+            <FoldName
+              node={node}
+              top={depth === 0}
+              open={holds ? !folded : null}
+              onFold={() => tree.toggleFold(node.id)}
+              inside={folded ? (tree.openUnder.get(node.id)?.length ?? 0) : 0}
+            />
             <More
               id={node.id}
               label={`More for ${node.name}`}
@@ -180,6 +193,8 @@ export function PlaceBranch({
                 asking={asking}
                 inside={asking ? places.inside(node) : 0}
                 onAdd={(kind) => {
+                  // Written where it can be seen, under the place opened.
+                  tree.unfold(node.id)
                   focusNext(`add:${node.id}`)
                   setAdding({ parentId: node.id, kind, title: '' })
                   closeMenu()
@@ -213,109 +228,111 @@ export function PlaceBranch({
       </div>
       {/* Every row and field in here belongs to this place: where focus goes
           if one of them is taken away from under it. */}
-      <ul
-        data-home={`menu:${node.id}`}
-        {...(ordering ? dropListProps(reorder, node.id, child ? [child, 'task'] : ['task']) : {})}
-      >
-        {adding?.parentId === node.id && (
-          <li className="flex items-stretch gap-2 px-2.5 py-1">
-            {guides(depth + 1)}
-            <InlineField
-              value={adding.title}
-              onChange={(title) => setAdding({ ...adding, title })}
-              onEnter={() => tree.write('next')}
-              onKeep={() => tree.write('done')}
-              onCancel={() => setAdding(null)}
-              focusKey={`add:${node.id}`}
-              focusBack={`menu:${node.id}`}
-              placeholder={`A new ${adding.kind}`}
-              label={`New ${adding.kind} in ${node.name}`}
-              keepLabel={`Add the new ${adding.kind} to ${node.name}`}
-              cancelLabel={`Cancel the new ${adding.kind} in ${node.name}`}
-            />
-          </li>
-        )}
-        {node.children.map((place, i, all) => (
-          <PlaceBranch
-            key={place.id}
-            node={place}
-            depth={depth + 1}
-            parent={node.id}
-            last={i === all.length - 1}
-          />
-        ))}
-        {node.tasks.map((task) =>
-          task.status === 'done' ? (
-            <DoneOption
-              key={task.id}
-              task={task}
-              guides={guides(depth + 1)}
-              menu={menu === task.id}
-              onMenu={() => toggleMenu(task.id)}
-              menuRef={openMenu}
-              onReopen={() => {
-                tree.onReopen(task.id)
-                closeMenu()
-              }}
-            />
-          ) : renaming?.taskId === task.id ? (
-            <li key={task.id} className="flex items-stretch gap-2 px-2.5 py-1">
+      {!folded && (
+        <ul
+          data-home={`menu:${node.id}`}
+          {...(ordering ? dropListProps(reorder, node.id, child ? [child, 'task'] : ['task']) : {})}
+        >
+          {adding?.parentId === node.id && (
+            <li className="flex items-stretch gap-2 px-2.5 py-1">
               {guides(depth + 1)}
               <InlineField
-                value={renaming.title}
-                onChange={(title) => setRenaming({ taskId: task.id, title })}
-                onEnter={tree.rename}
-                onKeep={tree.rename}
-                onCancel={() => setRenaming(null)}
-                focusKey={`rename:${task.id}`}
-                focusBack={`menu:${task.id}`}
-                placeholder={task.title}
-                label={`Rename ${task.title}`}
-                keepLabel={`Save the name of ${task.title}`}
-                cancelLabel={`Keep the name of ${task.title}`}
+                value={adding.title}
+                onChange={(title) => setAdding({ ...adding, title })}
+                onEnter={() => tree.write('next')}
+                onKeep={() => tree.write('done')}
+                onCancel={() => setAdding(null)}
+                focusKey={`add:${node.id}`}
+                focusBack={`menu:${node.id}`}
+                placeholder={`A new ${adding.kind}`}
+                label={`New ${adding.kind} in ${node.name}`}
+                keepLabel={`Add the new ${adding.kind} to ${node.name}`}
+                cancelLabel={`Cancel the new ${adding.kind} in ${node.name}`}
               />
             </li>
-          ) : (
-            <TaskOption
-              key={task.id}
-              task={task}
-              guides={guides(depth + 1)}
-              checked={tree.selected.has(task.id)}
-              onToggle={() => tree.onToggle(task.id, !tree.selected.has(task.id))}
-              keepsOne={tree.keepsOne}
-              locked={tree.keepsOne && tree.selected.has(task.id) && tree.selected.size === 1}
-              menu={menu === task.id}
-              onMenu={() => toggleMenu(task.id)}
-              menuRef={openMenu}
-              onRename={() => {
-                focusNext(`rename:${task.id}`)
-                setRenaming({ taskId: task.id, title: task.title })
-                closeMenu()
-              }}
-              onDelete={() => {
-                tree.onDelete(task.id)
-                closeMenu()
-              }}
-              onComplete={() => {
-                tree.onComplete(task.id)
-                closeMenu()
-              }}
-              elsewhere={tree.elsewhere(task.id)}
-              draggable={tree.draggable}
-              reorder={ordering ? reorder : null}
-              edge={slotEdge(reorder.aimed, node.id, 'task', task.id, task.id === lastTask)}
-              steps={
-                ordering
-                  ? {
-                      ...ends('task', task.id, node.id),
-                      onStep: (by) => step('task', task.id, node.id, by),
-                    }
-                  : undefined
-              }
+          )}
+          {node.children.map((place, i, all) => (
+            <PlaceBranch
+              key={place.id}
+              node={place}
+              depth={depth + 1}
+              parent={node.id}
+              last={i === all.length - 1}
             />
-          ),
-        )}
-      </ul>
+          ))}
+          {node.tasks.map((task) =>
+            task.status === 'done' ? (
+              <DoneOption
+                key={task.id}
+                task={task}
+                guides={guides(depth + 1)}
+                menu={menu === task.id}
+                onMenu={() => toggleMenu(task.id)}
+                menuRef={openMenu}
+                onReopen={() => {
+                  tree.onReopen(task.id)
+                  closeMenu()
+                }}
+              />
+            ) : renaming?.taskId === task.id ? (
+              <li key={task.id} className="flex items-stretch gap-2 px-2.5 py-1">
+                {guides(depth + 1)}
+                <InlineField
+                  value={renaming.title}
+                  onChange={(title) => setRenaming({ taskId: task.id, title })}
+                  onEnter={tree.rename}
+                  onKeep={tree.rename}
+                  onCancel={() => setRenaming(null)}
+                  focusKey={`rename:${task.id}`}
+                  focusBack={`menu:${task.id}`}
+                  placeholder={task.title}
+                  label={`Rename ${task.title}`}
+                  keepLabel={`Save the name of ${task.title}`}
+                  cancelLabel={`Keep the name of ${task.title}`}
+                />
+              </li>
+            ) : (
+              <TaskOption
+                key={task.id}
+                task={task}
+                guides={guides(depth + 1)}
+                checked={tree.selected.has(task.id)}
+                onToggle={() => tree.onToggle(task.id, !tree.selected.has(task.id))}
+                keepsOne={tree.keepsOne}
+                locked={tree.keepsOne && tree.selected.has(task.id) && tree.selected.size === 1}
+                menu={menu === task.id}
+                onMenu={() => toggleMenu(task.id)}
+                menuRef={openMenu}
+                onRename={() => {
+                  focusNext(`rename:${task.id}`)
+                  setRenaming({ taskId: task.id, title: task.title })
+                  closeMenu()
+                }}
+                onDelete={() => {
+                  tree.onDelete(task.id)
+                  closeMenu()
+                }}
+                onComplete={() => {
+                  tree.onComplete(task.id)
+                  closeMenu()
+                }}
+                elsewhere={tree.elsewhere(task.id)}
+                draggable={tree.draggable}
+                reorder={ordering ? reorder : null}
+                edge={slotEdge(reorder.aimed, node.id, 'task', task.id, task.id === lastTask)}
+                steps={
+                  ordering
+                    ? {
+                        ...ends('task', task.id, node.id),
+                        onStep: (by) => step('task', task.id, node.id, by),
+                      }
+                    : undefined
+                }
+              />
+            ),
+          )}
+        </ul>
+      )}
     </li>
   )
 }

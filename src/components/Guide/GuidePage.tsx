@@ -455,7 +455,10 @@ function sectionsFor(settings: Settings): Section[] {
             renames, finishes, archives or adds to it, so the backlog is kept without
             leaving the question. An epic or an outcome has a box too, which ticks
             everything still open in it at once, and shows a dash while only some of it
-            is ticked. The switch at the top of the column turns it back to the day. If you only know the rough
+            is ticked. Press a place's name to fold it down to that one line, with how
+            many open tasks are in it, and again to open it; folds last from one
+            question to the next until you reload, and a search looks through them.
+            The switch at the top of the column turns it back to the day. If you only know the rough
             shape of the work, write a task that says so: <Em>look into the double
             charge</Em> is a perfectly good task to start a day with.
           </P>

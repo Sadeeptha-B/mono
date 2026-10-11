@@ -32,7 +32,7 @@ import { useContext, useEffect, useRef, type ReactNode, type RefObject } from 'r
 import { Carry, dragInto, SlotMark, slotAttrs, type CarryContext } from '../carry'
 import { HoverNote } from '../HoverNote'
 import { ArchiveIcon, CheckIcon, DeleteIcon, MoveIcon, ReopenIcon } from '../icons'
-import { EditGlyph, IconButton, KeepField, revealOnHover } from '../ui'
+import { Caret, EditGlyph, IconButton, KeepField, revealOnHover } from '../ui'
 import type { Item, ItemKind, TaskTreeNode } from '@/domain/tasks'
 
 export const LEVEL: Record<TaskTreeNode['kind'], string> = { area: 'Area', epic: 'Epic', outcome: 'Outcome' }
@@ -87,6 +87,64 @@ export function PlaceTick({
     <HoverNote note={locked ? KEEPS_ONE_PLACE : null} className="flex shrink-0 self-start">
       {input}
     </HoverNote>
+  )
+}
+
+/**
+ * A place's name, which folds it and opens it again: a caret before the level
+ * and the name, all one button, so the whole name is the target. Folded, how
+ * many open tasks are in it is said after the name, outside the button, so the
+ * button keeps one name. A place with nothing under it has nothing to fold,
+ * and draws the caret's room empty so its name stays in line with its
+ * siblings'.
+ */
+export function FoldName({
+  node,
+  top,
+  open,
+  onFold,
+  inside,
+}: {
+  node: TaskTreeNode
+  /** Whether it is an area, whose name is drawn brighter. */
+  top: boolean
+  /** Whether what is under it is drawn, or null when there is nothing under it. */
+  open: boolean | null
+  onFold: () => void
+  /** How many open tasks are in it, said while it is folded. */
+  inside: number
+}) {
+  const name = (
+    <>
+      <span className="text-muted">{LEVEL[node.kind]}: </span>
+      <span className={top ? 'font-medium text-bright' : 'text-body'}>{node.name}</span>
+    </>
+  )
+  return (
+    <span className="min-w-0 flex-1 py-1.5 text-sm wrap-break-word">
+      {open === null ? (
+        <span className="flex items-baseline gap-1.5">
+          <span aria-hidden="true" className="w-1.5 shrink-0" />
+          <span className="min-w-0">{name}</span>
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={onFold}
+          aria-expanded={open}
+          title={open ? 'Fold' : 'Unfold'}
+          className="inline-flex max-w-full items-baseline gap-1.5 text-left transition hover:text-bright"
+        >
+          <span className="flex h-[1lh] shrink-0 items-center text-muted">
+            <Caret open={open} />
+          </span>
+          <span className="min-w-0">{name}</span>
+        </button>
+      )}
+      {open === false && inside > 0 && (
+        <span className="ml-1.5 text-xs text-muted">{inside} open</span>
+      )}
+    </span>
   )
 }
 
