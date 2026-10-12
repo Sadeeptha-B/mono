@@ -22,7 +22,14 @@ import {
   type MonoEvent,
   type SessionState,
 } from '@/domain/events'
-import { initialPhase, transition, type Action, type Phase } from '@/domain/machine'
+import {
+  initialPhase,
+  leavesBlockEmpty,
+  runningBlockTasks,
+  transition,
+  type Action,
+  type Phase,
+} from '@/domain/machine'
 import { dayKey, regionsForDay } from '@/domain/time'
 import { intentionNamed } from '@/domain/today'
 import {
@@ -176,7 +183,11 @@ type SessionStore = {
 
   /** Choose a task for today. Choosing it again changes nothing. */
   addToToday: (taskId: string) => void
-  /** Put a task back out of today, and out of its intention. It stays in the backlog. */
+  /**
+   * Put a task back out of today, and out of its intention. It stays in the
+   * backlog. While a block runs, a task of its leaves the block too, and one
+   * that is all the block holds is not taken out at all (`leavesBlockEmpty`).
+   */
   removeFromToday: (taskId: string) => void
   /**
    * The same for several at once — a whole outcome or epic ticked in All
@@ -337,8 +348,7 @@ export const useSession = create<SessionStore>()(
 
       addToToday: (taskId) => get().append({ type: 'today/taskAdded', at: Date.now(), taskId }),
 
-      removeFromToday: (taskId) =>
-        get().append({ type: 'today/taskRemoved', at: Date.now(), taskId }),
+      removeFromToday: (taskId) => get().removeAllFromToday([taskId]),
 
       addAllToToday: (taskIds) => {
         const { today } = get().session
@@ -349,11 +359,22 @@ export const useSession = create<SessionStore>()(
         if (events.length > 0) get().append(...events)
       },
 
+      // A running block's tasks are today's — the reducer chooses each one it
+      // starts with or takes on — so one taken out of today leaves the block
+      // as well, here rather than in each surface that offers it: today's
+      // list, a heading in it, and the tasks page's suns. Taking out all the
+      // block holds is refused whole, as the machine refuses letting go of
+      // it, rather than leaving a block for tasks the day no longer has.
       removeAllFromToday: (taskIds) => {
-        const { today } = get().session
+        const { session, phase } = get()
+        const held = runningBlockTasks(phase, session)
+        if (leavesBlockEmpty(held, taskIds)) return
         const at = Date.now()
+        if (held.some((taskId) => taskIds.includes(taskId))) {
+          get().dispatch({ type: 'removeBlockTasks', at, taskIds })
+        }
         const events = taskIds
-          .filter((taskId) => Object.hasOwn(today, taskId))
+          .filter((taskId) => Object.hasOwn(session.today, taskId))
           .map((taskId): MonoEvent => ({ type: 'today/taskRemoved', at, taskId }))
         if (events.length > 0) get().append(...events)
       },

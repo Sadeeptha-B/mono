@@ -4,6 +4,7 @@ import { initialState, reduce, replay, type MonoEvent, type SessionState } from 
 import {
   initialPhase,
   isBlockRunning,
+  leavesBlockEmpty,
   transition,
   type Action,
   type Deps,
@@ -689,5 +690,17 @@ describe("changing a running block's tasks", () => {
       { type: 'addBlockTasks', at: at(14, 46), taskIds: ['b'] },
     ])
     expect(events.map((e) => e.type)).toEqual(['block/started'])
+  })
+})
+
+describe('leavesBlockEmpty', () => {
+  it('is true only when everything a block holds would go', () => {
+    expect(leavesBlockEmpty(['a', 'b'], ['b', 'a', 'elsewhere'])).toBe(true)
+    expect(leavesBlockEmpty(['a', 'b'], ['a', 'elsewhere'])).toBe(false)
+    expect(leavesBlockEmpty(['a'], [])).toBe(false)
+  })
+
+  it('protects nothing for a block holding nothing', () => {
+    expect(leavesBlockEmpty([], ['a'])).toBe(false)
   })
 })

@@ -216,15 +216,15 @@ shaped around:
   it is ticked — or a whole intention at once from today's list under it,
   or dragged onto the prompt from either, plus a purpose of its own that
   starts as the tasks' titles, or the intention's name when all of it is
-  ticked. Ticking a task done belongs to the backlog and finishing a block to
+  ticked and it holds more than one. Ticking a task done belongs to the backlog and finishing a block to
   the block; neither writes the other.
 - **A block can be written in while it runs.** A log field takes a line about
   how it is going, and a counter counts each urge to leave the task, with a −
   for a mis-tap; both are on the stage and in the pop-out, where pointing at
   the purpose shows the block's tasks. The calendar's column can turn to All
   Tasks while a block runs, where a task can be taken on by the block or let
-  go — the only place a running block's tasks change, and never its last
-  one. A task written there waits in the backlog until it is ticked. The calendar draws
+  go — the only place a running block's tasks change, besides taking one out
+  of today, which lets it go too — and never its last one. A task written there waits in the backlog until it is ticked. The calendar draws
   them on the block at the minutes they happened, and pointing at a log's mark
   shows it, to edit or delete. The count is noticing, not a score: nothing else
   in Mono reads it.
