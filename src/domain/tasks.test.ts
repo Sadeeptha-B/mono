@@ -573,6 +573,55 @@ describe('picking an outcome', () => {
   })
 })
 
+describe('picking an intention', () => {
+  const items = [
+    item('auth', 'epic', 'work', { title: 'Mono auth' }),
+    item('pages', 'outcome', 'auth', { title: 'Login pages' }),
+    item('form', 'task', 'pages', { title: 'Login form', order: 0 }),
+    item('cookie', 'task', 'pages', { title: 'Session cookie', order: 1 }),
+    item('priya', 'task', 'work', { title: 'Call Priya' }),
+    item('invoice', 'task', 'work', { title: 'Send the invoice' }),
+    item('shipped', 'task', 'work', { title: 'Shipped already', status: 'done' }),
+  ]
+  const billing = { title: 'Billing', taskIds: ['priya', 'invoice', 'shipped'] }
+
+  it('names a fully picked intention once, where its first task was', () => {
+    expect(purposeParts(['form', 'invoice', 'priya'], items, [work], [billing])).toEqual([
+      'Login form',
+      'Billing',
+    ])
+  })
+
+  it('counts only its open tasks, as an outcome does', () => {
+    // `shipped` is under it but done, so the two open ones are all of it.
+    expect(purposeParts(['priya', 'invoice'], items, [work], [billing])).toEqual(['Billing'])
+  })
+
+  it('names the tasks of an intention only partly picked', () => {
+    expect(purposeParts(['priya'], items, [work], [billing])).toEqual(['Call Priya'])
+  })
+
+  it("keeps a single-task intention's task title, the more specific name", () => {
+    const solo = { title: 'Get paid', taskIds: ['invoice'] }
+    expect(purposeParts(['invoice'], items, [work], [solo])).toEqual(['Send the invoice'])
+  })
+
+  it('names an intention over a whole outcome inside it', () => {
+    const login = { title: 'Ship login', taskIds: ['form', 'cookie', 'priya'] }
+    expect(purposeParts(['form', 'cookie', 'priya'], items, [work], [login])).toEqual([
+      'Ship login',
+    ])
+  })
+
+  it('never names an outcome an intention has taken part of', () => {
+    const cookies = { title: 'Cookies', taskIds: ['cookie', 'priya'] }
+    expect(purposeParts(['form', 'cookie', 'priya'], items, [work], [cookies])).toEqual([
+      'Login form',
+      'Cookies',
+    ])
+  })
+})
+
 describe('a large backlog', () => {
   // 100 epics of 5 outcomes, each outcome holding 20 open tasks: 10,000 tasks.
   const build = () => {

@@ -27,7 +27,10 @@
  * beside the stage shows instead of the day while this question is open
  * (`AllTasksPane`): a tick chooses a task for today, `+ Task` in a place's `⋯`
  * writes one, and a row dragged onto an intention here is chosen and grouped in
- * one move. The stage keeps only the answer.
+ * one move. A line under today's list says so: a drag between the columns is
+ * the one way in that nothing on screen otherwise points at, and without it
+ * grouping read as ticking first and carrying second. The stage keeps only the
+ * answer.
  *
  * Every choice is written to the day's log as it is made, as linking a task to
  * an intention always was; only the intention's title being typed is a draft,
@@ -143,6 +146,9 @@ export function TodayPanel({
               onRenaming={onRenaming}
               empty="Pick tasks from All Tasks, or add your own there."
             />
+            <p className="mt-3 text-xs leading-relaxed text-muted">
+              Drag a task from All Tasks onto an intention to choose and group it in one move.
+            </p>
           </section>
 
           {backlog.carried.length > 0 && (

@@ -38,15 +38,19 @@
  * today's own list (`TodayList`, as on the opening question): what today has
  * chosen, under its intentions, which are named, renamed, marked done,
  * deleted and filled by carrying tasks in, from the list itself or from the
- * tree above. Ticking stays in the tree, and the prompt lists only what is
- * ticked; a block is often where the day's grouping turns out wrong, and this
+ * tree above. Ticking is the column's, and the prompt lists only what is
+ * ticked: in the tree a task or a place at a time, and in today's list an
+ * intention whole, by the box in front of it (`forBlock`), the same tick as an
+ * epic's. A block is often where the day's grouping turns out wrong, and this
  * is where it is put right without going back to the opening question. Under
  * the tree rather than over it, because the tree is what the prompt is
  * choosing from and should be the first thing in the column. From `lg` up a
  * divider between the two is dragged to share the column's height
- * (`Splitter`), and the day starts folded down to its heading, since the
- * prompt is mostly answered from the tree; `+ Intention` opens it. Below
- * `lg` both are as tall as they are and the page scrolls.
+ * (`Splitter`). A day with an open intention starts with the list opened to a
+ * third, since an intention's box is then the quickest answer the prompt has;
+ * a day without one starts it folded down to its heading, since the prompt is
+ * then answered from the tree, and `+ Intention` opens it. Below `lg` both are
+ * as tall as they are and the page scrolls.
  *
  * Areas, epics and outcomes are kept from here as well as tasks, behind a `⋯`
  * on their rows (`PlaceActions`): renamed, given an epic or an outcome,
@@ -117,8 +121,13 @@ export function AllTasksPane({
   // A new intention's title while its field is open, on the purpose prompt.
   const [newIntention, setNewIntention] = useState<string | null>(null)
   const [renaming, setRenaming] = useIntentionRename()
-  // How much of the column today's list takes, on the purpose prompt.
-  const [share, setShare] = useState(MIN_SHARE)
+  // How much of the column today's list takes, on the purpose prompt. Read
+  // once, as the column opens: an intention named while it is open asks for
+  // room itself (`nameIntention`), and one finished must not fold the list
+  // out from under the pointer.
+  const [share, setShare] = useState(() =>
+    intentions.some((i) => i.done !== true) ? OPEN_SHARE : MIN_SHARE,
+  )
   const nameIntention = (title: string | null) => {
     // A field asked for under a folded heading would open out of sight.
     if (newIntention === null && title !== null && share < OPEN_SHARE) setShare(OPEN_SHARE)
@@ -239,6 +248,11 @@ export function AllTasksPane({
               renaming={renaming}
               onRenaming={setRenaming}
               empty="Nothing chosen for today yet. Tick a task or a place above."
+              forBlock={{
+                selected: blockSelected,
+                onTickMany: onBlockTickMany,
+                keepsOne: choosingFor === 'focus',
+              }}
             />
           </section>
         </>

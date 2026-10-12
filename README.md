@@ -212,9 +212,11 @@ shaped around:
   question carries its own timer, which stops at zero and records nothing.
 - **Every focus block is for at least one task**, ticked in All Tasks beside
   the prompt or written on the spot — a task from outside today joins it as
-  it is ticked — plus a purpose of its own that starts as the
-  tasks' titles. Ticking a task done belongs to the backlog and finishing a
-  block to the block; neither writes the other.
+  it is ticked — or a whole intention at once from today's list under it,
+  or dragged onto the prompt from either, plus a purpose of its own that
+  starts as the tasks' titles, or the intention's name when all of it is
+  ticked. Ticking a task done belongs to the backlog and finishing a block to
+  the block; neither writes the other.
 - **A block can be written in while it runs.** A log field takes a line about
   how it is going, and a counter counts each urge to leave the task, with a −
   for a mis-tap; both are on the stage and in the pop-out, where pointing at

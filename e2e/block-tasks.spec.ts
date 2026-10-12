@@ -84,7 +84,7 @@ test("the purpose heads the prompt, then what is ticked for the block, with All 
   // of its own: ticking is All Tasks', beside it, with today's own list under
   // that.
   await expect(blockBacklog(page)).toBeVisible()
-  await expect(chosen(page)).toContainText('Tick tasks in All Tasks')
+  await expect(chosen(page)).toContainText('Tick or drag tasks in from All Tasks')
   await expect(stage(page).getByRole('checkbox')).toHaveCount(0)
   await expect(todayView(page)).toContainText('Session cookie')
 
@@ -146,6 +146,109 @@ test("the purpose heads the prompt, then what is ticked for the block, with All 
     'Login form',
   )
   await expect(today.getByRole('region', { name: 'Intention: Gate' })).toContainText('Fix the gate')
+})
+
+test("an intention is ticked for a block whole from today's list, and names its purpose", async ({
+  page,
+}) => {
+  await openMono(page)
+  await goToStage(page, 'Today')
+  await addTodayTask(page, 'Login form')
+  await addTodayTask(page, 'Session cookie')
+  await addTodayTask(page, 'Call Priya')
+  await addIntention(page, 'Ship login')
+  for (const title of ['Login form', 'Session cookie']) {
+    await todayList(page).getByRole('button', { name: `Move ${title}`, exact: true }).click()
+    await todayList(page)
+      .getByRole('button', { name: `Move ${title} to Ship login`, exact: true })
+      .click()
+  }
+  await stage(page).getByRole('button', { name: 'Start the day' }).click()
+  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+
+  // A day with an intention opens today's list under the tree, where the
+  // intention's box is, rather than folding it to its heading.
+  const whole = todayView(page).getByRole('checkbox', {
+    name: 'All of Ship login for this block',
+    exact: true,
+  })
+  await expect(whole).toBeVisible()
+  await expect(chosen(page)).toContainText('tick a whole intention')
+
+  // One press ticks everything open under it, and the purpose is its name.
+  await whole.check()
+  await expect(blockBacklog(page).getByRole('checkbox', { name: 'Login form' })).toBeChecked()
+  await expect(blockBacklog(page).getByRole('checkbox', { name: 'Session cookie' })).toBeChecked()
+  await expect(stage(page).getByRole('group', { name: 'Ship login', exact: true })).toContainText(
+    'Session cookie',
+  )
+  await expect(purposeField(page)).toHaveValue('Ship login')
+
+  // Something else beside it is named after it; part of it is named by what
+  // is left, and the box is no longer ticked.
+  await blockBacklog(page).getByRole('checkbox', { name: 'Call Priya' }).check()
+  await expect(purposeField(page)).toHaveValue('Ship login, Call Priya')
+  await offBlock(page, 'Session cookie').click()
+  await expect(purposeField(page)).toHaveValue('Login form, Call Priya')
+  await expect(whole).not.toBeChecked()
+
+  await whole.check()
+  await startButton(page).click()
+  await expect(blockTasks(page)).toContainText('Session cookie')
+  await expect(stage(page)).toContainText('Ship login, Call Priya')
+})
+
+test('part of an intention is carried onto the block, from either column', async ({ page }) => {
+  await openMono(page)
+  await goToStage(page, 'Today')
+  await addTodayTask(page, 'Login form')
+  await addTodayTask(page, 'Session cookie')
+  await addTodayTask(page, 'Call Priya')
+  await addIntention(page, 'Ship login')
+  for (const title of ['Login form', 'Session cookie']) {
+    await todayList(page).getByRole('button', { name: `Move ${title}`, exact: true }).click()
+    await todayList(page)
+      .getByRole('button', { name: `Move ${title} to Ship login`, exact: true })
+      .click()
+  }
+  await stage(page).getByRole('button', { name: 'Start the day' }).click()
+  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+
+  // Dragged by its row from All Tasks, a task is ticked for the block.
+  const row = blockBacklog(page).getByText('Call Priya', { exact: true })
+  const from = (await row.boundingBox())!
+  await page.mouse.move(from.x + 5, from.y + 5)
+  await page.mouse.down()
+  await page.mouse.move(from.x + 20, from.y + 15, { steps: 5 })
+  const to = (await chosen(page).boundingBox())!
+  await page.mouse.move(to.x + 40, to.y + 20, { steps: 10 })
+  await page.mouse.up()
+  await expect(chosen(page)).toContainText('Call Priya')
+  await expect(blockBacklog(page).getByRole('checkbox', { name: 'Call Priya' })).toBeChecked()
+  await expect(purposeField(page)).toHaveValue('Call Priya')
+
+  // Dragged from an intention in today's list, it is ticked and stays grouped
+  // there, without the rest of the intention.
+  await todayView(page)
+    .getByRole('button', { name: 'Move Session cookie', exact: true })
+    .dragTo(chosen(page))
+  const ship = stage(page).getByRole('group', { name: 'Ship login', exact: true })
+  await expect(ship).toContainText('Session cookie')
+  await expect(ship).not.toContainText('Login form')
+  await expect(purposeField(page)).toHaveValue('Call Priya, Session cookie')
+
+  // Picked up by its grip and put down with Move here, the keyboard's way;
+  // the grip it left keeps the focus. All of the intention now names it.
+  const grip = todayView(page).getByRole('button', { name: 'Move Login form', exact: true })
+  await grip.click()
+  await stage(page).getByRole('button', { name: 'Move Login form to this block', exact: true }).click()
+  await expect(ship).toContainText('Login form')
+  await expect(grip).toBeFocused()
+  await expect(purposeField(page)).toHaveValue('Call Priya, Ship login')
+
+  // Nothing already ticked is offered a place on the block.
+  await todayView(page).getByRole('button', { name: 'Move Call Priya', exact: true }).click()
+  await expect(stage(page).getByRole('button', { name: /to this block$/ })).toHaveCount(0)
 })
 
 test('a task from outside today joins it as it is ticked for a block', async ({ page }) => {

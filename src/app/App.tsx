@@ -683,10 +683,15 @@ export function App() {
         </header>
 
         {/* One hand for carrying tasks around both columns, so a task can be
-            dragged from All Tasks onto one of today's intentions on the stage.
-            It lasts as long as the question choosing tasks, which is as long as
-            anywhere to put one down is drawn. */}
-        <TodayCarry scope={`${store.generation}:${choosingFor}`}>
+            dragged from All Tasks onto one of today's intentions on the stage,
+            or, on the purpose prompt, from either column onto the block being
+            named. It lasts as long as the question choosing tasks, which is as
+            long as anywhere to put one down is drawn. */}
+        <TodayCarry
+          scope={`${store.generation}:${choosingFor}`}
+          blockPicked={choosingFor === 'block' ? blockSelected : undefined}
+          onPickForBlock={tickAllForBlock}
+        >
           <div className="grid gap-5 lg:min-h-0 lg:flex-1 lg:grid-cols-[1fr_22rem]">
             <main className="mono-scroll min-w-0 flex flex-col rounded-2xl border border-line bg-surface p-5 sm:p-8 lg:min-h-0 lg:overflow-y-auto">
               {/* The clock and the companion share a line, and on a phone they
