@@ -472,13 +472,16 @@ function sectionsFor(settings: Settings): Section[] {
             picking one up with the dots in front of it and choosing <Em>Move here</Em>.
             Drag an epic or an outcome from <Em>All Tasks</Em> and everything open in it
             comes at once. A place's heading in today's list carries the tasks it heads
-            there, by dragging it or by the dots at its end. An outcome's heading has a
-            ring with a plus at its end, which makes it an intention of its own name,
-            holding the tasks under it there; pressed again once you have ticked more of
-            the outcome, it adds them to that intention rather than making another.
-            An intention can be narrower than an outcome or wider than an epic, whatever
-            the day needs; a task belongs to one at most, and to none quite happily. The{' '}
-            <Em>×</Em> on a task takes it out of today and leaves it in your backlog.
+            there, by dragging it or by the dots at its end. An epic's or outcome's
+            heading has a ring with a plus at its end, which makes it an intention of its
+            own name, holding the tasks under it there; pressed again once you have
+            ticked more of it, it adds them to that intention rather than making another.
+            Where a heading reads as an epic and its one outcome together, its ring names
+            the epic. An intention can be narrower than an outcome or
+            wider than an epic, whatever the day needs; a task belongs to one at most,
+            and to none quite happily. The <Em>×</Em> on a task takes it out of today and
+            leaves it in your backlog, and the <Em>×</Em> on an epic's or outcome's
+            heading does the same for everything it heads there.
           </P>
           <P>
             Today lasts the day: at midnight it goes with the rest of the day's answers,
@@ -689,7 +692,7 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="One thing"
-              asks="What is this block for, and which tasks come under it? The purpose goes at the top and the tasks ticked for this block below it, under their intentions, each with an × to take it off again. Ticking is done beside it, in the calendar's column: All Tasks, the whole backlog, which can be searched, where a new task can be written into any area, epic or outcome, and where tasks can be marked done or reopened. Anything ticked there joins today's tasks as you tick it. Under All Tasks is today's own list, where intentions are kept as on the opening question, and the box in front of an intention ticks everything still open in it for this block at once. A task can also be dragged onto the block's list from either, or picked up by the dots in front of it in today's list and put down with Move here; an epic, an outcome or a place's heading brings everything open it holds. Tick at least one. The purpose starts as the tasks' titles, or an intention's or outcome's name when you took all of it, and is yours to rewrite — one sentence about this stretch, not a list. One well-chosen task is often a good purpose as it stands."
+              asks="What is this block for, and which tasks come under it? The purpose goes at the top and the tasks ticked for this block below it, under their intentions, each with an × to take it off again, and an epic's or outcome's line with one that takes off everything under it. Ticking is done beside it, in the calendar's column: All Tasks, the whole backlog, which can be searched, where a new task can be written into any area, epic or outcome, and where tasks can be marked done or reopened. Anything ticked there joins today's tasks as you tick it. Under All Tasks is today's own list, where intentions are kept as on the opening question, and the box in front of an intention ticks everything still open in it for this block at once. A task can also be dragged onto the block's list from either, or picked up by the dots in front of it in today's list and put down with Move here; an epic, an outcome or a place's heading brings everything open it holds. Tick at least one. The purpose starts as the tasks' titles, or an intention's or outcome's name when you took all of it, and is yours to rewrite — one sentence about this stretch, not a list. One well-chosen task is often a good purpose as it stands."
               choices={[
                 [
                   'Start',

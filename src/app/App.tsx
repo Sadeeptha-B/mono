@@ -773,6 +773,7 @@ export function App() {
                   onSetPurpose={setPurpose}
                   blockSelected={blockSelected}
                   onBlockTick={tickForBlock}
+                  onBlockTickMany={tickAllForBlock}
                   onStartDeciding={startDeciding}
                   onAbandon={() => store.dispatch({ type: 'abandonBlock', at: Date.now() })}
                   onTakeBreak={() => store.dispatch({ type: 'takeBreak', at: Date.now() })}

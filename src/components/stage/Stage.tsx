@@ -85,6 +85,8 @@ type Props = {
   /** The purpose prompt's ticks still in play, held by `App` — see `blockPick.ts`. */
   blockSelected: readonly string[]
   onBlockTick: (taskId: string, on: boolean) => void
+  /** The same for several at once: a place's tasks, taken off by its heading. */
+  onBlockTickMany: (taskIds: readonly string[], on: boolean) => void
   onStartDeciding: () => void
   onAbandon: () => void
   onTakeBreak: () => void
@@ -171,6 +173,7 @@ export function Stage(props: Props) {
           reflectMinutes={settings.reflectMinutes}
           selected={props.blockSelected}
           onTick={props.onBlockTick}
+          onTickMany={props.onBlockTickMany}
           onSubmit={props.onSetPurpose}
           onCancel={props.onAbandon}
         />

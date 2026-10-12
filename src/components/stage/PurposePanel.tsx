@@ -24,7 +24,8 @@
  * Under it is the block's answer so far: the tasks ticked for it, and only
  * those, each under the places it lives in (`GroupedTasks`), grouped by the
  * intention it is under today where it has one, each with an × that takes it
- * off the block. Ticking is done in All Tasks, in the column beside the stage
+ * off the block, and each epic's or outcome's line with one that takes off
+ * everything under it there. Ticking is done in All Tasks, in the column beside the stage
  * (`AllTasksPane`), and both read the one selection `App` holds (`BlockPick`).
  * Listing every one of today's tasks here as well would put a second set of
  * checkboxes beside the tree's. A tick chooses the task for today too, because
@@ -78,6 +79,7 @@ import {
   defaultPurpose,
   purposeParts,
   PURPOSE_MAX_LENGTH,
+  tasksIn,
   type TaskTreeNode,
 } from '@/domain/tasks'
 import { intentionNames, tasksOfIntention, ungroupedToday } from '@/domain/today'
@@ -97,6 +99,8 @@ type Props = {
   /** What is ticked for this block and still in play, held by `App` — see `blockPick.ts`. */
   selected: readonly string[]
   onTick: (taskId: string, on: boolean) => void
+  /** The same for several at once: a place's tasks, taken off by its heading. */
+  onTickMany: (taskIds: readonly string[], on: boolean) => void
   onSubmit: (purpose: string, taskIds: string[]) => void
   onCancel: () => void
 }
@@ -110,6 +114,7 @@ export function PurposePanel({
   onStartDeciding,
   selected,
   onTick,
+  onTickMany,
   onSubmit,
   onCancel,
 }: Props) {
@@ -128,6 +133,7 @@ export function PurposePanel({
   const trimmed = purpose.trim()
 
   const untick = (taskId: string) => onTick(taskId, false)
+  const untickAll = (taskIds: readonly string[]) => onTickMany(taskIds, false)
 
   // What is ticked, grouped as today groups it, per change rather than per
   // tick: grouping walks the tree. An intention with nothing ticked is left out.
@@ -208,6 +214,7 @@ export function PurposePanel({
                     intention={intention}
                     groups={groups}
                     onUntick={untick}
+                    onUntickAll={untickAll}
                   />
                 ))}
                 {chosen.none.length > 0 && (
@@ -215,6 +222,7 @@ export function PurposePanel({
                     label={intentions.length > 0 ? 'Not grouped' : 'Chosen for this block'}
                     groups={chosen.none}
                     onUntick={untick}
+                    onUntickAll={untickAll}
                   />
                 )}
               </>
@@ -267,10 +275,12 @@ function IntentionTasks({
   intention,
   groups,
   onUntick,
+  onUntickAll,
 }: {
   intention: Intention
   groups: readonly TaskTreeNode[]
   onUntick: (taskId: string) => void
+  onUntickAll: (taskIds: readonly string[]) => void
 }) {
   const headingId = useId()
   const { title } = intention
@@ -290,25 +300,49 @@ function IntentionTasks({
         {title}
         {done && <span className="sr-only">, done</span>}
       </div>
-      <ChosenList label={title} groups={groups} onUntick={onUntick} />
+      <ChosenList label={title} groups={groups} onUntick={onUntick} onUntickAll={onUntickAll} />
     </div>
   )
 }
 
-/** The block's tasks under their places, each with an × that takes it off the block. */
+/**
+ * The block's tasks under their places, each with an × that takes it off the
+ * block, and an epic's or outcome's line with one that takes off everything it
+ * heads in this list — as its heading does out of today in today's list, and
+ * as unticking its box in All Tasks would, but for this list's part of it
+ * alone. An area's line has none, as an area has no box.
+ */
 function ChosenList({
   label,
   groups,
   onUntick,
+  onUntickAll,
 }: {
   label: string
   groups: readonly TaskTreeNode[]
   onUntick: (taskId: string) => void
+  onUntickAll: (taskIds: readonly string[]) => void
 }) {
   return (
     <GroupedTasks
       label={label}
       groups={groups}
+      renderPlace={(node, line, className) => (
+        <div className="group/row flex min-w-0 items-baseline gap-2">
+          <span className={`min-w-0 flex-1 ${className}`}>{line}</span>
+          {node.kind !== 'area' && (
+            <button
+              type="button"
+              onClick={() => onUntickAll(tasksIn(node))}
+              aria-label={`Take everything in ${node.name} off this block`}
+              title="Not for this block"
+              className={`shrink-0 px-1 text-sm text-muted transition hover:text-bright ${revealOnHover}`}
+            >
+              ×
+            </button>
+          )}
+        </div>
+      )}
       renderTask={(task) => (
         <span className="group/row flex items-baseline gap-2 text-sm text-body">
           <span className="min-w-0 flex-1 wrap-break-word">{task.title}</span>

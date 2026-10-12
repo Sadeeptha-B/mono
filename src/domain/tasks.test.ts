@@ -25,6 +25,7 @@ import {
   nextVersion,
   nextOrder,
   openTasksBeneath,
+  tasksIn,
   openTasks,
   openTasksUnder,
   outranks,
@@ -248,6 +249,18 @@ describe('openTasksBeneath', () => {
     expect(beneath.get('outcome')).toEqual(['form', 'cookie'])
     expect(beneath.get('epic')).toEqual(['loose', 'form', 'cookie'])
     expect(beneath.get('work')).toEqual(['loose', 'form', 'cookie'])
+  })
+
+  it('is everything drawn beneath a place, done included, for letting it go', () => {
+    const items = [
+      item('epic', 'epic', 'work'),
+      item('outcome', 'outcome', 'epic'),
+      item('form', 'task', 'outcome'),
+      item('loose', 'task', 'epic', { order: 2 }),
+      item('done', 'task', 'outcome', { order: 3, status: 'done', doneAt: AT }),
+    ]
+    const epic = taskTreeWithDone(items, [work], dayKey(AT))[0]!.children[0]!
+    expect(tasksIn(epic)).toEqual(['loose', 'form', 'done'])
   })
 })
 

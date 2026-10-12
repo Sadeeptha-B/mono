@@ -662,6 +662,17 @@ export function openTasksBeneath(
   return beneath
 }
 
+/**
+ * Every task drawn beneath one place, at any depth, done today as well as
+ * open, in the tree's order: what taking a place's heading out of a list
+ * takes. Unlike choosing, letting go has no reason to spare what is finished —
+ * a heading left over its crossed-out tasks after its × was pressed would read
+ * as a press that did not land.
+ */
+export function tasksIn(node: TaskTreeNode): string[] {
+  return [...node.tasks.map((t) => t.id), ...node.children.flatMap(tasksIn)]
+}
+
 /** The open, unarchived epics or outcomes directly under a parent. */
 export const openContainers = (
   parentId: string,

@@ -41,9 +41,10 @@
  * place's heading carries what it heads in that group into another, all at
  * once (`PlaceHeading`), and an epic or outcome dragged in from All Tasks
  * brings everything open in it (`Bundle`): grouping an outcome's worth of work
- * is one move rather than one per task. An outcome's heading can also be made
- * an intention of its own name (`MakeIntention`), since an intention so often
- * turns out to be one outcome of an epic. Tasks
+ * is one move rather than one per task. An epic's or outcome's heading can
+ * also be made an intention of its own name (`MakeIntention`), since an
+ * intention so often turns out to be one outcome of an epic, or near an epic's
+ * end the epic itself, and its × takes all it heads out of today. Tasks
  * finished today stay, crossed out after the open ones of their place, because
  * the list is also the day's progress; they are not carried, since there is
  * nothing left to plan about them. A task taken out with its × leaves today
@@ -90,7 +91,13 @@ import { GroupedTasks } from './GroupedTasks'
 import { DeleteIcon, DoneRingIcon, IntendIcon } from './icons'
 import { useTodayBacklog } from './useTodayBacklog'
 import { EditGlyph, IconButton, KeepField, RenameField, revealOnHover } from './ui'
-import { deepestHolding, openTasksBeneath, type Item, type TaskTreeNode } from '@/domain/tasks'
+import {
+  deepestHolding,
+  openTasksBeneath,
+  tasksIn,
+  type Item,
+  type TaskTreeNode,
+} from '@/domain/tasks'
 import {
   intentionNamed,
   isToday,
@@ -117,8 +124,12 @@ export const FOR_BLOCK = ':for-block'
  * not; or a place's heading in today's own list, which brings the tasks it
  * heads there — the tasks in that place in that one group, and no others, so
  * grouping what the day has chosen never chooses more.
+ *
+ * A heading's bundle also says the group it heads part of (`from`): what it
+ * heads there can change while it is held, and the heading drawn over it with
+ * it, so where the keyboard's focus goes back to is asked of that group then.
  */
-type Bundle = { id: string; title: string; taskIds: readonly string[] }
+type Bundle = { id: string; title: string; taskIds: readonly string[]; from?: string }
 type TodayCarried = Item | Bundle
 const isBundle = (carried: TodayCarried): carried is Bundle => 'taskIds' in carried
 
@@ -127,6 +138,27 @@ const isBundle = (carried: TodayCarried): carried is Bundle => 'taskIds' in carr
  * the place. Compared, never read back: what a heading carries is its payload.
  */
 const headingKey = (group: string, placeId: string) => `heading:${group}:${placeId}`
+
+/**
+ * The key of the heading some tasks now sit under in a group, as it is drawn
+ * there, for the keyboard's focus to follow them to; null when no heading
+ * holds them all, so the focus waits for nothing. Read from the day as it is after the move, since that is
+ * what decides which heading it is: one already drawn, or a deeper one than
+ * they came from (`deepestHolding`) — an epic whose own task was finished
+ * today arrives as its outcome alone. The heading they left is no guide: its
+ * grip may not be drawn there at all, and a focus waiting on a key nothing
+ * draws waits for whatever draws it next.
+ */
+function headingLandedOn(
+  group: (taskIds: readonly string[]) => readonly TaskTreeNode[],
+  target: string,
+  taskIds: readonly string[],
+): string | null {
+  const after = useSession.getState().session.today
+  const inGroup = target === NOT_GROUPED ? ungroupedToday(after) : tasksOfIntention(target, after)
+  const landed = deepestHolding(group(inGroup), taskIds)
+  return landed === null ? null : headingKey(target, landed.id)
+}
 
 type PlaceEntry = { name: string; kind: TaskTreeNode['kind']; open: readonly string[] }
 
@@ -152,19 +184,18 @@ function bundleOf(
 ): Bundle | undefined {
   const place = places.get(payload.placeId)
   if (!place) return undefined
-  let taskIds: readonly string[]
+  const title = `tasks in ${place.name}`
   if (payload.kind === 'heading') {
     const inPlace = new Set(place.open)
     const inGroup =
       payload.group === NOT_GROUPED ? ungroupedToday(today) : tasksOfIntention(payload.group, today)
-    taskIds = inGroup.filter((taskId) => inPlace.has(taskId))
-  } else {
-    // A place is carried from All Tasks only, by drag; an area is too much
-    // of a life to carry at once.
-    if (by !== 'drag' || place.kind === 'area') return undefined
-    taskIds = place.open
+    const taskIds = inGroup.filter((taskId) => inPlace.has(taskId))
+    return taskIds.length > 0 ? { id: carried.id, title, taskIds, from: payload.group } : undefined
   }
-  return taskIds.length > 0 ? { id: carried.id, title: `tasks in ${place.name}`, taskIds } : undefined
+  // A place is carried from All Tasks only, by drag; an area is too much of a
+  // life to carry at once.
+  if (by !== 'drag' || place.kind === 'area') return undefined
+  return place.open.length > 0 ? { id: carried.id, title, taskIds: place.open } : undefined
 }
 
 /** An intention being renamed, and the name typed so far. */
@@ -264,24 +295,19 @@ export function TodayCarry({
   const move = useCallback(
     (carried: TodayCarried, target: string) => {
       if (target === FOR_BLOCK) {
-        // The row it came from stays where it was, so a pick-up's focus goes
-        // back to its grip there.
         const ids = isBundle(carried) ? carried.taskIds : [carried.id]
         onPickForBlock?.(ids.filter((id) => !picked?.has(id)), true)
-        return
+        // Nothing moved, so a pick-up's focus goes back to the row it came
+        // from. A task's row is where it was. A heading may not be: what it
+        // heads can have changed while it was held — an epic whose own task
+        // left today folds into its one outcome's line — so the focus goes to
+        // the heading over its tasks in that group now, or nowhere.
+        if (!isBundle(carried) || carried.from === undefined) return
+        return headingLandedOn(group, carried.from, carried.taskIds)
       }
       if (isBundle(carried)) {
         linkTasks(carried.taskIds, target === NOT_GROUPED ? null : target)
-        // From the keyboard, focus follows to the heading they now sit under in
-        // the group they went to, as it is drawn there — read from the day as
-        // it is after the move, since that is what decides which heading it
-        // is: one already drawn, or a deeper one than they came from
-        // (`deepestHolding`).
-        const after = useSession.getState().session.today
-        const inGroup =
-          target === NOT_GROUPED ? ungroupedToday(after) : tasksOfIntention(target, after)
-        const landed = deepestHolding(group(inGroup), carried.taskIds)
-        return landed === null ? undefined : headingKey(target, landed.id)
+        return headingLandedOn(group, target, carried.taskIds)
       }
       if (target !== NOT_GROUPED) linkTask(carried.id, target)
       else if (isToday(today, carried.id)) linkTask(carried.id, null)
@@ -390,9 +416,18 @@ export function TodayList({
     <TodayTaskRow task={task} onRemove={() => removeFromToday(task.id)} />
   )
   // A place's heading in one group carries that group's tasks in it.
-  const placeIn = (group: string) => (node: TaskTreeNode, line: string, className: string) => (
-    <PlaceHeading group={group} node={node} line={line} className={className} />
-  )
+  const placeIn =
+    (group: string) =>
+    (node: TaskTreeNode, line: string, className: string, folded: readonly TaskTreeNode[]) => (
+      <PlaceHeading
+        group={group}
+        node={node}
+        folded={folded}
+        line={line}
+        className={className}
+        grouped={backlog.group}
+      />
+    )
   const nothingChosen = backlog.chosen.length === 0
 
   const addButton = (
@@ -608,18 +643,32 @@ function TodayTaskRow({ task, onRemove }: { task: Item; onRemove: () => void }) 
  * with `Move here`. The grip shows on hover or with focus in the line, as a
  * row's actions do, since most of the time a heading is only read; a heading
  * over nothing open has none.
+ *
+ * An epic's or outcome's heading also has an × at the end of its line, level
+ * with its tasks' own, which takes everything it heads in that group out of
+ * today, finished tasks too (`tasksIn`): the whole of a place was otherwise
+ * let go only by unticking its box in All Tasks, which takes it out of every
+ * group at once, or a task at a time here. An area's heading has none, as an
+ * area has no box: that is a whole part of a life at once.
  */
 function PlaceHeading({
   group,
   node,
+  folded,
   line,
   className,
+  grouped,
 }: {
   group: string
   node: TaskTreeNode
+  /** The places folded into its line ahead of it, outermost first. */
+  folded: readonly TaskTreeNode[]
   line: string
   className: string
+  /** Today's tasks under their places, for where a gathered heading lands. */
+  grouped: (taskIds: readonly string[]) => readonly TaskTreeNode[]
 }) {
+  const removeAllFromToday = useSession((s) => s.removeAllFromToday)
   const carried: Carried = {
     id: headingKey(group, node.id),
     title: `tasks in ${node.name}`,
@@ -627,6 +676,12 @@ function PlaceHeading({
   }
   const open = holdsOpen(node)
   const { picked, dragProps } = useCarriedRow(carried, open)
+  // The line's outermost epic or outcome is what it can be made an intention
+  // of. On a line folded over an epic's one outcome that is the epic: it is
+  // the commonest shape near an epic's end, which is when naming the epic
+  // helps, and two rings side by side differed only in their hints. The
+  // outcome is still named from its own line wherever the epic holds more.
+  const nameable = [...folded, node].find((place) => place.kind !== 'area')
   return (
     <div
       {...(open ? dragProps : {})}
@@ -635,40 +690,73 @@ function PlaceHeading({
       }`}
     >
       <span className={`min-w-0 ${className}`}>{line}</span>
-      {open && node.kind === 'outcome' && <MakeIntention group={group} node={node} />}
+      {open && nameable && <MakeIntention group={group} place={nameable} heading={node} grouped={grouped} />}
       {open && <CarryGrip task={carried} className={picked ? '' : revealOnHover} />}
+      {node.kind !== 'area' && (
+        // Out of today, not out of the backlog, as a task's × is.
+        <button
+          type="button"
+          onClick={() => removeAllFromToday(tasksIn(node))}
+          aria-label={`Take everything in ${node.name} out of today`}
+          title="Not today"
+          className={`ml-auto shrink-0 px-1 text-[15px] text-muted transition hover:text-bright ${revealOnHover}`}
+        >
+          ×
+        </button>
+      )}
     </div>
   )
 }
 
 /**
- * The button on an outcome's heading that makes it an intention: named after
- * the outcome, holding the open tasks the heading heads in its group — what
- * carrying the heading would take, and no more, so making an intention never
- * chooses anything (`gatherUnder`). Where an open intention already has the
- * outcome's name, it fills that one instead, so a second press after more of
- * the outcome is ticked does not name it twice; inside that intention it is
- * not offered, having nothing left to do there.
+ * The button on an epic's or outcome's heading that makes it an intention:
+ * named after the place, holding the open tasks the heading heads in its
+ * group — what carrying the heading would take, and no more, so making an
+ * intention never chooses anything (`gatherUnder`). Where an open intention
+ * already has the place's name, it fills that one instead, so a second press
+ * after more of it is ticked does not name it twice; inside that intention it
+ * is not offered, having nothing left to do there.
+ *
+ * `place` is what it names and `heading` the place the line ends with, whose
+ * tasks it gathers. They differ only on a line folded over an epic's one
+ * outcome, where the epic is named and holds nothing in the group beyond
+ * that outcome's tasks.
  *
  * The heading it was pressed on leaves its group, so the focus follows to the
- * same heading's grip under the intention, as a pick-up's does when it lands.
+ * grip of the heading its tasks land under in the intention, as a pick-up's
+ * does when it lands (`headingLandedOn`). Not necessarily the same place: an
+ * epic whose own task was finished today leaves it behind, and arrives as its
+ * one outcome's heading.
  */
-function MakeIntention({ group, node }: { group: string; node: TaskTreeNode }) {
+function MakeIntention({
+  group,
+  place,
+  heading,
+  grouped,
+}: {
+  group: string
+  place: TaskTreeNode
+  heading: TaskTreeNode
+  grouped: (taskIds: readonly string[]) => readonly TaskTreeNode[]
+}) {
   const intentions = useSession((s) => s.session.intentions)
   const gatherUnder = useSession((s) => s.gatherUnder)
   const { landed } = useContext(Carry)
-  const into = intentionNamed(intentions, node.name)
+  const into = intentionNamed(intentions, place.name)
   if (into?.id === group) return null
+  const level = place.kind === 'epic' ? 'epic' : 'outcome'
   return (
     <IconButton
       onClick={() => {
         // Cut from this group by the list, so these are its tasks in this place.
-        const taskIds = openTasksBeneath([node]).get(node.id) ?? []
-        const id = gatherUnder(node.name, taskIds)
-        landed.current = headingKey(id, node.id)
+        const taskIds = openTasksBeneath([heading]).get(heading.id) ?? []
+        const id = gatherUnder(place.name, taskIds)
+        landed.current = headingLandedOn(grouped, id, taskIds)
       }}
-      label={into ? `Move ${node.name} into intention ${into.title}` : `Make ${node.name} an intention`}
-      hint={into ? 'Move into its intention' : 'Make an intention'}
+      label={
+        into ? `Move ${place.name} into intention ${into.title}` : `Make ${place.name} an intention`
+      }
+      hint={into ? 'Move into its intention' : `Make the ${level} an intention`}
       className={`-my-1 ${revealOnHover}`}
     >
       <IntendIcon />
