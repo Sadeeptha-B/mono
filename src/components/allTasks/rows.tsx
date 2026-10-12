@@ -43,6 +43,10 @@ export const LEVEL: Record<TaskTreeNode['kind'], string> = { area: 'Area', epic:
  * all of it is, mixed when some is, and pressed while mixed it ticks the rest:
  * the commoner wish is to take the whole of it. A place with nothing open has
  * no box, only the room one would take, so its name stays in line.
+ *
+ * An intention in today's list beside it takes the same box for the block
+ * (`TodayList`), which says what it is in its own label and sits in its own
+ * heading's line rather than a tree row's.
  */
 export function PlaceTick({
   name,
@@ -50,12 +54,17 @@ export function PlaceTick({
   selected,
   onToggle,
   keepsOne,
+  label = `All of ${name}`,
+  boxClass = 'mt-[9.5px]',
 }: {
   name: string
   taskIds: readonly string[]
   selected: ReadonlySet<string>
   onToggle: (taskIds: readonly string[], on: boolean) => void
   keepsOne: boolean
+  label?: string
+  /** Where the box sits in its line: a tree row's, unless given another. */
+  boxClass?: string
 }) {
   const box = useRef<HTMLInputElement>(null)
   const ticked = taskIds.filter((id) => selected.has(id)).length
@@ -75,11 +84,11 @@ export function PlaceTick({
       onChange={() => {
         if (!locked) onToggle(taskIds, !all)
       }}
-      aria-label={`All of ${name}`}
+      aria-label={label}
       {...(locked ? { 'aria-disabled': true } : {})}
       {...(describedBy ? { 'aria-describedby': describedBy } : {})}
       {...(locked ? {} : { title: all ? 'Untick all of it' : 'Tick all of it' })}
-      className="m-0 mt-[9.5px] size-[13px] shrink-0 accent-[var(--color-deep)]"
+      className={`m-0 ${boxClass} size-[13px] shrink-0 accent-[var(--color-deep)]`}
     />
   )
   if (!keepsOne) return input(undefined)

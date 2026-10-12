@@ -49,6 +49,15 @@
  * nothing left to plan about them. A task taken out with its × leaves today
  * and its intention, and stays in the backlog.
  *
+ * Beside the purpose prompt, and while a block runs, an intention also takes
+ * a box for the block (`forBlock`), the one All Tasks gives an epic or outcome
+ * (`PlaceTick`): it ticks every open task under it at once, and the prompt
+ * then names the purpose after it (`purposeParts`). The day's intentions were
+ * written to say what its blocks would be for, and choosing one a task at a
+ * time in the tree, then typing its name again as the purpose, was that work
+ * done twice. Ticking stays the column's: the box is on today's list here,
+ * not on the stage, which still lists only what is ticked.
+ *
  * Deleting an intention leaves its tasks today, under none: removing a name is
  * not deciding against the work it named. Marking one done is the ring in
  * front of it (`IntentionDoneToggle`), by hand, and touches no task.
@@ -76,6 +85,7 @@ import {
   type CarryMode,
   type CarryPayload,
 } from './carry'
+import { PlaceTick } from './allTasks/rows'
 import { GroupedTasks } from './GroupedTasks'
 import { DeleteIcon, DoneRingIcon, IntendIcon } from './icons'
 import { useTodayBacklog } from './useTodayBacklog'
@@ -93,6 +103,13 @@ import { useSession } from '@/store/session'
 
 /** The place a task under no intention is carried to. Never an intention's id. */
 const NOT_GROUPED = ':not-grouped'
+
+/**
+ * The purpose prompt's own list, a place a task is carried to as well: put
+ * down there, it is ticked for the block being named (`TodayCarry`'s
+ * `blockPicked`). Never an intention's id.
+ */
+export const FOR_BLOCK = ':for-block'
 
 /**
  * Everything open in a place, carried as one into an intention: an epic or
@@ -186,15 +203,30 @@ export function useIntentionRename() {
  * belongs to as `scope` — `App` the question and the session — and a change
  * puts down whatever is in hand. A provider remounted with what it serves
  * needs none.
+ *
+ * While the purpose prompt is open the block being named is one more place
+ * (`FOR_BLOCK`), given as what it has ticked (`blockPicked`) and how to tick
+ * more (`onPickForBlock`). Anything that can be carried into an intention can
+ * be carried there — a task or a place's row from All Tasks, a task or a
+ * heading from today's list — and putting it down ticks what it holds for
+ * the block, as its box would, and groups nothing: the box ticks the whole of
+ * a place or an intention, and a drag is how part of one is taken without
+ * ticking a task at a time. It takes anything not all ticked already. Only
+ * the prompt: a running block changes its tasks in All Tasks alone.
  */
 export function TodayCarry({
   children,
   hand,
   scope,
+  blockPicked,
+  onPickForBlock,
 }: {
   children: ReactNode
   hand?: CarryHand
   scope?: string
+  /** What the purpose prompt has ticked, while it is open; the block takes nothing else. */
+  blockPicked?: readonly string[] | undefined
+  onPickForBlock?: ((taskIds: readonly string[], on: boolean) => void) | undefined
 }) {
   const backlog = useTodayBacklog()
   const today = useSession((s) => s.session.today)
@@ -217,15 +249,27 @@ export function TodayCarry({
     },
     [taskById, today, places],
   )
+  const picked = useMemo(
+    () => (blockPicked === undefined ? null : new Set(blockPicked)),
+    [blockPicked],
+  )
   const takes = useCallback(
-    (carried: TodayCarried, target: string) =>
-      (isBundle(carried) ? carried.taskIds : [carried.id]).some(
-        (id) => !isToday(today, id) || (today[id] ?? NOT_GROUPED) !== target,
-      ),
-    [today],
+    (carried: TodayCarried, target: string) => {
+      const ids = isBundle(carried) ? carried.taskIds : [carried.id]
+      if (target === FOR_BLOCK) return picked !== null && ids.some((id) => !picked.has(id))
+      return ids.some((id) => !isToday(today, id) || (today[id] ?? NOT_GROUPED) !== target)
+    },
+    [today, picked],
   )
   const move = useCallback(
     (carried: TodayCarried, target: string) => {
+      if (target === FOR_BLOCK) {
+        // The row it came from stays where it was, so a pick-up's focus goes
+        // back to its grip there.
+        const ids = isBundle(carried) ? carried.taskIds : [carried.id]
+        onPickForBlock?.(ids.filter((id) => !picked?.has(id)), true)
+        return
+      }
       if (isBundle(carried)) {
         linkTasks(carried.taskIds, target === NOT_GROUPED ? null : target)
         // From the keyboard, focus follows to the heading they now sit under in
@@ -243,7 +287,7 @@ export function TodayCarry({
       else if (isToday(today, carried.id)) linkTask(carried.id, null)
       else addToToday(carried.id)
     },
-    [today, group, linkTask, linkTasks, addToToday],
+    [today, group, linkTask, linkTasks, addToToday, picked, onPickForBlock],
   )
   const carry = useCarryState({ find, takes, move, hand })
   // Adjusted during render, so the stale bar is never painted.
@@ -261,6 +305,17 @@ export function TodayCarry({
   )
 }
 
+/**
+ * What the block being named, or running, has ticked, and how a whole
+ * intention is ticked for it — the same tick-many All Tasks' boxes use.
+ */
+export type IntentionTicks = {
+  selected: readonly string[]
+  onTickMany: (taskIds: readonly string[], on: boolean) => void
+  /** While a block runs: its last task cannot be let go (`PlaceTick`). */
+  keepsOne: boolean
+}
+
 export function TodayList({
   newIntention,
   onNewIntention,
@@ -268,6 +323,7 @@ export function TodayList({
   onRenaming,
   empty,
   heading,
+  forBlock,
 }: {
   /** The new intention's title while its field is open, or null while folded. */
   newIntention: string | null
@@ -283,6 +339,8 @@ export function TodayList({
    * already styles its sections.
    */
   heading: ReactNode
+  /** Beside the purpose prompt or a running block, a box on each intention ticks it for the block. */
+  forBlock?: IntentionTicks
 }) {
   const backlog = useTodayBacklog()
   const today = useSession((s) => s.session.today)
@@ -302,6 +360,17 @@ export function TodayList({
     }),
     [intentions, today, group],
   )
+  // What each intention's box ticks: its tasks still open and in play, as an
+  // epic's box ticks only what is open in it.
+  const offered = backlog.offered
+  const openOf = useMemo(() => {
+    const open = new Set(offered)
+    return new Map(
+      intentions.map((i) => [i.id, tasksOfIntention(i.id, today).filter((id) => open.has(id))]),
+    )
+  }, [intentions, today, offered])
+  const blockSelected = forBlock?.selected
+  const ticked = useMemo(() => new Set(blockSelected), [blockSelected])
 
   const opener = useRef<HTMLButtonElement>(null)
   /** Close the new intention without keeping it, and hand focus back. */
@@ -385,6 +454,21 @@ export function TodayList({
                 />
               ) : (
                 <div className="flex items-baseline gap-1.5">
+                  {forBlock && (
+                    // Held at the top of the heading's first line, as a tree
+                    // row holds its box, whether or not it has a note to say.
+                    <span className="flex shrink-0 self-start">
+                      <PlaceTick
+                        name={intention.title}
+                        label={`All of ${intention.title} for this block`}
+                        taskIds={openOf.get(intention.id) ?? []}
+                        selected={ticked}
+                        onToggle={forBlock.onTickMany}
+                        keepsOne={forBlock.keepsOne}
+                        boxClass="mt-[5px]"
+                      />
+                    </span>
+                  )}
                   <IntentionDoneToggle
                     intention={intention}
                     onToggle={() => updateIntention(intention.id, { done: !done })}

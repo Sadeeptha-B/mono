@@ -13,6 +13,7 @@
  * carried from one intention to another is shown where it now belongs.
  */
 
+import type { NamedTasks } from './tasks'
 import type { Intention } from './types'
 
 /** Today's tasks, each with the intention it is under or `null` — see `SessionState.today`. */
@@ -51,6 +52,20 @@ export const intentionNamed = (
   const name = title.trim().toLowerCase()
   return intentions.find((i) => i.done !== true && i.title.trim().toLowerCase() === name)
 }
+
+/**
+ * Today's intentions as names a block's purpose may use (`purposeParts`), each
+ * with the tasks under it. One marked done is left out: the day has said it
+ * got what it wanted from it, so a block for its leftovers is about them
+ * rather than about it, and is named by their own titles.
+ */
+export const intentionNames = (
+  intentions: readonly Intention[],
+  today: Today,
+): NamedTasks[] =>
+  intentions
+    .filter((i) => i.done !== true)
+    .map((i) => ({ title: i.title, taskIds: tasksOfIntention(i.id, today) }))
 
 /**
  * What the last day left to offer again: the tasks it chose that are still

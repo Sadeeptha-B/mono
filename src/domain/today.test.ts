@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   carriedOver,
   intentionNamed,
+  intentionNames,
   isToday,
   tasksOfIntention,
   todayTaskIds,
@@ -60,5 +61,17 @@ describe('intentionNamed', () => {
   it('leaves one marked done alone, and finds nothing for a name not given', () => {
     expect(intentionNamed(intentions.slice(0, 2), 'Login pages')).toBeUndefined()
     expect(intentionNamed(intentions, 'Login')).toBeUndefined()
+  })
+})
+
+describe('intentionNames', () => {
+  it('names each open intention with the tasks under it, and leaves a done one out', () => {
+    const intentions = [
+      { id: 'auth', title: 'Mono auth' },
+      { id: 'billing', title: 'Billing', done: true },
+    ]
+    expect(intentionNames(intentions, today)).toEqual([
+      { title: 'Mono auth', taskIds: ['login', 'csrf'] },
+    ])
   })
 })

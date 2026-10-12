@@ -843,36 +843,82 @@ export const tasksOfOutcome = (
 ): readonly Item[] => indexBacklog(items, areas).activeTasksByParent().get(outcomeId) ?? []
 
 /**
+ * A name the day has given some of its tasks — an intention — which a block's
+ * purpose can use for all of them at once (`purposeParts`). Only a title and
+ * ids, so reading the backlog needs nothing of today's map; `intentionNames`
+ * in `today.ts` builds them from it.
+ */
+export type NamedTasks = { title: string; taskIds: readonly string[] }
+
+/**
  * The names a block's default purpose is made of, in the order things were
  * picked.
  *
- * Each task contributes its title, except that an outcome whose open tasks are
- * all picked contributes its own title once, where its first task was. Ticking
- * "Login pages" is a statement about the outcome, and a purpose reading
- * "Login form, Session cookie, Remember me" says the same thing worse. An
- * outcome only partly picked is not claimed: the user chose some of it, and the
- * purpose says which. Nor is one holding a single task, whose own title is the
- * more specific of the two names for the same work.
+ * Each task contributes its title, except that a name whose open tasks are all
+ * picked contributes itself once, where its first task was. Two kinds of name
+ * can claim tasks that way. An intention (`named`) is the day's own name for
+ * them, written that morning for exactly this, so picking all of it is the
+ * user saying the block is for that intention, and asking them to type its
+ * name again would be the duplicate work the day setup was meant to save. An
+ * outcome is the backlog's name: ticking "Login pages" is a statement about the
+ * outcome, and a purpose reading "Login form, Session cookie, Remember me" says
+ * the same thing worse.
+ *
+ * Intentions are asked first, because they are the more deliberate of the two
+ * and often wider: one holding a whole outcome and more is named once, by the
+ * intention. A task an intention has claimed is never counted towards an
+ * outcome, so an outcome split between an intention and the rest of the day is
+ * named by its leftover tasks rather than twice.
+ *
+ * A name only partly picked is not claimed: the user chose some of it, and the
+ * purpose says which. Nor is one holding a single open task, whose own title
+ * is the more specific of the two names for the same work.
  */
 export function purposeParts(
   selected: readonly string[],
   items: readonly Item[],
   areas: readonly Area[],
+  named: readonly NamedTasks[] = [],
 ): string[] {
-  const { byId } = indexBacklog(items, areas)
+  const index = indexBacklog(items, areas)
+  const { byId } = index
   const picked = new Set(selected)
+
+  // Each picked task an intention claims whole, mapped to that intention.
+  // Counted over its open tasks in play, as an outcome's are: one finished or
+  // put away since it was grouped is not left for the block to do.
+  const nameOf = new Map<string, NamedTasks>()
+  if (named.length > 0) {
+    const open = new Set(index.activeTasks().map((t) => t.id))
+    for (const name of named) {
+      const whole = name.taskIds.filter((id) => open.has(id))
+      if (whole.length > 1 && whole.every((id) => picked.has(id))) {
+        for (const id of whole) nameOf.set(id, name)
+      }
+    }
+  }
+
   const parts: string[] = []
-  const claimed = new Set<string>()
+  const namesUsed = new Set<NamedTasks>()
+  const outcomesUsed = new Set<string>()
 
   for (const id of selected) {
     const task = byId.get(id)
     if (!task) continue
+    const name = nameOf.get(id)
+    if (name) {
+      if (!namesUsed.has(name)) {
+        namesUsed.add(name)
+        parts.push(name.title)
+      }
+      continue
+    }
     const parent = byId.get(task.parentId)
     if (parent?.kind === 'outcome') {
-      if (claimed.has(parent.id)) continue
+      if (outcomesUsed.has(parent.id)) continue
       const whole = tasksOfOutcome(parent.id, items, areas)
-      if (whole.length > 1 && whole.every((t) => picked.has(t.id))) {
-        claimed.add(parent.id)
+      if (whole.length > 1 && whole.every((t) => picked.has(t.id) && !nameOf.has(t.id))) {
+        outcomesUsed.add(parent.id)
         parts.push(parent.title)
         continue
       }

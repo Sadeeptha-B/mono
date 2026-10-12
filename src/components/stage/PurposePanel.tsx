@@ -30,10 +30,20 @@
  * checkboxes beside the tree's. A tick chooses the task for today too, because
  * the block is the day doing it.
  *
+ * The answer is also somewhere to put a task down (`FOR_BLOCK`): dragged from
+ * All Tasks or from today's list, or picked up by its grip there and put down
+ * with `Move here`, a task is ticked for the block, and a place's row or
+ * heading ticks what it holds. It is how part of an intention or an outcome is
+ * taken without either its whole box or a hunt for each task in the tree, the
+ * gesture today's question already teaches for grouping (`TodayCarry`).
+ *
  * Intentions are shown here, crossed out once done, but kept in the column,
  * where today's own list (`TodayList`) sits under All Tasks: a block is often
  * where the day's grouping turns out wrong, and a list here that both picked
- * and grouped would ask two questions in one place.
+ * and grouped would ask two questions in one place. A line at the foot of the
+ * prompt says a task dragged from the tree onto one of them is grouped there,
+ * since today's list starts folded under the tree and nothing else points at
+ * the gesture.
  *
  * Not knowing what this block is for is answered on the question too: the
  * play button by the title gives the prompt a few minutes to decide in
@@ -42,9 +52,14 @@
  * block itself starts when it is named. It replaced the priorities block,
  * which recorded not knowing as a block of its own.
  *
- * The purpose names an outcome when every open task of it is ticked
- * (`purposeParts`). The block still records task ids, so nothing downstream
- * of this prompt learns that outcomes exist. Taking all of an outcome, or an
+ * The purpose names an intention, or an outcome, when every open task of it
+ * is ticked (`purposeParts`), and an intention first: it is the day's own name
+ * for those tasks, written that morning to say what blocks like this one are
+ * for. Its box in today's list, under the tree, ticks all of it at once
+ * (`TodayList`), so a day that named its intentions answers this prompt with
+ * one press and the name it already gave. A done intention names nothing
+ * (`intentionNames`). The block still records task ids, so nothing downstream
+ * of this prompt learns that intentions or outcomes exist. Taking all of an outcome, or an
  * epic, at once is the box on its row in All Tasks; there used to be one on an
  * outcome's heading here, which went with the unticked rows it chose among.
  */
@@ -52,8 +67,10 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
 
 import { unlockAudio } from '@/ambient/audio'
+import { DropZone, MoveHere } from '../carry'
 import { GroupedTasks } from '../GroupedTasks'
 import { QuestionClock } from '../QuestionClock'
+import { FOR_BLOCK } from '../TodayList'
 import { useTodayBacklog } from '../useTodayBacklog'
 import { fieldClass, GhostButton, PrimaryButton, revealOnHover, StagePrompt } from '../ui'
 import type { DecidingTimer } from '@/domain/machine'
@@ -63,7 +80,7 @@ import {
   PURPOSE_MAX_LENGTH,
   type TaskTreeNode,
 } from '@/domain/tasks'
-import { tasksOfIntention, ungroupedToday } from '@/domain/today'
+import { intentionNames, tasksOfIntention, ungroupedToday } from '@/domain/today'
 import { useSession } from '@/store/session'
 import { useTasks } from '@/store/tasks'
 import type { BlockKind, Intention, Ms } from '@/domain/types'
@@ -105,7 +122,9 @@ export function PurposePanel({
   // `null` while the purpose is still following the tasks; text once edited.
   const [ownPurpose, setOwnPurpose] = useState<string | null>(null)
 
-  const purpose = ownPurpose ?? defaultPurpose(purposeParts(selected, items, allAreas))
+  const names = useMemo(() => intentionNames(intentions, today), [intentions, today])
+  const purpose =
+    ownPurpose ?? defaultPurpose(purposeParts(selected, items, allAreas, names))
   const trimmed = purpose.trim()
 
   const untick = (taskId: string) => onTick(taskId, false)
@@ -168,31 +187,40 @@ export function PurposePanel({
       {!backlog.hydrated ? (
         <p className="text-sm text-muted">Loading your tasks…</p>
       ) : (
-        <Section title="Tasks for this block">
-          {selected.length === 0 ? (
-            <p className="text-sm text-muted">Tick tasks in All Tasks to add them here.</p>
-          ) : (
-            <>
-              {/* In the order today's question draws them: each intention,
-                  then the tasks under none. */}
-              {chosen.byIntention.map(({ intention, groups }) => (
-                <IntentionTasks
-                  key={intention.id}
-                  intention={intention}
-                  groups={groups}
-                  onUntick={untick}
-                />
-              ))}
-              {chosen.none.length > 0 && (
-                <ChosenList
-                  label={intentions.length > 0 ? 'Not grouped' : 'Chosen for this block'}
-                  groups={chosen.none}
-                  onUntick={untick}
-                />
-              )}
-            </>
-          )}
-        </Section>
+        // Somewhere a task is put down, as well as the answer: carried here
+        // from either column, it is ticked for the block (`TodayCarry`).
+        <DropZone target={FOR_BLOCK} className="min-w-0">
+          <Section title="Tasks for this block">
+            <MoveHere target={FOR_BLOCK} name="this block" />
+            {selected.length === 0 ? (
+              <p className="text-sm text-muted">
+                {intentions.length > 0
+                  ? "Tick or drag tasks in from All Tasks or Today's tasks, or tick a whole intention there."
+                  : 'Tick or drag tasks in from All Tasks.'}
+              </p>
+            ) : (
+              <>
+                {/* In the order today's question draws them: each intention,
+                    then the tasks under none. */}
+                {chosen.byIntention.map(({ intention, groups }) => (
+                  <IntentionTasks
+                    key={intention.id}
+                    intention={intention}
+                    groups={groups}
+                    onUntick={untick}
+                  />
+                ))}
+                {chosen.none.length > 0 && (
+                  <ChosenList
+                    label={intentions.length > 0 ? 'Not grouped' : 'Chosen for this block'}
+                    groups={chosen.none}
+                    onUntick={untick}
+                  />
+                )}
+              </>
+            )}
+          </Section>
+        </DropZone>
       )}
 
       <div className="mt-5 flex flex-wrap items-center gap-2">
@@ -206,6 +234,9 @@ export function PurposePanel({
 
       <p className="mt-4 text-xs leading-relaxed text-muted">
         Not sure yet? Press play by the question for {reflectMinutes} minutes to decide.
+      </p>
+      <p className="mt-1 text-xs leading-relaxed text-muted">
+        Drag a task from All Tasks onto an intention in Today's tasks, under the tree, to group it.
       </p>
     </form>
   )
