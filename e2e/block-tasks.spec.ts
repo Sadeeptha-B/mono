@@ -15,6 +15,7 @@ import {
   stage,
   startBlock,
   storedRecord,
+  todayBrowser,
   todayList,
 } from './support/mono'
 
@@ -249,6 +250,90 @@ test('part of an intention is carried onto the block, from either column', async
   // Nothing already ticked is offered a place on the block.
   await todayView(page).getByRole('button', { name: 'Move Call Priya', exact: true }).click()
   await expect(stage(page).getByRole('button', { name: /to this block$/ })).toHaveCount(0)
+})
+
+test("a place's line on the prompt takes everything it heads off the block", async ({ page }) => {
+  await openMono(page)
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await addOnTasksPage(page, 'epic', 'Work', 'Mono auth')
+  await addOnTasksPage(page, 'outcome', 'Mono auth', 'Login pages')
+  await addOnTasksPage(page, 'task', 'Login pages', 'Login form')
+  await addOnTasksPage(page, 'task', 'Login pages', 'Session cookie')
+  await addOnTasksPage(page, 'task', 'Mono auth', 'CSRF token')
+  await page.getByRole('link', { name: 'Back to today' }).click()
+  await goToStage(page, 'Today')
+  await addTodayTask(page, 'Ship the planner')
+  await stage(page).getByRole('button', { name: 'Start the day' }).click()
+  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+
+  await blockBacklog(page).getByRole('checkbox', { name: 'All of Mono auth', exact: true }).check()
+  await blockBacklog(page).getByRole('checkbox', { name: 'Ship the planner', exact: true }).check()
+  await expect(chosen(page)).toContainText('Session cookie')
+
+  // The outcome's × takes its tasks off the block and leaves them today's.
+  await chosen(page).getByText('Login pages', { exact: true }).hover()
+  await chosen(page)
+    .getByRole('button', { name: 'Take everything in Login pages off this block', exact: true })
+    .click()
+  await expect(chosen(page)).not.toContainText('Login form')
+  await expect(chosen(page)).toContainText('CSRF token')
+  await expect(todayView(page)).toContainText('Session cookie')
+  await expect(purposeField(page)).toHaveValue('CSRF token, Ship the planner')
+
+  // An area's line has none; an epic's takes all of it there.
+  await expect(chosen(page).getByRole('button', { name: /^Take everything in Work/ })).toHaveCount(0)
+  await chosen(page)
+    .getByRole('button', { name: 'Take everything in Mono auth off this block', exact: true })
+    .click()
+  await expect(chosen(page)).not.toContainText('CSRF token')
+  await expect(purposeField(page)).toHaveValue('Ship the planner')
+})
+
+test('a heading carried onto the block hands the focus back to the heading as it is drawn now', async ({
+  page,
+}) => {
+  await openMono(page)
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await addOnTasksPage(page, 'epic', 'Work', 'Mono auth')
+  await addOnTasksPage(page, 'outcome', 'Mono auth', 'Login pages')
+  await addOnTasksPage(page, 'task', 'Login pages', 'Login form')
+  await addOnTasksPage(page, 'task', 'Login pages', 'Session cookie')
+  await addOnTasksPage(page, 'task', 'Mono auth', 'CSRF token')
+  await page.getByRole('link', { name: 'Back to today' }).click()
+  await goToStage(page, 'Today')
+  await todayBrowser(page).getByRole('checkbox', { name: 'All of Mono auth', exact: true }).check()
+  await stage(page).getByRole('button', { name: 'Start the day' }).click()
+  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+
+  // The epic's heading is picked up, and while it is held its own task leaves
+  // today, so it is drawn as its one outcome's line instead.
+  await todayView(page).getByRole('button', { name: 'Move tasks in Mono auth', exact: true }).click()
+  await todayView(page).getByText('CSRF token', { exact: true }).hover()
+  await todayView(page)
+    .getByRole('button', { name: 'Take CSRF token out of today', exact: true })
+    .click()
+  await expect(
+    todayView(page).getByRole('button', { name: 'Move tasks in Login pages', exact: true }),
+  ).toBeVisible()
+
+  // Put down on the block, its tasks are ticked and the focus goes back to
+  // the heading over them as it is drawn now.
+  await stage(page)
+    .getByRole('button', { name: 'Move tasks in Mono auth to this block', exact: true })
+    .click()
+  await expect(chosen(page)).toContainText('Session cookie')
+  await expect(
+    todayView(page).getByRole('button', { name: 'Move tasks in Login pages', exact: true }),
+  ).toBeFocused()
+
+  // Nothing is left waiting for the old heading: choosing its task again
+  // draws it, and the focus stays on the box that chose it.
+  const csrf = blockBacklog(page).getByRole('checkbox', { name: 'CSRF token', exact: true })
+  await csrf.check()
+  await expect(
+    todayView(page).getByRole('button', { name: 'Move tasks in Mono auth', exact: true }),
+  ).toBeAttached()
+  await expect(csrf).toBeFocused()
 })
 
 test('a task from outside today joins it as it is ticked for a block', async ({ page }) => {

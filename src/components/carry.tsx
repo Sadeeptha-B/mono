@@ -185,13 +185,16 @@ export function useCarryState<T extends Carried>({
   /**
    * Put it down. Returns the id of what landed when that is not what was
    * carried — something filed from Later lands as a new task — so a pick-up's
-   * focus follows it there.
+   * focus follows it there; or null when nothing drawn now is where it went,
+   * so the focus waits for nothing. A key waiting on a row nobody draws is
+   * not let go: it takes the focus from wherever it is, whenever a row of
+   * that key is next drawn.
    */
-  move: (task: T, target: string) => string | undefined | void
+  move: (task: T, target: string) => string | null | undefined | void
   /** Whether a task would go to a slot between rows; none would, without it. */
   fits?: (task: T, slot: Slot) => boolean
   /** Put it down at a slot, returning what landed as `move` does. */
-  place?: (task: T, slot: Slot) => string | undefined | void
+  place?: (task: T, slot: Slot) => string | null | undefined | void
   /** Shared with the page's other carries, so only one holds a task at once. */
   hand?: CarryHand | undefined
 }): CarryContext {
@@ -232,7 +235,7 @@ export function useCarryState<T extends Carried>({
       takes: (target) => held !== null && takes(held.task, target),
       moveTo: (target) => {
         if (!held || !takes(held.task, target)) return
-        const arrived = move(held.task, target) ?? held.task.id
+        const arrived = landedAs(move(held.task, target), held.task.id)
         // From the keyboard, focus goes with the task to where it landed.
         if (held.by === 'pick') landed.current = arrived
         putDown()
@@ -243,7 +246,7 @@ export function useCarryState<T extends Carried>({
       fits: (slot) => held !== null && fits !== undefined && fits(held.task, slot),
       placeAt: (slot) => {
         if (!held || !place || !fits?.(held.task, slot)) return
-        const arrived = place(held.task, slot) ?? held.task.id
+        const arrived = landedAs(place(held.task, slot), held.task.id)
         if (held.by === 'pick') landed.current = arrived
         putDown()
       },
@@ -287,6 +290,10 @@ export function useCarryState<T extends Carried>({
 
   return carry
 }
+
+/** What a put-down says landed: what was carried unless it says otherwise, or nothing. */
+const landedAs = (said: string | null | undefined | void, carried: string): string | null =>
+  said === undefined ? carried : said
 
 /**
  * A place that takes a carried task, drawn as one while there is one to take:

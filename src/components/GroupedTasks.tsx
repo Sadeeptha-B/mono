@@ -19,6 +19,11 @@
  * `gutter` widens the space between a guide line and the rows it holds, for a
  * caller that hangs something in it: today's list hangs each task's grip
  * there, so a task's title still starts where a place's name beside it does.
+ *
+ * A caller drawing a place's line (`renderPlace`) is given the places folded
+ * into it as well as the one it ends with. Each is a place in its own right:
+ * an epic folded over its last outcome is still the epic, and today's list
+ * offers to make the epic an intention from that line.
  */
 
 import type { ReactNode } from 'react'
@@ -28,7 +33,14 @@ import { PATH_SEPARATOR, type Item, type TaskTreeNode } from '@/domain/tasks'
 /** How every level of one list is drawn, handed down unchanged. */
 type Look = {
   renderTask: (task: Item) => ReactNode
-  renderPlace: ((node: TaskTreeNode, line: string, className: string) => ReactNode) | undefined
+  renderPlace:
+    | ((
+        node: TaskTreeNode,
+        line: string,
+        className: string,
+        folded: readonly TaskTreeNode[],
+      ) => ReactNode)
+    | undefined
   gutter: 'narrow' | 'wide'
   placeText: 'text-xs' | 'text-sm'
 }
@@ -50,8 +62,9 @@ export function GroupedTasks({
   /**
    * A place's line, for a caller that does more with it than say it: today's
    * list carries everything under a place by its heading. Given the place the
-   * line ends with — the one whose tasks it heads — the line as written, and
-   * the classes it is set in. Without it, the line is text.
+   * line ends with — the one whose tasks it heads — the line as written, the
+   * classes it is set in, and the places folded into the line ahead of it,
+   * outermost first. Without it, the line is text.
    */
   renderPlace?: Look['renderPlace']
   /** Room between a guide line and its rows: `wide` for something hung there. */
@@ -77,20 +90,20 @@ function Group({
 }: {
   node: TaskTreeNode
   /** Places folded into this one's line, outermost first. */
-  above: readonly string[]
+  above: readonly TaskTreeNode[]
   look: Look
 }) {
   const only = node.children[0]
   if (node.tasks.length === 0 && node.children.length === 1 && only) {
-    return <Group node={only} above={[...above, node.name]} look={look} />
+    return <Group node={only} above={[...above, node]} look={look} />
   }
   const top = above.length === 0 && node.kind === 'area'
-  const line = [...above, node.name].join(PATH_SEPARATOR)
+  const line = [...above.map((place) => place.name), node.name].join(PATH_SEPARATOR)
   const lineClass = `truncate ${look.placeText} ${top ? 'text-body' : 'text-muted'}`
   return (
     <li className="min-w-0">
       {look.renderPlace ? (
-        look.renderPlace(node, line, lineClass)
+        look.renderPlace(node, line, lineClass, above)
       ) : (
         <div className={lineClass}>{line}</div>
       )}

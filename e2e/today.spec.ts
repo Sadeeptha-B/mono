@@ -757,8 +757,8 @@ test("an outcome's heading in today is made an intention of its name, and fills 
   await tree.getByRole('checkbox', { name: 'Login form', exact: true }).check()
   await tree.getByRole('checkbox', { name: 'CSRF token', exact: true }).check()
 
-  // Only an outcome's heading offers it; the epic's own task stays where it is.
-  await expect(list.getByRole('button', { name: /^Make Mono auth/ })).toHaveCount(0)
+  // The outcome's heading names the outcome alone; the epic's own task stays
+  // where it is.
   await list.getByText('Login pages', { exact: true }).hover()
   await list.getByRole('button', { name: 'Make Login pages an intention', exact: true }).click()
   await expect(intention(page, 'Login pages')).toContainText('Login form')
@@ -786,6 +786,94 @@ test("an outcome's heading in today is made an intention of its name, and fills 
     .click()
   await expect(intention(page, 'Login pages')).toContainText('Session cookie')
   await expect(list.getByRole('region', { name: /^Intention: / })).toHaveCount(1)
+})
+
+test("an epic's heading in today is made an intention, from a line folded over its last outcome", async ({
+  page,
+}) => {
+  await openMono(page)
+  await buildLoginPages(page)
+  const tree = todayBrowser(page)
+  const list = todayList(page)
+  // Near the epic's end only one outcome of it is chosen, so the line is
+  // folded: the area, the epic and the outcome, said once.
+  await tree.getByRole('checkbox', { name: 'All of Login pages', exact: true }).check()
+  const line = list.getByText('Work › Mono auth › Login pages', { exact: true })
+  await line.hover()
+  // One ring, and it names the epic rather than its last outcome.
+  const make = list.getByRole('button', { name: /^Make .* an intention$/ })
+  await expect(make).toHaveCount(1)
+  await expect(make).toHaveAccessibleName('Make Mono auth an intention')
+  await make.click()
+  await expect(intention(page, 'Mono auth')).toContainText('Login form')
+  await expect(intention(page, 'Mono auth')).toContainText('Session cookie')
+  // Inside it, the epic has nothing left to do.
+  await expect(
+    intention(page, 'Mono auth').getByRole('button', { name: / an intention$| into intention / }),
+  ).toHaveCount(0)
+})
+
+test("an epic made an intention from the keyboard keeps the focus, where it arrives as its outcome", async ({
+  page,
+}) => {
+  await openMono(page)
+  await buildLoginPages(page)
+  const tree = todayBrowser(page)
+  const list = todayList(page)
+  await tree.getByRole('checkbox', { name: 'All of Mono auth', exact: true }).check()
+  // The epic's own task finished today stays behind, crossed out, so the epic
+  // arrives in the intention as its one outcome's heading.
+  await taskAction(tree, 'CSRF token', 'Mark task CSRF token done')
+  const make = list.getByRole('button', { name: 'Make Mono auth an intention', exact: true })
+  await make.focus()
+  await page.keyboard.press('Enter')
+
+  const mono = intention(page, 'Mono auth')
+  await expect(mono).toContainText('Session cookie')
+  await expect(mono).not.toContainText('CSRF token')
+  await expect(
+    mono.getByRole('button', { name: 'Move tasks in Login pages', exact: true }),
+  ).toBeFocused()
+})
+
+test("a place's heading in today takes everything it heads there out of today", async ({
+  page,
+}) => {
+  await openMono(page)
+  await buildLoginPages(page)
+  const tree = todayBrowser(page)
+  const list = todayList(page)
+  await tree.getByRole('checkbox', { name: 'All of Mono auth', exact: true }).check()
+  await addIntention(page, 'Cookies')
+  await list.getByRole('button', { name: 'Move Session cookie', exact: true }).click()
+  await list.getByRole('button', { name: 'Move Session cookie to Cookies', exact: true }).click()
+  const notGrouped = list.getByRole('region', { name: 'Not grouped' })
+
+  // Its × shows on hover, as a task's does, and takes only this group's part
+  // of the outcome: the cookie under its intention stays.
+  const out = notGrouped.getByRole('button', {
+    name: 'Take everything in Login pages out of today',
+    exact: true,
+  })
+  await expect(out).toHaveCSS('opacity', '0')
+  await notGrouped.getByText('Login pages', { exact: true }).hover()
+  await expect(out).toHaveCSS('opacity', '1')
+  await out.click()
+  await expect(notGrouped).not.toContainText('Login form')
+  await expect(notGrouped).toContainText('CSRF token')
+  await expect(intention(page, 'Cookies')).toContainText('Session cookie')
+  // Out of today, not out of the backlog.
+  await expect(tree.getByRole('checkbox', { name: 'Login form', exact: true })).not.toBeChecked()
+
+  // An area's heading has none: that is a whole part of a life at once.
+  await expect(list.getByRole('button', { name: /^Take everything in Work/ })).toHaveCount(0)
+
+  // An epic's takes everything under it in the group, its outcomes' included.
+  await notGrouped
+    .getByRole('button', { name: 'Take everything in Mono auth out of today', exact: true })
+    .click()
+  await expect(notGrouped).toHaveCount(0)
+  await expect(intention(page, 'Cookies')).toContainText('Session cookie')
 })
 
 test("a task's × in today's list shows on hover or focus, not at rest", async ({ page }) => {
