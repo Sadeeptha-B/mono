@@ -498,6 +498,29 @@ describe('choosing and grouping several tasks at once', () => {
     expect(written().filter((t) => t === 'today/taskRemoved')).toHaveLength(2)
   })
 
+  it('takes what leaves today off a running block too, but never all it holds', () => {
+    const { addAllToToday, dispatch, removeAllFromToday, removeFromToday } = useSession.getState()
+    addAllToToday(['a', 'b', 'c', 'other'])
+    dispatch({ type: 'startBlock', at: TODAY.getTime(), blockKind: 'deep' })
+    dispatch({ type: 'setPurpose', at: TODAY.getTime(), purpose: 'Login', taskIds: ['a', 'b', 'c'] })
+    expect(useSession.getState().phase).toEqual({ name: 'focusing' })
+    const active = () => useSession.getState().session.active
+    const today = () => Object.keys(useSession.getState().session.today)
+
+    // Part of what it holds, with a task it does not: off the block and out
+    // of today together.
+    removeAllFromToday(['a', 'b', 'other'])
+    expect(active()).toMatchObject({ taskIds: ['c'] })
+    expect(today()).toEqual(['c'])
+
+    // All it holds is refused whole, by itself or among others.
+    addAllToToday(['other'])
+    removeFromToday('c')
+    removeAllFromToday(['c', 'other'])
+    expect(active()).toMatchObject({ taskIds: ['c'] })
+    expect(today()).toEqual(['c', 'other'])
+  })
+
   it('carries several into an intention, choosing those not yet today, and back out to none', () => {
     const { addToToday, addIntention, linkTask, linkTasks } = useSession.getState()
     addToToday('a')

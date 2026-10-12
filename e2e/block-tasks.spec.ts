@@ -336,6 +336,52 @@ test('a heading carried onto the block hands the focus back to the heading as it
   await expect(csrf).toBeFocused()
 })
 
+test("taking a running block's tasks out of today lets them go from it, but never all of them", async ({
+  page,
+}) => {
+  await openMono(page)
+  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await addOnTasksPage(page, 'epic', 'Work', 'Mono auth')
+  await addOnTasksPage(page, 'outcome', 'Mono auth', 'Login pages')
+  await addOnTasksPage(page, 'task', 'Login pages', 'Login form')
+  await addOnTasksPage(page, 'task', 'Login pages', 'Session cookie')
+  await page.getByRole('link', { name: 'Back to today' }).click()
+  await goToStage(page, 'Today')
+  await addTodayTask(page, 'Ship the planner')
+  await stage(page).getByRole('button', { name: 'Start the day' }).click()
+  await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+  await blockBacklog(page).getByRole('checkbox', { name: 'All of Login pages', exact: true }).check()
+  await blockBacklog(page).getByRole('checkbox', { name: 'Ship the planner', exact: true }).check()
+  await startButton(page).click()
+  await expect(blockTasks(page)).toContainText('Session cookie')
+  await openBlockBacklog(page)
+
+  // Part of what the block holds, taken out of today by its heading, leaves
+  // the block as well as the day.
+  await todayView(page).getByText('Mono auth › Login pages', { exact: true }).hover()
+  await todayView(page)
+    .getByRole('button', { name: 'Take everything in Login pages out of today', exact: true })
+    .click()
+  await expect(todayView(page)).not.toContainText('Login form')
+  await expect(blockTasks(page)).not.toContainText('Login form')
+  await expect(blockTasks(page)).not.toContainText('Session cookie')
+  await expect(blockTasks(page)).toContainText('Ship the planner')
+
+  // What is left is all the block holds: its × is held back and says why,
+  // and pressing it changes nothing.
+  const last = todayView(page).getByRole('button', {
+    name: 'Take Ship the planner out of today',
+    exact: true,
+  })
+  await expect(last).toHaveAttribute('aria-disabled', 'true')
+  await todayView(page).getByText('Ship the planner', { exact: true }).hover()
+  await last.hover()
+  await expect(page.getByRole('tooltip')).toContainText('Every block is for at least one task')
+  await last.click({ force: true })
+  await expect(todayView(page)).toContainText('Ship the planner')
+  await expect(blockTasks(page)).toContainText('Ship the planner')
+})
+
 test('a task from outside today joins it as it is ticked for a block', async ({ page }) => {
   await toPurposePrompt(page)
 

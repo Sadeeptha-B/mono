@@ -135,6 +135,29 @@ export type TransitionResult = { phase: Phase; events: MonoEvent[] }
 
 const stay = (phase: Phase): TransitionResult => ({ phase, events: [] })
 
+const NO_TASKS: readonly string[] = []
+
+/**
+ * The tasks of the block running now, or none. Only while `focusing`, the one
+ * phase that changes them: at `blockComplete` the segment is still active,
+ * but the block is over and what it was for is its record. The same array
+ * while nothing changes, so a selector reading it keeps its identity.
+ */
+export const runningBlockTasks = (phase: Phase, session: SessionState): readonly string[] =>
+  phase.name === 'focusing' && session.active?.kind === 'block' ? session.active.taskIds : NO_TASKS
+
+/**
+ * Whether letting go of these tasks would leave a block holding them with
+ * none. Every focus block is for at least one task, so `removeBlockTasks`
+ * refuses such a removal whole, and so does taking the same tasks out of
+ * today while it runs (`removeAllFromToday`), since a running block's tasks
+ * are today's. A block holding nothing is not one this protects.
+ */
+export const leavesBlockEmpty = (
+  held: readonly string[],
+  going: readonly string[],
+): boolean => held.length > 0 && held.every((id) => going.includes(id))
+
 export function transition(
   phase: Phase,
   session: SessionState,
@@ -248,7 +271,7 @@ export function transition(
         // Refused whole rather than cut short: letting go of an outcome that
         // is all the block holds should leave it as it was, not with one task
         // chosen by whichever happened to be last.
-        if (going.length === 0 || going.length === held.length) return stay(phase)
+        if (going.length === 0 || leavesBlockEmpty(held, action.taskIds)) return stay(phase)
         return {
           phase,
           events: going.map((taskId) => ({ type: 'block/taskRemoved', at: action.at, taskId })),

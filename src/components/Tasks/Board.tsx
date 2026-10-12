@@ -18,7 +18,9 @@ import {
   useDropList,
   useSlotEdge,
 } from '../carry'
+import { HoverNote } from '../HoverNote'
 import { ArchiveIcon, CheckIcon, DeleteIcon, DropIcon, MoveIcon, TodayIcon } from '../icons'
+import { KEEPS_BLOCK, KEEPS_BLOCK_PLACE, useKeepsBlock } from '../keepsBlock'
 import { EditGlyph, IconButton, RenameField, revealOnHover, useRefocus } from '../ui'
 import { useSession } from '@/store/session'
 import { useTasks } from '@/store/tasks'
@@ -515,6 +517,10 @@ function ContainerCard({
  *
  * Which intention the tasks go under is today's list's business, as for a
  * single task: grouping is done where the groups are.
+ *
+ * While a block runs, taking out of today what is all the block holds is
+ * refused (`useKeepsBlock`), so a lit sun that would do that is held back and
+ * says why, as a task's is.
  */
 function PlaceSun({
   title,
@@ -527,29 +533,48 @@ function PlaceSun({
 }) {
   const addAllToToday = useSession((s) => s.addAllToToday)
   const removeAllFromToday = useSession((s) => s.removeAllFromToday)
+  const keepsBlock = useKeepsBlock()
   if (taskIds.length === 0) return null
   const chosen = taskIds.filter((id) => isToday(today, id)).length
   const all = chosen === taskIds.length
   const some = chosen > 0 && !all
+  const locked = all && keepsBlock(taskIds)
   return (
-    <button
-      type="button"
-      onClick={() => (all ? removeAllFromToday(taskIds) : addAllToToday(taskIds))}
-      aria-label={`All of ${title} for today`}
-      aria-pressed={all ? true : some ? 'mixed' : false}
-      title={all ? 'Today — take it all out' : some ? 'Add the rest to today' : 'Add all of it to today'}
-      className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1 text-xs transition hover:bg-surface-raised hover:text-bright ${
-        all || some ? 'text-deep' : `text-muted ${revealOnHover}`
-      }`}
-    >
-      <TodayIcon chosen={all} />
-      {all && <span>Today</span>}
-      {some && (
-        <span>
-          {chosen} of {taskIds.length}
-        </span>
+    <HoverNote note={locked ? KEEPS_BLOCK_PLACE : null} className="flex shrink-0">
+      {(describedBy) => (
+        <button
+          type="button"
+          onClick={() => {
+            if (locked) return
+            if (all) removeAllFromToday(taskIds)
+            else addAllToToday(taskIds)
+          }}
+          aria-label={`All of ${title} for today`}
+          aria-pressed={all ? true : some ? 'mixed' : false}
+          {...(locked
+            ? { 'aria-disabled': true }
+            : {
+                title: all
+                  ? 'Today — take it all out'
+                  : some
+                    ? 'Add the rest to today'
+                    : 'Add all of it to today',
+              })}
+          {...(describedBy ? { 'aria-describedby': describedBy } : {})}
+          className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1 text-xs transition ${
+            locked ? 'cursor-default' : 'hover:bg-surface-raised hover:text-bright'
+          } ${all || some ? 'text-deep' : `text-muted ${revealOnHover}`}`}
+        >
+          <TodayIcon chosen={all} />
+          {all && <span>Today</span>}
+          {some && (
+            <span>
+              {chosen} of {taskIds.length}
+            </span>
+          )}
+        </button>
       )}
-    </button>
+    </HoverNote>
   )
 }
 
@@ -682,6 +707,7 @@ function TaskRow({ task, chosen, last }: { task: Item; chosen: boolean; last: bo
   const shiftItem = useTasks((s) => s.shiftItem)
   const addToToday = useSession((s) => s.addToToday)
   const removeFromToday = useSession((s) => s.removeFromToday)
+  const keepsBlock = useKeepsBlock()
   const [renaming, setRenaming] = useState<string | null>(null)
   const { picked, dragProps } = useCarriedRow(task, renaming === null)
   const edge = useSlotEdge(task.parentId, 'task', task.id, last)
@@ -738,25 +764,40 @@ function TaskRow({ task, chosen, last }: { task: Item; chosen: boolean; last: bo
       </div>
 
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5 pl-9 text-xs">
-        <span className="-my-1 -ml-1.5 flex">
-          <button
-            type="button"
-            onClick={() => (chosen ? removeFromToday(task.id) : addToToday(task.id))}
-            // A toggle keeps one name and says its state by being pressed;
-            // `Take … out of today` is the × in today's own list.
-            aria-label={`${task.title} for today`}
-            aria-pressed={chosen}
-            title={chosen ? 'Today — take it out' : 'Add to today'}
-            // Chosen, it says so and stays; otherwise it is an action like
-            // the others, shown on hover.
-            className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1 transition hover:bg-surface-raised hover:text-bright ${
-              chosen ? 'text-deep' : `text-muted ${revealOnHover}`
-            }`}
-          >
-            <TodayIcon chosen={chosen} />
-            {chosen && <span>Today</span>}
-          </button>
-        </span>
+        <HoverNote
+          // All a running block holds is not taken out of today; it says so.
+          note={chosen && keepsBlock([task.id]) ? KEEPS_BLOCK : null}
+          className="-my-1 -ml-1.5 flex"
+        >
+          {(describedBy) => {
+            const locked = describedBy !== undefined
+            return (
+              <button
+                type="button"
+                onClick={() => {
+                  if (locked) return
+                  if (chosen) removeFromToday(task.id)
+                  else addToToday(task.id)
+                }}
+                // A toggle keeps one name and says its state by being pressed;
+                // `Take … out of today` is the × in today's own list.
+                aria-label={`${task.title} for today`}
+                aria-pressed={chosen}
+                {...(locked
+                  ? { 'aria-disabled': true, 'aria-describedby': describedBy }
+                  : { title: chosen ? 'Today — take it out' : 'Add to today' })}
+                // Chosen, it says so and stays; otherwise it is an action like
+                // the others, shown on hover.
+                className={`inline-flex h-6 shrink-0 items-center gap-1 rounded-md px-1 transition ${
+                  locked ? 'cursor-default' : 'hover:bg-surface-raised hover:text-bright'
+                } ${chosen ? 'text-deep' : `text-muted ${revealOnHover}`}`}
+              >
+                <TodayIcon chosen={chosen} />
+                {chosen && <span>Today</span>}
+              </button>
+            )
+          }}
+        </HoverNote>
         <span className="-my-1 -mr-1.5 ml-auto flex">
           <IconButton
             onClick={() => dropItem(task.id)}

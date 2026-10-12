@@ -88,7 +88,9 @@ import {
 } from './carry'
 import { PlaceTick } from './allTasks/rows'
 import { GroupedTasks } from './GroupedTasks'
+import { HoverNote } from './HoverNote'
 import { DeleteIcon, DoneRingIcon, IntendIcon } from './icons'
+import { KEEPS_BLOCK, KEEPS_BLOCK_PLACE, useKeepsBlock } from './keepsBlock'
 import { useTodayBacklog } from './useTodayBacklog'
 import { EditGlyph, IconButton, KeepField, RenameField, revealOnHover } from './ui'
 import {
@@ -608,6 +610,7 @@ export function TodayList({
 function TodayTaskRow({ task, onRemove }: { task: Item; onRemove: () => void }) {
   const open = task.status === 'open'
   const { picked, dragProps } = useCarriedRow(task, open)
+  const keepsBlock = useKeepsBlock()
   return (
     <div
       {...(open ? dragProps : {})}
@@ -623,16 +626,51 @@ function TodayTaskRow({ task, onRemove }: { task: Item; onRemove: () => void }) 
         {!open && <span className="sr-only">, done today</span>}
       </span>
       {/* Out of today, not out of the backlog. */}
-      <button
-        type="button"
-        onClick={onRemove}
-        aria-label={`Take ${task.title} out of today`}
-        title="Not today"
-        className={`shrink-0 px-1 text-muted transition hover:text-bright ${revealOnHover}`}
-      >
-        ×
-      </button>
+      <OutOfToday
+        label={`Take ${task.title} out of today`}
+        note={keepsBlock([task.id]) ? KEEPS_BLOCK : null}
+        onRemove={onRemove}
+      />
     </div>
+  )
+}
+
+/**
+ * The × that takes a task, or everything a heading heads, out of today, shown
+ * on hover or with focus in its row. While a block runs and what it would take
+ * is all the block holds it is held back, and says why when pointed at
+ * (`useKeepsBlock`): the store would refuse it, and a press that did nothing
+ * read as a press that had not landed.
+ */
+function OutOfToday({
+  label,
+  note,
+  onRemove,
+  className = '',
+}: {
+  label: string
+  /** Why it is held back, or null while it is not. */
+  note: string | null
+  onRemove: () => void
+  className?: string
+}) {
+  return (
+    <HoverNote note={note} className={`flex shrink-0 ${className}`}>
+      {(describedBy) => (
+        <button
+          type="button"
+          onClick={() => {
+            if (note === null) onRemove()
+          }}
+          aria-label={label}
+          {...(note !== null ? { 'aria-disabled': true } : { title: 'Not today' })}
+          {...(describedBy ? { 'aria-describedby': describedBy } : {})}
+          className={`px-1 text-muted transition ${note === null ? 'hover:text-bright' : 'cursor-default'} ${revealOnHover}`}
+        >
+          ×
+        </button>
+      )}
+    </HoverNote>
   )
 }
 
@@ -669,6 +707,7 @@ function PlaceHeading({
   grouped: (taskIds: readonly string[]) => readonly TaskTreeNode[]
 }) {
   const removeAllFromToday = useSession((s) => s.removeAllFromToday)
+  const keepsBlock = useKeepsBlock()
   const carried: Carried = {
     id: headingKey(group, node.id),
     title: `tasks in ${node.name}`,
@@ -694,15 +733,12 @@ function PlaceHeading({
       {open && <CarryGrip task={carried} className={picked ? '' : revealOnHover} />}
       {node.kind !== 'area' && (
         // Out of today, not out of the backlog, as a task's × is.
-        <button
-          type="button"
-          onClick={() => removeAllFromToday(tasksIn(node))}
-          aria-label={`Take everything in ${node.name} out of today`}
-          title="Not today"
-          className={`ml-auto shrink-0 px-1 text-[15px] text-muted transition hover:text-bright ${revealOnHover}`}
-        >
-          ×
-        </button>
+        <OutOfToday
+          label={`Take everything in ${node.name} out of today`}
+          note={keepsBlock(tasksIn(node)) ? KEEPS_BLOCK_PLACE : null}
+          onRemove={() => removeAllFromToday(tasksIn(node))}
+          className="ml-auto text-[15px]"
+        />
       )}
     </div>
   )
