@@ -288,7 +288,7 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="2. Check your hours"
-              asks="Choose when you want to work today. You can add separate stretches, such as a morning and an afternoon. The calendar previews your changes."
+              asks="Choose when you want to work today. You can add separate stretches, such as a morning and an afternoon. Moving a start time moves the whole stretch. The calendar previews your changes."
               choices={[
                 ['Hours', 'Changes here apply to today. Set your usual hours on Routine, linked from this question and Settings.'],
               ]}

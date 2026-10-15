@@ -6,6 +6,7 @@
  * inline on the stage rather than in a dialog, and the two should look
  * identical wherever they appear. Decorative edges use `line`; the boundary
  * of anything clickable or focusable uses `muted/70`, which is held to 3:1.
+ * The one exception is the compact time field below, for the reason given there.
  */
 
 import {
@@ -213,8 +214,16 @@ export function GhostButton({
  */
 type TemporalInputProps = Omit<InputHTMLAttributes<HTMLInputElement>, 'className' | 'type'> & {
   /**
-   * Working-hour ranges use the same boundary with denser spacing. Its
-   * `@max-xs` adjustment requires an ancestor marked `@container`.
+   * Working-hour ranges: denser spacing, and a quieter boundary. Its `@max-xs`
+   * adjustment requires an ancestor marked `@container`.
+   *
+   * The boundary is `muted/55`, under the 3:1 every other field keeps, and on
+   * purpose. These come in pairs, one row per stretch, so a day of three
+   * stretches is six outlined boxes in a column, and at the full weight they
+   * read as the loudest thing on the question rather than the answer to it.
+   * Each still says what it is without its edge — a bright time and the
+   * picker's clock inside, under a legend naming the row — and focus still
+   * turns it `deep`.
    */
   variant?: 'field' | 'compact'
 }
@@ -237,8 +246,8 @@ function TemporalInput({
   const lastPointerType = useRef<string | null>(null)
   const frameClass =
     variant === 'compact'
-      ? 'min-w-0 flex-1 px-2 @max-xs:px-1.5'
-      : 'w-full px-3.5'
+      ? 'min-w-0 flex-1 border-muted/55 px-2 @max-xs:px-1.5'
+      : 'w-full border-muted/70 px-3.5'
 
   const activateFromFrame = (event: MouseEvent<HTMLDivElement>) => {
     const field = input.current
@@ -267,7 +276,7 @@ function TemporalInput({
         lastPointerType.current = event.pointerType
       }}
       onClick={activateFromFrame}
-      className={`${frameClass} max-w-full overflow-hidden rounded-lg border border-muted/70 bg-ink py-2.5 focus-within:border-deep`}
+      className={`${frameClass} max-w-full overflow-hidden rounded-lg border bg-ink py-2.5 focus-within:border-deep`}
     >
       <input
         {...props}

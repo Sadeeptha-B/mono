@@ -64,6 +64,25 @@ test('the opening questions can be answered in either order', async ({ page }) =
   await expect(calendar(page).getByText('8 PM', { exact: true })).toBeVisible()
 })
 
+test('a new start moves the stretch, and stops it at midnight', async ({ page }) => {
+  await openMono(page)
+  await goToStage(page, 'Hours')
+  const start = stage(page).getByLabel('Hours 1 start', { exact: true })
+  const end = stage(page).getByLabel('Hours 1 end', { exact: true })
+
+  // Nine hours from nine, so nine hours from ten.
+  await start.fill('10:00')
+  await expect(end).toHaveValue('19:00')
+
+  // Pushed into the evening it is cut at 23:59 rather than wrapping — and the
+  // nine hours are still the stretch's while its start has the focus, so
+  // taking it back does not leave it four hours long.
+  await start.fill('20:00')
+  await expect(end).toHaveValue('23:59')
+  await start.fill('08:00')
+  await expect(end).toHaveValue('17:00')
+})
+
 test('hours edited on one question survive finishing from the other', async ({ page }) => {
   // The regression this guards: the hours draft used to be committed by the
   // hours panel's own button, so answering the questions out of order and

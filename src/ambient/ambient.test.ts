@@ -91,6 +91,14 @@ describe('ambient settings', () => {
       expect(contrast(fieldBorder, palette.surface), `${id}.field outer border`)
         .toBeGreaterThanOrEqual(3)
 
+      // The working-hours pair is quieter on purpose (`TemporalInput`'s
+      // compact variant, muted/55), but still has to be seen as an edge.
+      const rangeBorder = tint(palette.muted, palette.ink, 0.55)
+      expect(contrast(rangeBorder, palette.ink), `${id}.range field inner border`)
+        .toBeGreaterThanOrEqual(2.2)
+      expect(contrast(rangeBorder, palette.surface), `${id}.range field outer border`)
+        .toBeGreaterThanOrEqual(2.2)
+
       // Form placeholders are normal-size text on ink-backed fields.
       const placeholder = tint(palette.muted, palette.ink, 0.9)
       expect(contrast(placeholder, palette.ink), `${id}.placeholder`)
