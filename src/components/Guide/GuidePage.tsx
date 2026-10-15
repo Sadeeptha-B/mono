@@ -24,7 +24,7 @@
 
 import { useMemo, type ReactNode } from 'react'
 
-import { AppHeader } from '../AppHeader'
+import { APP_WIDTH, AppBar } from '../AppHeader'
 import { HeaderStatus } from '../HeaderStatus'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
 import type { TimerMode } from '@/domain/time'
@@ -65,27 +65,18 @@ export function GuidePage({
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink lg:h-dvh">
-      {/* The same split as the day view: pinned and scrolling inside itself on
-          a wide screen, an ordinary page on a narrow one. The header stays in
-          sight either way — pinned it never moves, and stacked it sticks —
-          because it carries the timer, and reading about focus should not
-          quietly cost you the block you are in. */}
-      <header className="sticky top-0 z-20 shrink-0 border-b border-line bg-ink px-4 py-3 sm:px-6 lg:static">
-        <div className="mx-auto max-w-5xl">
-          {/* A page invites you to stay, so whatever the timer would be
-              saying stays in sight — including when it is waiting on you. */}
-          <AppHeader
-            current="guide"
-            phase={phase}
-            mini={mini}
-            onOpenSettings={onOpenSettings}
-            status={<HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />}
-          />
-        </div>
-      </header>
+      {/* The bar every view shares (`AppBar`): pinned on a wide screen,
+          sticky on a narrow one, and carrying the timer either way. */}
+      <AppBar
+        current="guide"
+        phase={phase}
+        mini={mini}
+        onOpenSettings={onOpenSettings}
+        status={<HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />}
+      />
 
       <div className="mono-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
+        <div className={`mx-auto ${APP_WIDTH} px-4 py-8 sm:px-6 sm:py-10`}>
           <h1 className="text-3xl font-light text-bright sm:text-4xl">How Mono works</h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
             Make room for what matters, give each block a purpose, and take the day
@@ -105,11 +96,14 @@ export function GuidePage({
 
           <div className="mt-8 flex flex-col gap-8 lg:grid lg:grid-cols-[1fr_13rem] lg:gap-12">
             <article className="max-w-2xl">
+              {/* A section jumped to rests a little under the top of what
+                  scrolls; clearing the sticky bar on a narrow screen is the
+                  bar's business (`AppBar`), since its height varies. */}
               {sections.map((section) => (
                 <section
                   key={section.id}
                   id={section.id}
-                  className="scroll-mt-20 border-t border-line pt-6 first:border-t-0 first:pt-0 lg:scroll-mt-6 [&:not(:first-child)]:mt-8"
+                  className="scroll-mt-6 border-t border-line pt-6 first:border-t-0 first:pt-0 [&:not(:first-child)]:mt-8"
                 >
                   <h2 className="mb-3 text-xs font-medium tracking-widest text-muted uppercase">
                     {section.title}
@@ -381,7 +375,7 @@ function sectionsFor(settings: Settings): Section[] {
             </Setting>
             <Setting name="Later">
               Capture an idea, question or tangent to come back to. Enter saves it
-              to Later on the Tasks page.
+              to Later on the Timeline page.
             </Setting>
             <Setting name="Urges">
               Press + when you notice an urge to leave the task, whether you follow
@@ -439,27 +433,33 @@ function sectionsFor(settings: Settings): Section[] {
             Drag tasks and headings to move or reorder them. With a keyboard, pick
             up a task using its dots, then choose <Em>Move here</Em> at its
             destination; <Em>Escape</Em> cancels. Hover an action icon to see its name,
-            or open a row's <Em>⋯</Em> menu in All Tasks.
+            or open a row's <Em>⋯</Em> menu in All Tasks. Double-click a title to
+            rename it. On the board, click away to keep what you typed;{' '}
+            <Em>Escape</Em> cancels.
           </P>
           <P>
             The sun icon chooses a task for today or takes it out again. On an epic
-            or outcome, it chooses all open tasks inside. Today's list is also on
-            this page. Use <Em>+ Intention</Em> to give a group of today's tasks a
-            shared aim, such as <Em>Get the proposal ready</Em>, then drag tasks
-            into it. Mark the intention done when you feel that aim is met.
+            or outcome, it chooses all open tasks inside. Today's list opens from
+            the sun button in the corner. Use <Em>+ Intention</Em> to give a group
+            of today's tasks a shared aim, such as <Em>Get the proposal ready</Em>,
+            then drag tasks into it. Mark the intention done when you feel that aim
+            is met.
           </P>
           <P>
             Your backlog carries on across days. Tomorrow, <Em>From last time</Em>
             offers unfinished tasks for you to choose again. Use <Em>Drop</Em> for
-            work you have decided to let go; done and dropped tasks can be reopened.
-            Finish or archive an epic or outcome to put it away with its contents.
-            Deleting an area, epic or outcome deletes everything inside it.
+            work you have decided to let go. Finish or archive an epic or outcome to
+            put it away with its contents. Everything put away is under{' '}
+            <Em>Put away</Em> beside the page's title, where it can be reopened; a
+            task ticked today stays crossed out where it was. Outcomes start folded;
+            open or fold one, or an epic, with the arrow on its card. Deleting an
+            area, epic or outcome deletes everything inside it.
           </P>
           <P>
-            Thoughts captured in <Em>Later</Em> wait at the top of this page. You can
-            also capture them from the arrow icon in any page's header. Drag one
-            into a task column, or use <Em>Move here</Em>, to turn it into a task.
-            Use <Em>Let go</Em> to put it aside or <Em>Delete</Em> to remove it.
+            Thoughts captured in <Em>Later</Em>, from the arrow icon in any page's
+            header, wait on the <Em>Timeline</Em> page. Use <Em>File into…</Em> on
+            one to turn it into a task in an area, epic or outcome, <Em>Let go</Em>{' '}
+            to put it aside, or <Em>Delete</Em> to remove it.
           </P>
         </>
       ),

@@ -3,9 +3,26 @@
  * down the left, and level with each, its outcomes as columns of tasks. Every
  * row and card here is carried by the board's carry (`Backlog`), dragged
  * between rows to put it in order, or stepped with its arrows.
+ *
+ * Only work is drawn here: open tasks, and those finished today crossed out
+ * under them. Everything else put away is on the page's other view
+ * (`PutAwayView`), so a column is as long as what is left to do in it.
+ *
+ * An epic or an outcome folds by the caret on its card (`useBoardFold`), and
+ * stays as it was left across visits. Outcomes start folded, epics open, so
+ * a long backlog first reads as its places. A folded outcome is its card alone, saying how
+ * much it holds; a folded epic is its card and one line beside it. Either
+ * still takes a carried task, which lands last in it, so filing into a place
+ * does not mean opening it first.
+ *
+ * A title — an area's, a card's, a task's — is renamed by a double-click on
+ * it as well as by its ✎, which stays for the keyboard and a touch screen. A
+ * rename here, like an add, keeps what was typed when it is left
+ * (`saveOnLeave`, `useLeave`): the board is the one place that saves that way.
+ * Every rename on it is held by `useRename`, which says why.
  */
 
-import { useRef, useState, type ReactNode } from 'react'
+import { useCallback, useRef, useState, type ReactNode } from 'react'
 
 import {
   CarryGrip,
@@ -21,13 +38,21 @@ import {
 import { HoverNote } from '../HoverNote'
 import { ArchiveIcon, CheckIcon, DeleteIcon, DropIcon, MoveIcon, TodayIcon } from '../icons'
 import { KEEPS_BLOCK, KEEPS_BLOCK_PLACE, useKeepsBlock } from '../keepsBlock'
-import { EditGlyph, IconButton, RenameField, revealOnHover, useRefocus } from '../ui'
+import { Caret, EditGlyph, IconButton, RenameField, revealOnHover, useRefocus } from '../ui'
 import { useSession } from '@/store/session'
+import { useBoardFolds } from '@/store/taskFolds'
 import { useTasks } from '@/store/tasks'
-import { childrenOf, openTasksUnder, type Area, type Item } from '@/domain/tasks'
+import {
+  childrenOf,
+  isOpenContainer,
+  openTasksUnder,
+  tasksDoneOn,
+  type Area,
+  type Item,
+} from '@/domain/tasks'
+import type { DayKey } from '@/domain/time'
 import { isToday, type Today } from '@/domain/today'
 import { DeleteButton, liveInside } from './DeleteButton'
-import { PutAway } from './PutAway'
 import { AddForm } from './addFields'
 
 /**
@@ -59,11 +84,14 @@ type TreeProps = {
   today: Today
   /** Every open task in play beneath each epic and outcome, for the sun on its card. */
   beneath: ReadonlyMap<string, readonly string[]>
+  /** The session's day, whose finished tasks stay in their columns; null before it is known. */
+  day: DayKey | null
 }
 
 /**
  * One area as a band: a row for its name and its actions, a row for each open
- * epic, a row to add another, and its inbox last.
+ * epic, a row to add another, and its inbox last. What it has put away is on
+ * the page's other view.
  *
  * Every row is the same two-column grid, and the left cell of each carries the
  * dividing rule, so rows stacked without gaps draw one unbroken line down the
@@ -84,15 +112,14 @@ function AreaBand({
   const archiveArea = useTasks((s) => s.archiveArea)
   const deleteArea = useTasks((s) => s.deleteArea)
   const shiftArea = useTasks((s) => s.shiftArea)
-  const [renaming, setRenaming] = useState<string | null>(null)
-  const { dragProps } = useCarriedRow({ id: area.id, title: area.name }, renaming === null)
+  const rename = useRename((title) => renameArea(area.id, title))
+  const { dragProps } = useCarriedRow({ id: area.id, title: area.name }, rename.field === null)
   const edge = useSlotEdge(TOP, 'area', area.id, last)
   const epicDrop = useDropList(area.id, ['epic'])
 
-  const children = childrenOf(area.id, tree.items)
-  const epics = children.filter((i) => i.kind === 'epic')
-  const openEpics = epics.filter(isOpenContainer)
-  const putAway = epics.filter((e) => !isOpenContainer(e))
+  const openEpics = childrenOf(area.id, tree.items).filter(
+    (i) => i.kind === 'epic' && isOpenContainer(i),
+  )
 
   return (
     <div {...slotAttrs('area', area.id)} {...epicDrop} className="relative border-b border-line py-2">
@@ -102,27 +129,22 @@ function AreaBand({
         side={
           // A rename puts a form where the heading was, since a form cannot
           // sit inside a heading. The heading is what drags the band.
-          renaming === null ? (
-            <h2 {...dragProps} className="cursor-grab text-lg text-bright wrap-break-word">
+          rename.field === null ? (
+            <h2
+              {...dragProps}
+              onDoubleClick={() => rename.start(area.name)}
+              className="cursor-grab text-lg text-bright wrap-break-word"
+            >
               {area.name}
             </h2>
           ) : (
             <div className="flex">
-              <RenameField
-                label={`Rename ${area.name}`}
-                value={renaming}
-                onChange={setRenaming}
-                onSave={() => {
-                  renameArea(area.id, renaming)
-                  setRenaming(null)
-                }}
-                onCancel={() => setRenaming(null)}
-              />
+              <RenameField label={`Rename ${area.name}`} {...rename.field} />
             </div>
           )
         }
       >
-        {renaming === null && (
+        {rename.field === null && (
           <div className="flex flex-wrap items-center gap-x-1 gap-y-1 md:justify-end md:pt-0.5">
             <StepButtons
               title={area.name}
@@ -132,7 +154,7 @@ function AreaBand({
               onStep={(by) => shiftArea(area.id, by)}
             />
             <IconButton
-              onClick={() => setRenaming(area.name)}
+              onClick={() => rename.start(area.name)}
               label={`Rename ${area.name}`}
               hint="Rename"
               className={revealOnHover}
@@ -171,6 +193,7 @@ function AreaBand({
         side={
           <AddForm
             draftKey={`epic:${area.id}`}
+            variant="epic"
             opener="Add epic"
             openerLabel={`Add an epic to ${area.name}`}
             label={`New epic in ${area.name}`}
@@ -194,7 +217,6 @@ function AreaBand({
             />
           </DropZone>
         </Board>
-        <PutAway items={[...finishedTasks(children), ...putAway]} allItems={tree.items} />
       </Row>
     </div>
   )
@@ -258,7 +280,7 @@ function Board({
   children: ReactNode
 }) {
   return (
-    <div {...drop} className="grid grid-cols-[repeat(auto-fill,minmax(13rem,1fr))] items-start gap-4">
+    <div {...drop} className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] items-start gap-4">
       {children}
     </div>
   )
@@ -268,7 +290,12 @@ function Board({
  * An epic's row: its card on the left; on the right a column for each open
  * outcome, then a slot that adds another beside the last, then a column of the
  * tasks straight under the epic, which needs no card of its own because the
- * epic's is level with it. Below the board, what has been put away.
+ * epic's is level with it.
+ *
+ * Folded, the right is one line saying how much is in it, and the row is as
+ * tall as the card, so an area of folded epics reads as a list of them. The
+ * line is a place a task can be carried to, landing among the epic's own
+ * tasks — where the folded-away `Tasks` column would have put it.
  *
  * The add slot sits in the row of outcomes rather than under the board because
  * a new outcome is a new column: it appears where the button was. The tasks
@@ -281,11 +308,13 @@ function EpicRow({
   last,
   ...tree
 }: TreeProps & { epic: Item; first: boolean; last: boolean }) {
-  const children = childrenOf(epic.id, tree.items)
-  const outcomes = children.filter((i) => i.kind === 'outcome')
-  const openOutcomes = outcomes.filter(isOpenContainer)
+  const openOutcomes = childrenOf(epic.id, tree.items).filter(
+    (i) => i.kind === 'outcome' && isOpenContainer(i),
+  )
   const edge = useSlotEdge(epic.parentId, 'epic', epic.id, last)
   const outcomeDrop = useDropList(epic.id, ['outcome'], 'grid')
+  const [folded, toggle] = useBoardFold(epic.id, false)
+  const taskIds = tree.beneath.get(epic.id) ?? []
 
   return (
     <Row
@@ -297,61 +326,91 @@ function EpicRow({
           allItems={tree.items}
           first={first}
           last={last}
-          taskIds={tree.beneath.get(epic.id) ?? []}
+          taskIds={taskIds}
           today={tree.today}
+          folded={folded}
+          onFold={toggle}
         />
       }
     >
-      <Board drop={outcomeDrop}>
-        {openOutcomes.map((outcome, i) => (
-          <OutcomeColumn
-            key={outcome.id}
-            outcome={outcome}
-            first={i === 0}
-            last={i === openOutcomes.length - 1}
-            {...tree}
-          />
-        ))}
-        <div className="min-w-0">
-          <AddForm
-            draftKey={`outcome:${epic.id}`}
-            variant="slot"
-            opener="Add outcome"
-            openerLabel={`Add an outcome to ${epic.title}`}
-            label={`New outcome in ${epic.title}`}
-            placeholder="A new outcome"
-            onAdd={(title) =>
-              useTasks.getState().addItem({ kind: 'outcome', title, parentId: epic.id })
-            }
-          />
-        </div>
-        <DropZone target={epic.id} className="min-w-0">
-          <h4 className="mb-2 border-b border-line px-1 pt-1 pb-1.5 text-[10px] font-medium tracking-widest text-muted uppercase">
-            Tasks
-          </h4>
-          <TaskList
-            parent={epic.id}
-            name={epic.title}
-            listLabel={`${epic.title} tasks`}
-            empty="No tasks directly under this epic."
-            {...tree}
-          />
+      {folded ? (
+        <DropZone target={epic.id} className="min-w-0 md:pt-2.5">
+          <MoveHere target={epic.id} name={epic.title} />
+          <p className="text-sm text-muted">
+            {openOutcomes.length === 0 && taskIds.length === 0
+              ? 'Nothing open in it.'
+              : [
+                  ...(openOutcomes.length > 0 ? [count(openOutcomes.length, 'outcome')] : []),
+                  count(taskIds.length, 'open task'),
+                ].join(' · ')}
+          </p>
         </DropZone>
-      </Board>
-
-      <PutAway
-        items={[...finishedTasks(children), ...outcomes.filter((o) => !isOpenContainer(o))]}
-        allItems={tree.items}
-      />
+      ) : (
+        <EpicBoard epic={epic} openOutcomes={openOutcomes} drop={outcomeDrop} {...tree} />
+      )}
     </Row>
   )
 }
 
+/** An unfolded epic's board: its outcomes, the slot that adds one, and its own tasks. */
+function EpicBoard({
+  epic,
+  openOutcomes,
+  drop,
+  ...tree
+}: TreeProps & {
+  epic: Item
+  openOutcomes: readonly Item[]
+  drop: ReturnType<typeof useDropList>
+}) {
+  return (
+    <Board drop={drop}>
+      {openOutcomes.map((outcome, i) => (
+        <OutcomeColumn
+          key={outcome.id}
+          outcome={outcome}
+          first={i === 0}
+          last={i === openOutcomes.length - 1}
+          {...tree}
+        />
+      ))}
+      <div className="min-w-0">
+        <AddForm
+          draftKey={`outcome:${epic.id}`}
+          variant="outcome"
+          opener="Add outcome"
+          openerLabel={`Add an outcome to ${epic.title}`}
+          label={`New outcome in ${epic.title}`}
+          placeholder="A new outcome"
+          onAdd={(title) =>
+            unfoldNew(useTasks.getState().addItem({ kind: 'outcome', title, parentId: epic.id }))
+          }
+        />
+      </div>
+      <DropZone target={epic.id} className="min-w-0">
+        <h4 className="mb-2 border-b border-line px-1 pt-1 pb-1.5 text-[10px] font-medium tracking-widest text-muted uppercase">
+          Tasks
+        </h4>
+        <TaskList
+          parent={epic.id}
+          name={epic.title}
+          listLabel={`${epic.title} tasks`}
+          empty="No tasks directly under this epic."
+          {...tree}
+        />
+      </DropZone>
+    </Board>
+  )
+}
+
 /**
- * An outcome's column: its card, its open tasks beneath, and what it has put
- * away. The whole column takes a dropped task, card included, since the card
- * is the biggest thing in it that says which outcome this is. Its card is
- * also what drags the column along its epic's row of outcomes.
+ * An outcome's column: its card, and its tasks beneath. The whole column
+ * takes a dropped task, card included, since the card is the biggest thing in
+ * it that says which outcome this is. Its card is also what drags the column
+ * along its epic's row of outcomes.
+ *
+ * Folded, the column is the card alone, saying how much it holds, and still
+ * takes a task: dropped on the card, or put down with its `Move here`.
  */
 function OutcomeColumn({
   outcome,
@@ -360,6 +419,8 @@ function OutcomeColumn({
   ...tree
 }: TreeProps & { outcome: Item; first: boolean; last: boolean }) {
   const edge = useSlotEdge(outcome.parentId, 'outcome', outcome.id, last)
+  const [folded, toggle] = useBoardFold(outcome.id, true)
+  const taskIds = tree.beneath.get(outcome.id) ?? []
   return (
     <section
       {...slotAttrs('outcome', outcome.id)}
@@ -373,17 +434,23 @@ function OutcomeColumn({
           allItems={tree.items}
           first={first}
           last={last}
-          taskIds={tree.beneath.get(outcome.id) ?? []}
+          taskIds={taskIds}
           today={tree.today}
+          folded={folded}
+          onFold={toggle}
+          summary={taskIds.length === 0 ? 'No open tasks.' : count(taskIds.length, 'open task')}
         />
-        <TaskList
-          parent={outcome.id}
-          name={outcome.title}
-          listLabel={`${outcome.title} tasks`}
-          empty="No tasks yet."
-          {...tree}
-        />
-        <PutAway items={finishedTasks(childrenOf(outcome.id, tree.items))} allItems={tree.items} />
+        {folded ? (
+          <MoveHere target={outcome.id} name={outcome.title} />
+        ) : (
+          <TaskList
+            parent={outcome.id}
+            name={outcome.title}
+            listLabel={`${outcome.title} tasks`}
+            empty="No tasks yet."
+            {...tree}
+          />
+        )}
       </DropZone>
     </section>
   )
@@ -407,6 +474,11 @@ function OutcomeColumn({
  * Its sun chooses everything open in it for today at once (`PlaceSun`), as a
  * task's sun chooses one, so an outcome's worth of work is one press here as
  * it is one box in All Tasks.
+ *
+ * The caret in front of `Epic` or `Outcome` folds what the card heads. It is
+ * always shown rather than on hover, because it says something — whether
+ * anything is folded away — as the grip and a lit sun do. A folded card may
+ * say how much it holds under its title (`summary`).
  */
 function ContainerCard({
   item,
@@ -415,6 +487,9 @@ function ContainerCard({
   last,
   taskIds,
   today,
+  folded,
+  onFold,
+  summary,
 }: {
   item: Item
   allItems: readonly Item[]
@@ -423,14 +498,18 @@ function ContainerCard({
   /** Every open task in play beneath it. */
   taskIds: readonly string[]
   today: Today
+  folded: boolean
+  onFold: () => void
+  /** What a folded card says it holds, under its title. */
+  summary?: string
 }) {
   const renameItem = useTasks((s) => s.renameItem)
   const completeItem = useTasks((s) => s.completeItem)
   const archiveItem = useTasks((s) => s.archiveItem)
   const deleteItem = useTasks((s) => s.deleteItem)
   const shiftItem = useTasks((s) => s.shiftItem)
-  const [renaming, setRenaming] = useState<string | null>(null)
-  const { dragProps } = useCarriedRow(item, renaming === null)
+  const rename = useRename((title) => renameItem(item.id, title))
+  const { dragProps } = useCarriedRow(item, rename.field === null)
 
   const noun = item.kind === 'epic' ? 'Epic' : 'Outcome'
   const Heading = item.kind === 'epic' ? 'h3' : 'h4'
@@ -439,12 +518,27 @@ function ContainerCard({
     <div
       {...dragProps}
       className={`group/row rounded-xl border border-muted bg-surface/40 px-3 py-2.5 ${
-        renaming === null ? 'cursor-grab' : ''
+        rename.field === null ? 'cursor-grab' : ''
       }`}
     >
       <div className="flex flex-wrap items-center justify-between gap-x-2">
-        <span className="text-[10px] font-medium tracking-widest text-muted uppercase">{noun}</span>
-        {renaming === null && (
+        <span className="-ml-1 flex items-center gap-0.5">
+          <button
+            type="button"
+            onClick={onFold}
+            // A disclosure: one name for what it shows, and whether it shows it.
+            aria-label={`What ${item.title} holds`}
+            aria-expanded={!folded}
+            title={folded ? 'Unfold' : 'Fold'}
+            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted transition hover:bg-surface-raised hover:text-bright"
+          >
+            <Caret open={!folded} />
+          </button>
+          <span className="text-[10px] font-medium tracking-widest text-muted uppercase">
+            {noun}
+          </span>
+        </span>
+        {rename.field === null && (
           <span className="-mr-1.5 -mb-0.5 flex flex-wrap items-center justify-end">
             <PlaceSun title={item.title} taskIds={taskIds} today={today} />
             <StepButtons
@@ -455,7 +549,7 @@ function ContainerCard({
               onStep={(by) => shiftItem(item.id, by)}
             />
             <IconButton
-              onClick={() => setRenaming(item.title)}
+              onClick={() => rename.start(item.title)}
               label={`Rename ${item.title}`}
               hint="Rename"
               className={revealOnHover}
@@ -487,20 +581,19 @@ function ContainerCard({
           </span>
         )}
       </div>
-      {renaming === null ? (
-        <Heading className="mt-0.5 text-sm text-bright wrap-break-word">{item.title}</Heading>
+      {rename.field === null ? (
+        <>
+          <Heading
+            onDoubleClick={() => rename.start(item.title)}
+            className="mt-0.5 text-sm text-bright wrap-break-word"
+          >
+            {item.title}
+          </Heading>
+          {folded && summary !== undefined && <p className="mt-1 text-xs text-muted">{summary}</p>}
+        </>
       ) : (
         <div className="mt-1 flex">
-          <RenameField
-            label={`Rename ${item.title}`}
-            value={renaming}
-            onChange={setRenaming}
-            onSave={() => {
-              renameItem(item.id, renaming)
-              setRenaming(null)
-            }}
-            onCancel={() => setRenaming(null)}
-          />
+          <RenameField label={`Rename ${item.title}`} {...rename.field} />
         </div>
       )}
     </div>
@@ -637,7 +730,17 @@ function StepButtons({
   )
 }
 
-/** The open tasks directly under one parent, and the form that adds one there. */
+/**
+ * The open tasks directly under one parent, those finished there today crossed
+ * out under them, and the form that adds one there.
+ *
+ * Today's finished ones stay where they were ticked, as they do in All Tasks
+ * and today's list, so the column shows the day's progress in it and a tick
+ * made by mistake is undone where it was made. Older ones, and dropped ones,
+ * are on the page's other view. They are a list of their own after the open
+ * ones: only open tasks are carried or put in order, so a drag's line is never
+ * drawn among them.
+ */
 function TaskList({
   parent,
   name,
@@ -651,13 +754,14 @@ function TaskList({
   empty: string
 }) {
   const open = openTasksUnder(parent, tree.items)
+  const done = tree.day === null ? [] : tasksDoneOn(parent, tree.items, tree.day)
   const drop = useDropList(parent, ['task'])
 
   return (
     <>
       <MoveHere target={parent} name={name} />
       {open.length === 0 ? (
-        <p className="text-sm text-muted">{empty}</p>
+        done.length === 0 && <p className="text-sm text-muted">{empty}</p>
       ) : (
         <ul {...drop} aria-label={listLabel} className="flex flex-col gap-2">
           {open.map((task, i) => (
@@ -670,8 +774,11 @@ function TaskList({
           ))}
         </ul>
       )}
+      {/* Under the open tasks, above today's finished ones: a new task lands
+          last among the open, so its card is drawn where it will stand. */}
       <AddForm
         draftKey={`task:${parent}`}
+        variant="task"
         opener="Add task"
         openerLabel={`Add a task to ${name}`}
         label={`New task in ${name}`}
@@ -679,6 +786,13 @@ function TaskList({
         placeholder="Add a task"
         onAdd={(title) => useTasks.getState().addItem({ kind: 'task', title, parentId: parent })}
       />
+      {done.length > 0 && (
+        <ul aria-label={`${name} done today`} className="mt-2 flex flex-col gap-2">
+          {done.map((task) => (
+            <DoneRow key={task.id} task={task} />
+          ))}
+        </ul>
+      )}
     </>
   )
 }
@@ -708,8 +822,8 @@ function TaskRow({ task, chosen, last }: { task: Item; chosen: boolean; last: bo
   const addToToday = useSession((s) => s.addToToday)
   const removeFromToday = useSession((s) => s.removeFromToday)
   const keepsBlock = useKeepsBlock()
-  const [renaming, setRenaming] = useState<string | null>(null)
-  const { picked, dragProps } = useCarriedRow(task, renaming === null)
+  const rename = useRename((title) => renameItem(task.id, title))
+  const { picked, dragProps } = useCarriedRow(task, rename.field === null)
   const edge = useSlotEdge(task.parentId, 'task', task.id, last)
 
   return (
@@ -736,12 +850,17 @@ function TaskRow({ task, chosen, last }: { task: Item; chosen: boolean; last: bo
           aria-label={`${task.title} done`}
           className="mt-1 accent-[var(--color-deep)]"
         />
-        {renaming === null ? (
+        {rename.field === null ? (
           <>
-            <span className="min-w-0 flex-1 text-sm text-bright wrap-break-word">{task.title}</span>
+            <span
+              onDoubleClick={() => rename.start(task.title)}
+              className="min-w-0 flex-1 text-sm text-bright wrap-break-word"
+            >
+              {task.title}
+            </span>
             {/* Drawn over the row's padding rather than heightening the line. */}
             <IconButton
-              onClick={() => setRenaming(task.title)}
+              onClick={() => rename.start(task.title)}
               label={`Rename ${task.title}`}
               hint="Rename"
               className={`-my-0.5 -mr-1.5 ${revealOnHover}`}
@@ -750,16 +869,7 @@ function TaskRow({ task, chosen, last }: { task: Item; chosen: boolean; last: bo
             </IconButton>
           </>
         ) : (
-          <RenameField
-            label={`Rename ${task.title}`}
-            value={renaming}
-            onChange={setRenaming}
-            onSave={() => {
-              renameItem(task.id, renaming)
-              setRenaming(null)
-            }}
-            onCancel={() => setRenaming(null)}
-          />
+          <RenameField label={`Rename ${task.title}`} {...rename.field} />
         )}
       </div>
 
@@ -822,14 +932,89 @@ function TaskRow({ task, chosen, last }: { task: Item; chosen: boolean; last: bo
   )
 }
 
-/** An epic or outcome still being worked: open and not archived. */
-const isOpenContainer = (item: Item): boolean =>
-  item.status === 'open' && item.archivedAt === undefined
+/**
+ * A task finished today, crossed out where it was: its box unticks it, and
+ * that is all it offers. It is not carried, chosen or renamed — it is done —
+ * and its box sits where an open row's does, past the grip it has no use for.
+ */
+function DoneRow({ task }: { task: Item }) {
+  const reopenItem = useTasks((s) => s.reopenItem)
+  return (
+    <li className="rounded-lg border border-line px-3 py-2">
+      <div className="flex items-start gap-2">
+        <input
+          type="checkbox"
+          checked
+          onChange={() => reopenItem(task.id)}
+          aria-label={`${task.title} done`}
+          title="Done today — untick to reopen"
+          className="mt-1 ml-3.5 accent-[var(--color-deep)]"
+        />
+        <span className="min-w-0 flex-1 text-sm text-muted line-through wrap-break-word">
+          {task.title}
+        </span>
+      </div>
+    </li>
+  )
+}
 
 /**
- * The tasks under one parent that have been put away: finished, dropped, or
- * archived while still open — the last can arrive in an import, and belongs
- * here, where it can be restored, rather than among the work.
+ * A title being renamed on the board — an area's, a card's or a task's — and,
+ * while it is, the props of its `RenameField`, which keeps it when left.
+ *
+ * A leave is carried out even when the click that made it takes the field
+ * away (`useLeave`): folding the outcome a task is in, ticking the task done,
+ * turning the page to Put away. That click can also land after the board the
+ * rename was typed on has gone, started again because an import replaced the
+ * backlog while the press was held (`Backlog`); and an import may bring the
+ * same id back saying something else, which a title typed before it must not
+ * be written over. So a rename notes which backlog it was opened against
+ * (`replaced`) and is written only into that one; otherwise it goes with the
+ * board it was on, as that board's other drafts do. A fold or a tick
+ * replaces nothing, so the rename it interrupted is written.
  */
-const finishedTasks = (children: readonly Item[]): Item[] =>
-  children.filter((i) => i.kind === 'task' && (i.status !== 'open' || i.archivedAt !== undefined))
+function useRename(rename: (title: string) => void) {
+  const [renaming, setRenaming] = useState<{ title: string; against: number } | null>(null)
+  const start = (title: string) => setRenaming({ title, against: useTasks.getState().replaced })
+  const field =
+    renaming === null
+      ? null
+      : {
+          value: renaming.title,
+          onChange: (title: string) => setRenaming({ title, against: renaming.against }),
+          saveOnLeave: true,
+          onSave: () => {
+            if (useTasks.getState().replaced === renaming.against) rename(renaming.title)
+            setRenaming(null)
+          },
+          onCancel: () => setRenaming(null),
+        }
+  return { start, field }
+}
+
+/**
+ * Whether the board has an epic or outcome folded, and the press that turns
+ * it over. An epic starts open and an outcome folded (`startsFolded`), so an
+ * area reads as its epics and the outcomes in each, and an outcome's tasks
+ * are shown once asked for. A choice made by hand is kept by id
+ * (`useBoardFolds`), apart from All Tasks'; one written here starts open
+ * (`unfoldNew`), since it was made to be filled.
+ */
+function useBoardFold(id: string, startsFolded: boolean): [boolean, () => void] {
+  const folded = useBoardFolds((s) => s.choices[id] ?? startsFolded)
+  const setFolded = useBoardFolds((s) => s.setFolded)
+  const toggle = useCallback(() => setFolded(id, !folded), [id, folded, setFolded])
+  return [folded, toggle]
+}
+
+/**
+ * An outcome written on the board starts open, though outcomes start folded:
+ * it was made here to have tasks written into it, which a folded one hides.
+ * Recorded as a choice, as opening it by hand would be. Passes the new id on.
+ */
+const unfoldNew = (id: string | null): string | null => {
+  if (id !== null) useBoardFolds.getState().setFolded(id, false)
+  return id
+}
+
+const count = (n: number, word: string): string => `${n} ${word}${n === 1 ? '' : 's'}`

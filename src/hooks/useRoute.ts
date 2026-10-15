@@ -1,23 +1,25 @@
 /**
  * The whole of Mono's routing.
  *
- * There are exactly four views — the day, the tasks, the routine, and the
- * guide — so this is a hash check rather than a router. The hash is deliberate: it survives a reload,
- * it can be opened in a second tab, and the header entries are real links, so
- * middle-click and "open in new tab" behave the way people expect of a
- * document.
+ * There are exactly five views — the day, the tasks, the timeline, the
+ * routine, and the guide — so this is a hash check rather than a router. The
+ * hash is deliberate: it survives a reload, it can be opened in a second tab,
+ * and the header entries are real links, so middle-click and "open in new
+ * tab" behave the way people expect of a document.
  *
- * Nothing unmounts across a route change. `App` keeps the store hooks running
- * and swaps only what it renders, so a block in flight keeps its timer while
- * you read.
+ * A route change swaps the page `App` renders, and the page it leaves is
+ * unmounted with whatever it held. `App` itself stays mounted, and with it
+ * the session, its timers and reconciliation, so a block in flight keeps its
+ * timer while you read.
  */
 
 import { useSyncExternalStore } from 'react'
 
-export type Route = 'day' | 'guide' | 'tasks' | 'routine'
+export type Route = 'day' | 'guide' | 'tasks' | 'timeline' | 'routine'
 
 export const GUIDE_HASH = '#/guide'
 export const TASKS_HASH = '#/tasks'
+export const TIMELINE_HASH = '#/timeline'
 export const ROUTINE_HASH = '#/routine'
 export const DAY_HASH = '#/'
 
@@ -35,7 +37,9 @@ export function useRoute(): Route {
     ? 'guide'
     : hash === TASKS_HASH
       ? 'tasks'
-      : hash === ROUTINE_HASH
-        ? 'routine'
-        : 'day'
+      : hash === TIMELINE_HASH
+        ? 'timeline'
+        : hash === ROUTINE_HASH
+          ? 'routine'
+          : 'day'
 }

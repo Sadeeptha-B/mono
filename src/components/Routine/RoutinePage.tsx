@@ -10,8 +10,8 @@
  *
  * A page for the tasks page's reason: this is set up once and then left, away
  * from the timer, and the stage is for one question about today at a time.
- * `App` swaps the view without unmounting anything, so a block keeps running
- * while you are here. It has no tab in the header (see `AppHeader`); it is
+ * `App` swaps the view while its own hooks stay mounted, so a block keeps
+ * running while you are here. It has no tab in the header (see `AppHeader`); it is
  * reached from Settings and from the day's questions about hours and
  * commitments, where wanting it happens (`RoutineLink`).
  *
@@ -41,7 +41,7 @@
 
 import { useState } from 'react'
 
-import { AppHeader } from '../AppHeader'
+import { APP_WIDTH, AppBar } from '../AppHeader'
 import { RegionShapeEditor } from '../RegionShapeEditor'
 import { HeaderStatus } from '../HeaderStatus'
 import {
@@ -169,128 +169,126 @@ export function RoutinePage({
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink lg:h-dvh">
-      {/* The tasks page's header, for the guide's reasons: pinned on a wide
-          screen, sticky on a narrow one, and carrying the timer either way. */}
-      <header className="sticky top-0 z-20 shrink-0 border-b border-line bg-ink px-4 py-3 sm:px-6 lg:static">
-        <div className="mx-auto max-w-5xl">
-          {/* A page invites you to stay, so whatever the timer would be
-              saying stays in sight — including when it is waiting on you. */}
-          <AppHeader
-            current="routine"
-            phase={phase}
-            mini={mini}
-            onOpenSettings={onOpenSettings}
-            status={<HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />}
-          />
-        </div>
-      </header>
+      {/* The bar every view shares (`AppBar`): pinned on a wide screen,
+          sticky on a narrow one, and carrying the timer either way. */}
+      <AppBar
+        current="routine"
+        phase={phase}
+        mini={mini}
+        onOpenSettings={onOpenSettings}
+        status={<HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />}
+      />
 
       <div className="mono-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-        <main className="mx-auto max-w-3xl px-4 py-8 sm:px-6 sm:py-10">
-          <h1 className="text-3xl font-light text-bright sm:text-4xl">Routine</h1>
-          <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
-            What an ordinary day looks like: the hours you work and the commitments that
-            come round. Every day starts from these. Changing one day's hours, or moving or
-            skipping one day of a commitment, happens on that day and leaves this alone.
-          </p>
-
-          <section aria-labelledby="routine-hours" className="mt-8 border-t border-line pt-6">
-            <h2 id="routine-hours" className="text-lg font-light text-bright">
-              Working hours
-            </h2>
-            <p className="mt-1 mb-4 max-w-2xl text-sm leading-relaxed text-muted">
-              The only time Mono plans in. Every day starts from this shape, and changes
-              with it until you change that day's own hours.
+        {/* Every view's width, so the page starts where the others do; what is
+            on it keeps the narrower measure a form of a few fields wants. */}
+        <main className={`mx-auto ${APP_WIDTH} px-4 py-8 sm:px-6 sm:py-10`}>
+          <div className="max-w-3xl">
+            <h1 className="text-3xl font-light text-bright sm:text-4xl">Routine</h1>
+            <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
+              What an ordinary day looks like: the hours you work and the commitments that
+              come round. Every day starts from these. Changing one day's hours, or moving or
+              skipping one day of a commitment, happens on that day and leaves this alone.
             </p>
-            <div className="max-w-md">
-              <RegionShapeEditor
-                regions={defaultRegions}
-                onChange={(regions) => updateSettings({ defaultRegions: regions })}
-                hideLegend
-              />
-            </div>
-          </section>
 
-          <section aria-labelledby="routine-series" className="mt-10 border-t border-line pt-6">
-            <h2 id="routine-series" className="text-lg font-light text-bright">
-              Recurring commitments
-            </h2>
-            <p className="mt-1 mb-4 max-w-2xl text-sm leading-relaxed text-muted">
-              Each one is put into every day it falls on, so you never type the standup in
-              again.
-            </p>
-            {inOrder.length === 0 ? (
-              <p className="text-sm text-muted">
-                Nothing repeats yet. A standup every weekday, a swim on Tuesdays and
-                Thursdays, a review on the first of the month.
+            <section aria-labelledby="routine-hours" className="mt-8 border-t border-line pt-6">
+              <h2 id="routine-hours" className="text-lg font-light text-bright">
+                Working hours
+              </h2>
+              <p className="mt-1 mb-4 max-w-2xl text-sm leading-relaxed text-muted">
+                The only time Mono plans in. Every day starts from this shape, and changes
+                with it until you change that day's own hours.
               </p>
-            ) : (
-              <ul aria-label="Recurring commitments" className="flex flex-col gap-2">
-                {inOrder.map((rule) => (
-                  <SeriesCard
-                    key={rule.id}
-                    rule={rule}
-                    now={now}
-                    editing={rule.id === editing}
-                    onEdit={() => startEditing(rule)}
-                    onDelete={() => removeRecurring(rule.id)}
-                  />
-                ))}
-              </ul>
-            )}
+              <div className="max-w-md">
+                <RegionShapeEditor
+                  regions={defaultRegions}
+                  onChange={(regions) => updateSettings({ defaultRegions: regions })}
+                  hideLegend
+                />
+              </div>
+            </section>
 
-            <div className="mt-6">
-              <AddFold
-                title={subject ? `Edit ${subject.title}` : 'Add a recurring commitment'}
-                open={open}
-                onOpen={startNew}
-                onCancel={close}
-                cancelLabel={subject ? 'Cancel editing' : 'Cancel new recurring commitment'}
-                className="text-sm text-body"
-              >
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault()
-                    save()
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      e.preventDefault()
-                      close()
-                    }
-                  }}
+            <section aria-labelledby="routine-series" className="mt-10 border-t border-line pt-6">
+              <h2 id="routine-series" className="text-lg font-light text-bright">
+                Recurring commitments
+              </h2>
+              <p className="mt-1 mb-4 max-w-2xl text-sm leading-relaxed text-muted">
+                Each one is put into every day it falls on, so you never type the standup in
+                again.
+              </p>
+              {inOrder.length === 0 ? (
+                <p className="text-sm text-muted">
+                  Nothing repeats yet. A standup every weekday, a swim on Tuesdays and
+                  Thursdays, a review on the first of the month.
+                </p>
+              ) : (
+                <ul aria-label="Recurring commitments" className="flex flex-col gap-2">
+                  {inOrder.map((rule) => (
+                    <SeriesCard
+                      key={rule.id}
+                      rule={rule}
+                      now={now}
+                      editing={rule.id === editing}
+                      onEdit={() => startEditing(rule)}
+                      onDelete={() => removeRecurring(rule.id)}
+                    />
+                  ))}
+                </ul>
+              )}
+
+              <div className="mt-6">
+                <AddFold
+                  title={subject ? `Edit ${subject.title}` : 'Add a recurring commitment'}
+                  open={open}
+                  onOpen={startNew}
+                  onCancel={close}
+                  cancelLabel={subject ? 'Cancel editing' : 'Cancel new recurring commitment'}
+                  className="text-sm text-body"
                 >
-                  <CommitmentFields
-                    idPrefix="recurring"
-                    titleLabel="What"
-                    draft={draft}
-                    onDraft={setDraft}
-                  />
-                  <RepeatFields
-                    idPrefix="recurring"
-                    now={now}
-                    draft={timing}
-                    onDraft={setTiming}
-                    preview={ready}
-                  />
-                  {subject && (
-                    <p className="mt-3 text-xs leading-relaxed text-muted">
-                      Every day still following it changes, today included unless today's
-                      has already begun. A day you changed by hand keeps its own.
-                    </p>
-                  )}
-                  <div className="mt-4 flex gap-2">
-                    <PrimaryButton type="submit" disabled={!ready}>
-                      {subject ? 'Save' : 'Add'}
-                    </PrimaryButton>
-                    <GhostButton type="button" onClick={close}>
-                      Cancel
-                    </GhostButton>
-                  </div>
-                </form>
-              </AddFold>
-            </div>
-          </section>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault()
+                      save()
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        e.preventDefault()
+                        close()
+                      }
+                    }}
+                  >
+                    <CommitmentFields
+                      idPrefix="recurring"
+                      titleLabel="What"
+                      draft={draft}
+                      onDraft={setDraft}
+                    />
+                    <RepeatFields
+                      idPrefix="recurring"
+                      now={now}
+                      draft={timing}
+                      onDraft={setTiming}
+                      preview={ready}
+                    />
+                    {subject && (
+                      <p className="mt-3 text-xs leading-relaxed text-muted">
+                        Every day still following it changes, today included unless today's
+                        has already begun. A day you changed by hand keeps its own.
+                      </p>
+                    )}
+                    <div className="mt-4 flex gap-2">
+                      <PrimaryButton type="submit" disabled={!ready}>
+                        {subject ? 'Save' : 'Add'}
+                      </PrimaryButton>
+                      <GhostButton type="button" onClick={close}>
+                        Cancel
+                      </GhostButton>
+                    </div>
+                  </form>
+                </AddFold>
+              </div>
+            </section>
+          </div>
         </main>
       </div>
     </div>

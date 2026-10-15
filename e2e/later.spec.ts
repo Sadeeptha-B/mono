@@ -1,4 +1,4 @@
-/** Later: what is put down to come back to, from anywhere, and dealt with on the tasks page. */
+/** Later: what is put down to come back to, from anywhere, and dealt with on the timeline page. */
 
 import { expect, test, type Page } from '@playwright/test'
 import {
@@ -14,7 +14,7 @@ import {
 
 const main = (page: Page) => page.getByRole('main')
 
-/** The section on the tasks page, by its name. */
+/** The section on the timeline page, by its name. */
 const later = (page: Page) => main(page).getByRole('region', { name: 'Later', exact: true })
 const waiting = (page: Page) => later(page).getByRole('list', { name: 'Waiting for later' })
 
@@ -57,12 +57,23 @@ async function holdAnImport(page: Page): Promise<() => Promise<void>> {
     })
 }
 
+async function openTimeline(page: Page) {
+  await page.getByRole('link', { name: 'Timeline', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Timeline', level: 1 })).toBeVisible()
+}
+
 async function openTasks(page: Page) {
-  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await page.getByRole('navigation', { name: 'Pages' }).getByRole('link', { name: 'Tasks' }).click()
   await expect(page.getByRole('heading', { name: 'Tasks', level: 1 })).toBeVisible()
 }
 
-test('a line put down for later in a block waits on the tasks page, and is not drawn on the block', async ({
+/** File a waiting line into a place by its menu, as the page offers it. */
+async function file(page: Page, title: string, path: string) {
+  await later(page).getByRole('button', { name: `File ${title}`, exact: true }).click()
+  await later(page).getByRole('button', { name: `File ${title} into ${path}`, exact: true }).click()
+}
+
+test('a line put down for later in a block waits on the timeline page, and is not drawn on the block', async ({
   page,
 }) => {
   await openMono(page)
@@ -84,7 +95,7 @@ test('a line put down for later in a block waits on the tasks page, and is not d
     'Try WebGPU for the scene',
   ])
   await page.reload()
-  await openTasks(page)
+  await openTimeline(page)
   const row = waiting(page).getByRole('listitem')
   await expect(row).toHaveCount(1)
   await expect(row).toContainText('Try WebGPU for the scene')
@@ -92,24 +103,24 @@ test('a line put down for later in a block waits on the tasks page, and is not d
   await expect(row).toContainText('From Write the migration')
 
   // Saved and read back, it is still the line it was, and files as one.
-  await later(page).getByRole('button', { name: 'Move Try WebGPU for the scene' }).click()
-  await main(page).getByRole('button', { name: 'Move Try WebGPU for the scene to Work' }).click()
-  await expect(main(page).getByRole('list', { name: 'Work inbox' })).toContainText(
-    'Try WebGPU for the scene',
-  )
+  await file(page, 'Try WebGPU for the scene', 'Work')
   await expect(waiting(page)).toHaveCount(0)
   await expect
     .poll(async () => (await storedLater(page))[0]?.deletedAt)
     .toBeDefined()
+  await openTasks(page)
+  await expect(main(page).getByRole('list', { name: 'Work inbox' })).toContainText(
+    'Try WebGPU for the scene',
+  )
 })
 
-test('a line added on the tasks page while a block runs is marked with that block, as from anywhere', async ({
+test('a line added on the timeline page while a block runs is marked with that block, as from anywhere', async ({
   page,
 }) => {
   await openMono(page)
   await shapeDay(page)
   await startBlock(page, 'Write the migration')
-  await openTasks(page)
+  await openTimeline(page)
 
   await later(page).getByRole('button', { name: 'Add to Later', exact: true }).click()
   await later(page).getByLabel('New for later', { exact: true }).fill('Ask Priya about the index')
@@ -121,11 +132,11 @@ test('a line added on the tasks page while a block runs is marked with that bloc
   await expect(stage(page)).toContainText('1 for later')
 })
 
-test('the header puts things down from any page, and carrying one into a column makes it a task', async ({
+test('the header puts things down from any page, and filing one makes it a task', async ({
   page,
 }) => {
   await openMono(page)
-  await openTasks(page)
+  await openTimeline(page)
 
   const tool = page.getByRole('button', { name: 'Later', exact: true })
   await tool.click()
@@ -138,36 +149,35 @@ test('the header puts things down from any page, and carrying one into a column 
   // Kept with a click this time: the field has the focus back for the next.
   await menu.getByRole('button', { name: 'Keep', exact: true }).click()
   await expect(field).toBeFocused()
-  await expect(menu).toContainText('Kept · 2 waiting on Tasks')
+  await expect(menu).toContainText('Kept · 2 waiting on Timeline')
   await page.keyboard.press('Escape')
   await expect(menu).toHaveCount(0)
   await expect(tool).toBeFocused()
 
   await expect(waiting(page).getByRole('listitem')).toHaveCount(2)
 
-  // The board's own gesture: pick it up by its grip, put it down where it goes.
-  await later(page).getByRole('button', { name: 'Move Call the plumber' }).click()
-  await main(page).getByRole('button', { name: 'Move Call the plumber to Personal' }).click()
-  const personal = main(page).getByRole('list', { name: 'Personal inbox' })
-  await expect(personal).toContainText('Call the plumber')
+  // Filed by naming where it goes; the list says where it went, with the focus.
+  await file(page, 'Call the plumber', 'Personal')
   await expect(waiting(page)).not.toContainText('Call the plumber')
-  // From the keyboard, the focus lands on the task it became.
-  await expect(personal.getByRole('button', { name: 'Move Call the plumber' })).toBeFocused()
+  const said = later(page).getByRole('status')
+  await expect(said).toContainText('Filed Call the plumber in Personal')
+  await expect(said).toBeFocused()
 
   await expect.poll(() => storedRecord(page, 'Call the plumber')).toMatchObject({ status: 'open' })
   await expect
     .poll(async () => (await storedLater(page)).find((l) => l.title === 'Call the plumber')?.deletedAt)
     .toBeDefined()
   await page.reload()
+  await expect(waiting(page).getByRole('listitem')).toHaveText([/Read the WebGPU spec/])
+  await openTasks(page)
   await expect(main(page).getByRole('list', { name: 'Personal inbox' })).toContainText(
     'Call the plumber',
   )
-  await expect(waiting(page).getByRole('listitem')).toHaveText([/Read the WebGPU spec/])
 })
 
 test('what is let go can be brought back, and deleted for good', async ({ page }) => {
   await openMono(page)
-  await openTasks(page)
+  await openTimeline(page)
 
   await later(page).getByRole('button', { name: 'Add to Later', exact: true }).click()
   const field = later(page).getByLabel('New for later', { exact: true })
@@ -193,7 +203,7 @@ test('a rename under way does not outlive an import that brings the same line ba
   page,
 }) => {
   await openMono(page)
-  await openTasks(page)
+  await openTimeline(page)
   await later(page).getByRole('button', { name: 'Add to Later', exact: true }).click()
   await later(page).getByLabel('New for later', { exact: true }).fill('Learn the cello')
   await later(page).getByLabel('New for later', { exact: true }).press('Enter')
@@ -222,7 +232,7 @@ test('a line put down while an import is landing stays in the field until it can
   page,
 }) => {
   await openMono(page)
-  await openTasks(page)
+  await openTimeline(page)
   await expect(later(page)).toBeVisible()
 
   const land = await holdAnImport(page)
@@ -239,7 +249,7 @@ test('a line put down while an import is landing stays in the field until it can
   await land()
   await expect(async () => {
     await field.press('Enter')
-    await expect(menu).toContainText('Kept · 1 waiting on Tasks', { timeout: 500 })
+    await expect(menu).toContainText('Kept · 1 waiting on Timeline', { timeout: 500 })
   }).toPass()
   await expect(field).toHaveValue('')
   await page.keyboard.press('Escape')
@@ -250,7 +260,7 @@ test('a line typed on the tasks page while an import lands is still there once i
   page,
 }) => {
   await openMono(page)
-  await openTasks(page)
+  await openTimeline(page)
   await expect(later(page)).toBeVisible()
   const land = await holdAnImport(page)
 
@@ -263,7 +273,7 @@ test('a line typed on the tasks page while an import lands is still there once i
 
   // The import lands: the backlog it brought has no areas at all.
   await land()
-  await expect(main(page).getByRole('list', { name: 'Work inbox' })).toHaveCount(0)
+  await expect.poll(() => storedRecord(page, 'Work')).toBeNull()
   // The line is not one of the replaced backlog's records, and goes nowhere with it.
   await expect(field).toHaveValue('Call the plumber')
   await field.press('Enter')

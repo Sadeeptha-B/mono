@@ -222,8 +222,8 @@ export function MiniWindow(props: Props) {
  * Focusing alone was not enough. The tab may be on the tasks page or the guide,
  * and a block started from this window opens its purpose prompt on the stage,
  * which neither page shows — so the click arrived at a page with nothing to
- * answer. The route is a hash, so changing it swaps the view without unmounting
- * anything, exactly as the header's own links do.
+ * answer. The route is a hash, so changing it swaps the view while the session
+ * and its timers stay mounted, exactly as the header's own links do.
  */
 function openDayInTab(): void {
   if (window.location.hash !== DAY_HASH) window.location.hash = DAY_HASH

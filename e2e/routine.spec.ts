@@ -49,27 +49,37 @@ async function morningOf(page: Page, date: number) {
   await page.clock.fastForward('00:02')
 }
 
-test('the header is two places and its tools, on one row on a phone', async ({ page }) => {
+test('the header is three places and its tools; on a phone the places take a row of their own', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openMono(page)
 
   const places = page.getByRole('navigation', { name: 'Pages' })
-  await expect(places.getByRole('link')).toHaveText(['Today', 'Tasks'])
+  await expect(places.getByRole('link')).toHaveText(['Today', 'Tasks', 'Timeline'])
   await expect(places.getByRole('link', { name: 'Today' })).toHaveAttribute('aria-current', 'page')
 
-  // The tools keep the names they had as words.
+  // The tools keep the names they had as words, and stand on one row.
   const tools = [
     page.getByRole('button', { name: 'Later', exact: true }),
     page.getByRole('button', { name: /^Room/ }),
     page.getByRole('link', { name: 'Guide', exact: true }),
     page.getByRole('button', { name: 'Settings', exact: true }),
   ]
-  const top = (await places.boundingBox())!
-  for (const tool of tools) {
-    const box = (await tool.boundingBox())!
-    // One row: every tool sits level with the places.
-    expect(Math.abs(box.y + box.height / 2 - (top.y + top.height / 2))).toBeLessThan(8)
-  }
+  const boxes = await Promise.all(tools.map(async (tool) => (await tool.boundingBox())!))
+  const middle = (box: { y: number; height: number }) => box.y + box.height / 2
+  for (const box of boxes) expect(Math.abs(middle(box) - middle(boxes[0]!))).toBeLessThan(8)
+
+  // The places are a strip of their own under them, the width of the screen.
+  const strip = (await places.boundingBox())!
+  expect(strip.y).toBeGreaterThan(boxes[0]!.y + boxes[0]!.height - 2)
+  expect(strip.width).toBeGreaterThan(390 - 2 * 16 - 4)
+
+  // On a wider screen it is all one row again.
+  await page.setViewportSize({ width: 1024, height: 768 })
+  const wide = (await places.boundingBox())!
+  const settings = (await tools[3]!.boundingBox())!
+  expect(Math.abs(middle(wide) - middle(settings))).toBeLessThan(8)
 
   await places.getByRole('link', { name: 'Tasks' }).click()
   await expect(places.getByRole('link', { name: 'Tasks' })).toHaveAttribute('aria-current', 'page')

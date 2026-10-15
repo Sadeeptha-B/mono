@@ -24,6 +24,11 @@
  *   an edit can abort the write carrying it — and the reloaded page is then
  *   right to show what the disk had. A spec that reloads to prove an edit was
  *   kept polls `storedRecord` for it first, never a delay.
+ * - **A control shown on hover or focus is not at rest because nothing was
+ *   meant to point at it.** The press that last acted on a row leaves the
+ *   pointer over it and often the focus in it, so its actions are showing,
+ *   and an opacity of 0 read then is the first frame of their transition in.
+ *   Call `atRest` before asserting one hidden.
  * - **Locators are substring and case-insensitive by default.** `getByLabel('At')`
  *   matches "Wh*at*", a `5m` button matches "1*5m*", `2 PM` matches "1*2 PM*",
  *   and `Hours` matches "Change today's *hours*". Use `{ exact: true }`
@@ -92,6 +97,16 @@ export const carousel = (page: Page) => page.getByRole('navigation', { name: 'St
  */
 export async function goToStage(page: Page, name: string) {
   await carousel(page).getByRole('button', { name, exact: true }).click()
+}
+
+/**
+ * Today's list on the tasks page, behind the sun in its corner: opened if it
+ * is not, and the panel returned. The page draws it nowhere else.
+ */
+export async function todayOnTasksPage(page: Page) {
+  const button = page.getByRole('main').getByRole('button', { name: 'Today', exact: true })
+  if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click()
+  return page.getByRole('main').getByRole('dialog', { name: 'Today' })
 }
 
 /** Today's list on the third opening question: the tasks chosen, under their intentions. */
@@ -357,4 +372,17 @@ export function storedLater(page: Page): Promise<StoredLater[]> {
         }
       }),
   )
+}
+
+/**
+ * Takes the pointer and the keyboard focus off everything, so a control that
+ * shows on hover or focus (`revealOnHover`) can be asserted hidden and mean
+ * it. The page's top-left corner is the header's mark, in no row.
+ */
+export async function atRest(page: Page) {
+  await page.mouse.move(0, 0)
+  await page.evaluate(() => {
+    const focused = document.activeElement
+    if (focused instanceof HTMLElement) focused.blur()
+  })
 }

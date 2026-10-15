@@ -12,7 +12,7 @@
  * the second should not cost a second trip to the header; Escape, or leaving
  * it by pointer or keyboard, puts it away (`useHeaderPopover`). What it has
  * kept is answered with how many are waiting and where, rather than a list:
- * dealing with them is the tasks page's business, away from whatever this
+ * dealing with them is the timeline page's business, away from whatever this
  * interrupted.
  *
  * No count on the icon itself. A number in the header that grows as things
@@ -27,7 +27,7 @@ import { LaterIcon } from './icons'
 import { keepForLater, useWaitingCount } from './Later'
 import { LineField, headerIconClass } from './ui'
 import { LATER_MAX_LENGTH } from '@/domain/later'
-import { TASKS_HASH } from '@/hooks/useRoute'
+import { TIMELINE_HASH } from '@/hooks/useRoute'
 
 export function LaterMenu({ idPrefix }: { idPrefix: string }) {
   const { open, setOpen, close, wrap, button, panel, panelStyle } = useHeaderPopover(352)
@@ -91,11 +91,11 @@ export function LaterMenu({ idPrefix }: { idPrefix: string }) {
               <>
                 Kept ·{' '}
                 <a
-                  href={TASKS_HASH}
+                  href={TIMELINE_HASH}
                   onClick={() => setOpen(false)}
                   className="text-body underline-offset-4 hover:text-bright hover:underline"
                 >
-                  {waiting} waiting on Tasks
+                  {waiting} waiting on Timeline
                 </a>
               </>
             )}
