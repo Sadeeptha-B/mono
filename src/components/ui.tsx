@@ -24,6 +24,7 @@ import {
 } from 'react'
 
 import { coerceBoundedMinutes } from './minutes'
+import { useLeave } from './useLeave'
 
 export const fieldClass =
   'min-w-0 w-full max-w-full rounded-lg border border-muted/70 bg-ink px-3.5 py-2.5 text-bright placeholder:text-muted/90 focus:border-deep focus:outline-none'
@@ -130,6 +131,7 @@ export function IconButton({
   onClick,
   danger = false,
   disabled = false,
+  expanded,
   focusKey,
   className = '',
   ref,
@@ -139,6 +141,8 @@ export function IconButton({
   hint: string
   onClick: () => void
   danger?: boolean
+  /** Whether what it opens is showing, when it opens something in place. */
+  expanded?: boolean
   /**
    * Can do nothing now — a move past the end of a list. Said and drawn, but
    * still focusable, so the focus is not thrown out of a row of controls by
@@ -159,6 +163,7 @@ export function IconButton({
       onClick={disabled ? undefined : onClick}
       aria-label={label}
       aria-disabled={disabled || undefined}
+      {...(expanded !== undefined ? { 'aria-expanded': expanded } : {})}
       title={hint}
       className={`inline-flex size-6 shrink-0 items-center justify-center rounded-md text-sm leading-none transition ${
         disabled
@@ -297,15 +302,18 @@ function TemporalInput({
  * it is being written rather than only on a button that has gone; the × level
  * with it cancels, and so does the caret, folding it again. Either throws away
  * what was typed, as Escape does in the field — that is what cancelling means.
- * Whoever uses it owns the field and its `Done`, which keeps what was typed
- * and folds; Enter keeps it and leaves the field open for the next one,
- * because things are written down in runs.
+ * Whoever uses it owns the field and how what was typed is kept — a `Done`,
+ * or leaving the field (`AddForm`); Enter keeps it and leaves the field open
+ * for the next one, because things are written down in runs.
  *
  * Focus is its business, not theirs. When it folds with focus inside it —
  * `Done`, the ×, Escape — the focused control goes with the fold, and focus
  * comes back to the heading rather than being dropped on the page. When focus
  * has already gone somewhere else — another field opened, the stage moved to
- * another question — it is left where it went.
+ * another question — it is left where it went. A host whose field folds
+ * because it was left says so (`refocus`): a click on the page's background
+ * leaves the focus on the page too, and pulling it back to the heading would
+ * scroll there, and turn the next Space into a press that opens it again.
  *
  * `canFold` false draws the heading without a caret or a ×: the commitments
  * question with nothing fixed yet, where the form is the whole question and
@@ -319,6 +327,7 @@ export function AddFold({
   onCancel,
   cancelLabel,
   canFold = true,
+  refocus,
   className = '',
   children,
 }: {
@@ -331,22 +340,17 @@ export function AddFold({
   onCancel: () => void
   cancelLabel: string
   canFold?: boolean
+  /**
+   * Asked as it folds with the focus lost to the page: whether to hand it to
+   * the heading. False when the fold was the field being left.
+   */
+  refocus?: () => boolean
   /** The heading's own type: size and colour differ by where it sits. */
   className?: string
   children: ReactNode
 }) {
   const toggle = useRef<HTMLButtonElement>(null)
-  const wasOpen = useRef(open)
-  // After the fold has rendered, so the heading it hands focus to is the one
-  // now on screen. Focus lost with the fold rests on the document's body.
-  useEffect(() => {
-    const folded = wasOpen.current && !open
-    wasOpen.current = open
-    const doc = toggle.current?.ownerDocument
-    if (folded && doc && (doc.activeElement === null || doc.activeElement === doc.body)) {
-      toggle.current?.focus()
-    }
-  }, [open])
+  useFocusOnFold(open, toggle, refocus)
 
   return (
     <div className="min-w-0">
@@ -383,6 +387,31 @@ export function AddFold({
       {open && <div className="mt-2">{children}</div>}
     </div>
   )
+}
+
+/**
+ * Hands the focus to `control` when a field folds away with the focus inside
+ * it, rather than dropping it on the page — `AddFold`'s rule, and the tasks
+ * page's add cards' (`AddForm`). Run after the fold has rendered, so the
+ * control it hands focus to is the one now on screen; focus lost with the fold
+ * rests on the document's body. Left alone when the focus has gone somewhere
+ * already, or when `refocus` says the fold was the field being left.
+ */
+export function useFocusOnFold(
+  open: boolean,
+  control: RefObject<HTMLElement | null>,
+  refocus?: () => boolean,
+) {
+  const wasOpen = useRef(open)
+  useEffect(() => {
+    const folded = wasOpen.current && !open
+    wasOpen.current = open
+    const doc = control.current?.ownerDocument
+    const lost = doc && (doc.activeElement === null || doc.activeElement === doc.body)
+    if (folded && lost && (refocus?.() ?? true)) control.current?.focus()
+    // Read as it folds, not watched: a host's answer changes with the fold.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open])
 }
 
 /** A chevron pointing at what it would show: right while folded, down while open. */
@@ -687,6 +716,14 @@ export function LineField({
  * `Save` keeps it, and neither keeps an empty one; Escape does not. Opened by
  * a press on that row's ✎, so it takes focus as it mounts. Never a form, so
  * it can sit inside one.
+ *
+ * `saveOnLeave` is the tasks page's board: there, leaving the field keeps
+ * what was typed (`useLeave`), or puts the old title back when nothing is or
+ * nothing changed, and there is no `Save` to press. Everywhere else keeps
+ * its `Save`. Today's list and a block's logs hold an edit across a question
+ * changing, a block ending or a card being drawn again, and mean it to wait
+ * open while the user does something else on the stage or the calendar; and
+ * Later, a list of thoughts half-caught, was kept to its buttons by choice.
  */
 export function RenameField({
   label,
@@ -694,6 +731,7 @@ export function RenameField({
   onChange,
   onSave,
   onCancel,
+  saveOnLeave = false,
   textClass = 'text-sm',
   maxLength = 120,
 }: {
@@ -702,12 +740,21 @@ export function RenameField({
   onChange: (value: string) => void
   onSave: () => void
   onCancel: () => void
+  /** Keep what is typed when the field is left, with no `Save`. */
+  saveOnLeave?: boolean
   textClass?: 'text-xs' | 'text-sm' | 'text-[15px]'
   /** A title is short; a block's log is a sentence or two. */
   maxLength?: number
 }) {
+  // A field left as it was opened writes nothing: walking away from a rename
+  // is not making one, and a write of the old title would stand over a rename
+  // another tab made meanwhile.
+  const [opened] = useState(value)
+  const leave = useLeave(() =>
+    value.trim() === '' || value.trim() === opened.trim() ? onCancel() : onSave(),
+  )
   return (
-    <div className="flex min-w-0 flex-1 items-center gap-2">
+    <div {...(saveOnLeave ? leave : {})} className="flex min-w-0 flex-1 items-center gap-2">
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -726,14 +773,16 @@ export function RenameField({
         maxLength={maxLength}
         className={`${fieldClass} py-1 ${textClass}`}
       />
-      <GhostButton
-        type="button"
-        disabled={value.trim() === ''}
-        onClick={onSave}
-        className="shrink-0 px-3 py-1 text-xs"
-      >
-        Save
-      </GhostButton>
+      {!saveOnLeave && (
+        <GhostButton
+          type="button"
+          disabled={value.trim() === ''}
+          onClick={onSave}
+          className="shrink-0 px-3 py-1 text-xs"
+        >
+          Save
+        </GhostButton>
+      )}
     </div>
   )
 }

@@ -112,6 +112,17 @@ The two-tab checks below assume it is there.
    while the tree scrolls under it, every row's `⋯` must be showing without a
    hover, and nothing in it — a long title or an open `⋯` included — may push
    the page sideways.
+10. On the tasks page, in Chrome, Firefox and Safari and on a real touch
+    device: type into a column's `Add task`, then press `Add task` in the
+    column below it. The line must be added, and the field you pressed must
+    open, although the new row pushed it down; on the phone, the same with the
+    keyboard up, whose closing moves the page too. Type into a field and tap
+    the page's background: it must be kept and fold, and the page must not
+    scroll back to it. Type into a field and switch to another app and back:
+    nothing may be added, and the field must still hold the line. Rename a task
+    and do the same three things. Then, in Safari, where a button does not take
+    the focus, type into an `Add task` and press its ×: what was typed must be
+    thrown away, not added.
 
 ## The pop-out window
 
@@ -158,7 +169,7 @@ The two-tab checks below assume it is there.
     window must not take the focus by itself before you click, and the tab's
     log list and counter must show both at once. Then do the same with
     `⤴ Later`: the window must say `1 for later`, the line must appear on the
-    tab's Tasks page, and at the opening size the openers, the counts, the urges
+    tab's Timeline page, and at the opening size the openers, the counts, the urges
     and the sound must still share one row.
     Point at the purpose in the real window: the block's tasks must open at
     once in Mono's card, inside the window at its opening size and when made

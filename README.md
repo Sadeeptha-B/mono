@@ -58,7 +58,7 @@ src/domain/      pure: types, event log, planner, state machine, time, vitals
 src/store/       the only place that reads the clock, makes ids, persists
 src/hooks/       the ticker, reconciliation, notifications
 src/ambient/     rooms, procedural sound, theme, controls, shared scene geometry
-src/components/  the two panels, the stage prompts, the guide, the tasks and routine pages, the companion
+src/components/  the two panels, the stage prompts, the guide, the tasks, timeline and routine pages, the companion
 src/pip/         the always-on-top mini window
 src/contract/    the one type the browser extension shares with the app
 src/blocking/    publishing what the session is doing, for the extension
@@ -117,21 +117,26 @@ and `GuidePage` is that one decision.
 
 The **guide** is the exception that proves the rule: it is read rather than
 answered, so it is a page at `#/guide` rather than a dialog. `App` swaps the
-view without unmounting anything, so a block keeps running while you read it,
-and the guide's header shows the timer while it does. Its examples are built
-from the current settings, so changing a duration changes the explanation too.
+view while the session and its timers stay mounted, so a block keeps running
+while you read it, and the guide's header shows the timer while it does. Its
+examples are built from the current settings, so changing a duration changes
+the explanation too.
 A decision like "do you need a break?" is only answerable while you can see the
 rest of the day, so it never gets covered up.
 
 The **tasks page** at `#/tasks` is a page for the guide's reason: you go there
-and stay a while. It holds the backlog — areas of life, each with an inbox of
-the tasks that sit directly under it, then its epics, each epic's outcomes, and
-tasks at any of those levels — today's tasks, grouped under the intentions
-some of them are given, and **Later**, what was put down to come back to,
-waiting to be carried into a column as a task, let go or deleted. Each area is a band split by a rule: epics and the inbox
+and stay a while. It is the backlog as a board — areas of life, each with an
+inbox of the tasks that sit directly under it, then its epics, each epic's
+outcomes, and tasks at any of those levels. Today's tasks, grouped under the
+intentions some of them are given, open from a sun in the page's corner.
+Each area is a band split by a rule: epics and the inbox
 down the left, and level with each, its outcomes as columns of tasks. Epics and
 outcomes are finished by hand; finishing or archiving one hides everything
 inside without changing it, and deleting one, or an area, deletes its subtree.
+The board shows only work — open tasks, and today's finished ones crossed out
+beside them — and an epic or outcome folds down to its card; everything done,
+dropped or archived is the backlog's other view, **Put away**, from a switch
+beside the page's title.
 Areas, epics, outcomes and tasks are put in order by dragging, there or in All
 Tasks, or a step at a time from the keyboard, and today's list follows that
 order.
@@ -146,9 +151,14 @@ in, and can change its own without touching the routine. It is reached from
 Settings and from the day's questions about hours and commitments rather than
 from the header.
 
-The header itself is places on the left — **Today** and **Tasks**, the two views
-a day moves between — and tools as icons on the right: Later, the room's
-swatch, the pop-out, the guide and Settings, each named on hover.
+The **timeline page** at `#/timeline` is where epics will be laid out over
+time. For now it holds **Later**, what was put down to come back to, waiting to
+be filed into an area, epic or outcome as a task, let go or deleted.
+
+The header itself is places on the left — **Today**, **Tasks** and
+**Timeline** — and tools as icons on the right: Later, the room's swatch, the
+pop-out, the guide and Settings, each named on hover. On a phone the places
+take a row of their own under the tools.
 
 Session state is a fold over an append-only event log
 ([src/domain/events.ts](src/domain/events.ts)). The log is persisted and the
@@ -230,10 +240,10 @@ shaped around:
   in Mono reads it.
 - **A tangent is put down, not filed.** `Later` in the header, or `⤴ Later`
   beside `✎ Log` while a block runs, keeps a line that is about no block: an
-  idea, a question, something to look into. It waits on the tasks page, with
-  what the block was for beside it if it came from one, and is never drawn on
-  the calendar. Filing it — carrying it into an area, epic or outcome — makes
-  it a task there.
+  idea, a question, something to look into. It waits on the timeline page,
+  with what the block was for beside it if it came from one, and is never drawn
+  on the calendar. Filing it into an area, epic or outcome makes it a task
+  there.
 - **Recurring commitments come round by themselves.** A series written on the
   routine page appears among the commitments of every day it falls on.
   Editing or removing it on the day changes that day only; changing the series

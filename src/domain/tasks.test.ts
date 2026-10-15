@@ -18,6 +18,8 @@ import {
   inboxOf,
   isGone,
   isInActiveTree,
+  isOpenContainer,
+  isPutAway,
   isVersion,
   liveDescendantsOf,
   newArea,
@@ -32,6 +34,7 @@ import {
   pathOf,
   placeAmong,
   purposeParts,
+  putAwayIn,
   tasksOfOutcome,
   PURPOSE_MAX_LENGTH,
   reopen,
@@ -39,6 +42,7 @@ import {
   stepTarget,
   taskTree,
   taskTreeWithDone,
+  tasksDoneOn,
   unarchive,
   type Item,
   type TaskTreeNode,
@@ -687,6 +691,65 @@ describe('open tasks under a parent', () => {
       item('shipped', 'task', 'auth', { status: 'done', doneAt: AT }),
     ]
     expect(openTasksUnder('auth', items).map((i) => i.id)).toEqual(['form'])
+  })
+})
+
+describe('what the tasks page shows as finished', () => {
+  const today = new Date(2026, 9, 6, 10).getTime()
+  const yesterday = new Date(2026, 9, 5, 16).getTime()
+
+  it("draws a column's tasks done on the day asked about, in sibling order, and nothing else", () => {
+    const items = [
+      item('pages', 'outcome', 'auth'),
+      item('form', 'task', 'pages', { order: 0 }),
+      item('cookie', 'task', 'pages', { order: 1, status: 'done', doneAt: today }),
+      item('remember', 'task', 'pages', { order: 2, status: 'done', doneAt: today }),
+      item('stale', 'task', 'pages', { order: 3, status: 'done', doneAt: yesterday }),
+      item('let go', 'task', 'pages', { order: 4, status: 'dropped' }),
+      item('shelved', 'task', 'pages', { order: 5, status: 'done', doneAt: today, archivedAt: today }),
+      item('gone', 'task', 'pages', { order: 6, status: 'done', doneAt: today, deletedAt: today }),
+    ]
+    expect(tasksDoneOn('pages', items, dayKey(today)).map((i) => i.id)).toEqual([
+      'cookie',
+      'remember',
+    ])
+  })
+
+  it('tells places being worked from places put away, and work from what is put away', () => {
+    expect(isOpenContainer(item('auth', 'epic', 'work'))).toBe(true)
+    expect(isOpenContainer(item('auth', 'epic', 'work', { status: 'done' }))).toBe(false)
+    expect(isOpenContainer(item('auth', 'epic', 'work', { archivedAt: AT }))).toBe(false)
+    expect(isOpenContainer(item('form', 'task', 'work'))).toBe(false)
+    expect(isPutAway(item('form', 'task', 'work'))).toBe(false)
+    expect(isPutAway(item('form', 'task', 'work', { status: 'dropped' }))).toBe(true)
+    expect(isPutAway(item('form', 'task', 'work', { archivedAt: AT }))).toBe(true)
+  })
+
+  it("lists the top of each put-away subtree in an area, under the open places above it, newest first", () => {
+    const items = [
+      item('auth', 'epic', 'work', { title: 'Mono auth' }),
+      item('pages', 'outcome', 'auth', { title: 'Login pages' }),
+      item('form', 'task', 'pages'),
+      item('cookie', 'task', 'pages', { status: 'done', doneAt: 5_000, updatedAt: 5_000 }),
+      item('csrf', 'task', 'auth', { status: 'dropped', updatedAt: 4_000 }),
+      item('reset', 'outcome', 'auth', { status: 'done', doneAt: 3_000, updatedAt: 3_000 }),
+      // Inside a finished outcome: hidden by it, so not a line of its own.
+      item('inside', 'task', 'reset', { status: 'done', doneAt: 6_000, updatedAt: 6_000 }),
+      item('billing', 'epic', 'work', { archivedAt: 7_000, updatedAt: 7_000 }),
+      item('invoice', 'task', 'billing', { status: 'dropped', updatedAt: 8_000 }),
+      // Finished, then archived: put away when it was archived.
+      item('call', 'task', 'work', { status: 'done', doneAt: 1_000, archivedAt: 2_000, updatedAt: 2_000 }),
+      item('gone', 'task', 'work', { status: 'done', doneAt: 9_000, deletedAt: 9_000, updatedAt: 9_000 }),
+      item('gate', 'task', 'personal', { status: 'done', doneAt: 9_500, updatedAt: 9_500 }),
+    ]
+    expect(putAwayIn('work', items).map(({ item, path, at }) => [item.id, path, at])).toEqual([
+      ['billing', [], 7_000],
+      ['cookie', ['Mono auth', 'Login pages'], 5_000],
+      ['csrf', ['Mono auth'], 4_000],
+      ['reset', ['Mono auth'], 3_000],
+      ['call', [], 2_000],
+    ])
+    expect(putAwayIn('personal', items).map((e) => e.item.id)).toEqual(['gate'])
   })
 })
 

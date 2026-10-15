@@ -17,6 +17,7 @@ import {
   storedRecord,
   todayBrowser,
   todayList,
+  todayOnTasksPage,
 } from './support/mono'
 
 type Page = Parameters<typeof stage>[0]
@@ -142,7 +143,7 @@ test("the purpose heads the prompt, then what is ticked for the block, with All 
       .getByRole('button', { name: 'Today', exact: true }),
   ).toHaveAttribute('aria-pressed', 'true')
   await page.getByRole('link', { name: 'Tasks', exact: true }).click()
-  const today = page.getByRole('main').getByRole('region', { name: 'Today', exact: true })
+  const today = await todayOnTasksPage(page)
   await expect(today.getByRole('region', { name: 'Intention: Mono auth' })).toContainText(
     'Login form',
   )
@@ -654,8 +655,9 @@ test('a rename in the backlog closes when its task goes, and does not come back 
 
   // The user moves on to the search; the epic is reopened over there.
   await find.fill('Login')
-  await other.getByRole('main').getByText('Done, dropped and archived (1)').click()
+  await other.getByRole('main').getByRole('button', { name: /^Put away/ }).click()
   await other.getByRole('main').getByRole('button', { name: 'Reopen Mono auth' }).click()
+  await other.getByRole('main').getByRole('button', { name: 'Open', exact: true }).click()
   await expect(panel.getByRole('checkbox', { name: 'Login form' })).toBeVisible()
   await expect(editor).toHaveCount(0)
   await expect(find).toBeFocused()

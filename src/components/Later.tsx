@@ -1,14 +1,14 @@
 /**
  * Putting something down for later, from wherever Mono is: the header's
  * `Later` on every page, `⤴ Later` beside `✎ Log` while a block runs, on the
- * stage and in the mini window, and `Add to Later` on the tasks page. What is
- * put down is dealt with on the tasks page (`LaterSection`): the moment a
- * tangent arrives is the moment to be rid of it, not to file it.
+ * stage and in the mini window, and `Add to Later` on the timeline page. What
+ * is put down is dealt with on the timeline page (`LaterSection`): the moment
+ * a tangent arrives is the moment to be rid of it, not to file it.
  *
  * Every one of those goes through `keepForLater`, never to the store's
  * `addLater` directly. Where a line was written is the same fact wherever it
- * was typed, and a field that called the store itself — the tasks page's, at
- * first — kept lines written during a block without the block.
+ * was typed, and a field that called the store itself — the tasks page's, when
+ * Later lived there — kept lines written during a block without the block.
  *
  * The task store knows nothing about the day, so it is told here where a line
  * came from: the running block and what it was for, by the same test that
@@ -51,5 +51,5 @@ export function useKeptInBlock(): number {
   return waitingLater(later).filter((l) => l.from?.blockId === blockId).length
 }
 
-/** How many are waiting on the tasks page. */
+/** How many are waiting on the timeline page. */
 export const useWaitingCount = (): number => waitingLater(useTasks((s) => s.later)).length

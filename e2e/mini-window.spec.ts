@@ -569,7 +569,7 @@ test('a line put down for later in the pop-out waits on the tasks page in the ta
   const urge = await mini.getByRole('button', { name: 'Count an urge' }).boundingBox()
   expect(urge!.x + urge!.width).toBeLessThanOrEqual(window!.x + window!.width)
 
-  await page.getByRole('link', { name: 'Tasks', exact: true }).click()
+  await page.getByRole('link', { name: 'Timeline', exact: true }).click()
   await expect(
     page.getByRole('main').getByRole('list', { name: 'Waiting for later' }),
   ).toContainText('Ask Priya about the index')

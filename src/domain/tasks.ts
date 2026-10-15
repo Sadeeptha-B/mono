@@ -558,20 +558,10 @@ export function taskTreeWithDone(
 ): readonly TaskTreeNode[] {
   const tree = taskTree(items, areas)
   if (day === null) return tree
-  const { liveChildren } = indexItems(items)
-  const doneOn = (parentId: string) =>
-    (liveChildren.get(parentId) ?? []).filter(
-      (i) =>
-        i.kind === 'task' &&
-        i.status === 'done' &&
-        i.archivedAt === undefined &&
-        i.doneAt !== undefined &&
-        dayKey(i.doneAt) === day,
-    )
   // A node with nothing done anywhere beneath it is returned as it was.
   const withDone = (node: TaskTreeNode): TaskTreeNode => {
     const children = node.children.map(withDone)
-    const done = doneOn(node.id)
+    const done = tasksDoneOn(node.id, items, day)
     const same = done.length === 0 && children.every((child, i) => child === node.children[i])
     return same ? node : { ...node, children, tasks: [...node.tasks, ...done] }
   }
@@ -672,6 +662,74 @@ export function openTasksBeneath(
 export function tasksIn(node: TaskTreeNode): string[] {
   return [...node.tasks.map((t) => t.id), ...node.children.flatMap(tasksIn)]
 }
+
+/**
+ * The tasks directly under a parent that were finished on one day and not
+ * archived since, in sibling order: what the picker puts back into its tree
+ * (`taskTreeWithDone`), and what the tasks page's columns draw crossed out
+ * after their open tasks. Only done, not dropped — a drop is a decision
+ * about the task rather than progress on the day.
+ */
+export const tasksDoneOn = (parentId: string, items: readonly Item[], day: DayKey): Item[] =>
+  childrenOf(parentId, items).filter(
+    (i) =>
+      i.kind === 'task' &&
+      i.status === 'done' &&
+      i.archivedAt === undefined &&
+      i.doneAt !== undefined &&
+      dayKey(i.doneAt) === day,
+  )
+
+/** An epic or outcome still being worked: open and not archived. */
+export const isOpenContainer = (item: Item): boolean =>
+  item.kind !== 'task' && item.status === 'open' && item.archivedAt === undefined
+
+/**
+ * Whether an item is put away rather than in the working list it sits in: a
+ * task done, dropped or archived; an epic or outcome finished, dropped or
+ * archived. An archived open task can arrive in an import, and belongs here,
+ * where it can be restored, rather than among the work.
+ */
+export const isPutAway = (item: Item): boolean =>
+  item.status !== 'open' || item.archivedAt !== undefined
+
+/**
+ * One thing put away inside an area, as the tasks page lists it: the item,
+ * the open places between it and the area (`['Mono auth', 'Login pages']`;
+ * empty straight under the area), and when it was put away.
+ */
+export type PutAwayEntry = { item: Item; path: readonly string[]; at: Ms }
+
+/**
+ * Everything put away in the working part of one area, most recent first.
+ *
+ * Only the top of each put-away subtree: an item put away under an open
+ * place. What sits inside a finished or archived epic or outcome is hidden by
+ * it and comes back with it, so it is that place's to show, not a line of its
+ * own — the same rule that hides it from the board (`isInActiveTree`).
+ *
+ * When is the archive stamp, else the finish, else the last write: a drop
+ * keeps no time of its own, and the last write is the drop for anything not
+ * touched since.
+ */
+export function putAwayIn(areaId: string, items: readonly Item[]): PutAwayEntry[] {
+  const found: PutAwayEntry[] = []
+  const visit = (parentId: string, path: readonly string[]) => {
+    for (const child of childrenOf(parentId, items)) {
+      if (isPutAway(child)) {
+        found.push({ item: child, path, at: putAwayAt(child) })
+      } else if (child.kind !== 'task') {
+        visit(child.id, [...path, child.title])
+      }
+    }
+  }
+  visit(areaId, [])
+  // Stable, so things put away at the same moment keep their sibling order.
+  return found.sort((a, b) => b.at - a.at)
+}
+
+const putAwayAt = (item: Item): Ms =>
+  item.archivedAt ?? (item.status === 'done' ? item.doneAt : undefined) ?? item.updatedAt
 
 /** The open, unarchived epics or outcomes directly under a parent. */
 export const openContainers = (

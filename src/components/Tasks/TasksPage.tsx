@@ -5,15 +5,23 @@
  * somewhere you go and stay a while, and the stage is for one question at a
  * time. The day only ever sees today's tasks and the tasks a block is for;
  * filing, renaming and tidying the backlog happens here, away from the timer.
- * `App` swaps the view without unmounting anything, so a block keeps running
- * while you are here, and the header says what the timer would be saying.
+ * `App` swaps this page in for the day while its own hooks — the session, its
+ * timers and reconciliation — stay mounted, so a block keeps running while
+ * you are here, and the header says what the timer would be saying. The page
+ * itself is mounted afresh on each visit, and its own state goes when you
+ * leave: the view chosen, today's list open or not and its drafts. A board
+ * field being written is kept by the click that took you away, as any click
+ * elsewhere keeps it (`useLeave`); beyond that, only what is saved — the
+ * board's folds — or held above the routes outlasts a trip to the day.
  *
- * Three parts, in the order a morning uses them. **Today** is the tasks chosen
- * for the day, gathered under the intentions some of them are carried into —
- * the same list as on the opening question (`TodayList`), kept in the event
- * log like everything else about the day. **Later** is what was put down to
- * come back to, waiting to be carried into the board as a task, let go or
- * deleted (`LaterSection`). **Areas** are the backlog itself, one band
+ * The page is the board. Today's list — the tasks chosen for the day,
+ * gathered under the intentions some of them are carried into, the same list
+ * as on the opening question — waits behind a button in the corner
+ * (`TodayPopup`), and what was put down for later is on the timeline page,
+ * filed from there. Both were sections above the board, and pushed the areas
+ * down the page they are the subject of.
+ *
+ * **Areas** are the backlog itself, one band
  * each, drawn as a board rather than as a general-purpose tree, because three
  * levels is the whole depth the model allows. A rule splits every band in two.
  * Down the left is what the area is made of: its name, one card per epic, and
@@ -23,7 +31,18 @@
  * straight under the epic; beside the inbox, its tasks. The area's own actions
  * sit level with its name. Columns wrap rather than scroll, so a wide epic
  * grows downwards and the page never scrolls sideways; below `md` the two
- * halves of each row stack, the board indented under its card.
+ * halves of each row stack, the board indented under its card. The page is
+ * every view's width (`APP_WIDTH`) rather than wider, so moving to it moves
+ * nothing; its columns are narrow enough that a row holds four outcomes at
+ * that width. An outcome scrolled sideways out of sight is one nobody reads,
+ * and a drag between columns would hang on the browser scrolling a box inside
+ * a box sideways for it, which it does unreliably.
+ *
+ * The board is the work; everything put away is the backlog's other view
+ * (`PutAwayView`), behind a switch beside the page's title (`BacklogSwitch`). A
+ * column keeps only what was finished in it today, crossed out under its open
+ * tasks. And an epic or outcome folds down to its card by the caret on it,
+ * which the page remembers, so a long backlog can be read as its places.
  *
  * Epics and outcomes are finished by hand, archived, or deleted; areas, which
  * never finish, are archived or deleted. Finishing and archiving never touch
@@ -37,9 +56,7 @@
  * column, or, from the keyboard or a touch screen, picked up with the grip on
  * its row and put down with the `Move here` that every other column then
  * offers. Only open tasks are carried, and every column on the page takes one,
- * because every column is a place a task can live. Something waiting in Later
- * is carried by the same hand into any column, and becomes a task there in
- * the one write that takes it out of Later (`fileLater`). Today's list carries its
+ * because every column is a place a task can live. Today's list carries its
  * own tasks between intentions the same way, with its own targets but the
  * board's hand, so picking up on one puts down the other: a task on the
  * board is not dragged into Today, it is chosen with the sun on its row.
@@ -67,20 +84,24 @@
  *
  * Actions are icons (`IconButton`): today, rename, done, drop, archive,
  * reopen, restore, delete. An epic's or outcome's card carries a sun too,
- * which chooses everything open in it for today at once (`PlaceSun`). A column is narrow, and as words they took more of
- * a row than the title they acted on. Each says in its accessible name what it
+ * which chooses everything open in it for today at once (`PlaceSun`). A column
+ * is narrow, and as words they took more of a row than the title they acted
+ * on. Each says in its accessible name what it
  * acts on and shows its verb on hover. They show only on hover or with focus
  * in their row or card, and always on a touch screen (`revealOnHover`), as in
  * All Tasks: at rest the board reads as its titles. What says something rather
  * than offering it stays — the grip, the checkbox, and the sun of a task
  * chosen for today. The words left are answers to a question — a delete asking
- * about what is inside — and the fields' own `Done` and `Save`, which finish
- * what is being typed rather than act on a record.
+ * about what is inside — and the `Save` on a rename in today's list, which is
+ * shared with the stage. The board's add and rename fields have none: leaving
+ * one keeps what was typed in it
+ * (`useLeave`), and a task, outcome or epic is added as an empty card drawn
+ * where it will stand.
  */
 
-import { useCallback, useContext, useEffect, useId, useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 
-import { AppHeader } from '../AppHeader'
+import { APP_WIDTH, AppBar } from '../AppHeader'
 import { HeaderStatus } from '../HeaderStatus'
 import {
   Carry,
@@ -90,9 +111,6 @@ import {
   type CarryHand,
   type Slot,
 } from '../carry'
-import { TodayCarry, TodayList, useIntentionRename } from '../TodayList'
-import { RestoreIcon } from '../icons'
-import { IconButton, revealOnHover } from '../ui'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
 import { useSession } from '@/store/session'
 import { useTasks } from '@/store/tasks'
@@ -103,17 +121,21 @@ import {
   openContainers,
   openTasksBeneath,
   openTasksUnder,
+  putAwayIn,
   staysPut,
   taskTree,
   type Area,
   type Item,
 } from '@/domain/tasks'
-import { letGoLater, waitingLater, type Later } from '@/domain/later'
 import type { TimerMode } from '@/domain/time'
 import type { ActiveSegment, Ms } from '@/domain/types'
 import { AreaList } from './Board'
-import { LaterSection } from './LaterSection'
-import { AddFields, AddForm } from './addFields'
+import { PutAwayView, putAwayCount } from './PutAway'
+import { TodayPopup } from './TodayPopup'
+import { AddFields, AddForm, useAddFieldsValue } from './addFields'
+
+/** How wide the page is: every view's width (`APP_WIDTH`), so the board keeps the bar's edges. */
+const PAGE_WIDTH = APP_WIDTH
 
 export function TasksPage({
   now,
@@ -129,80 +151,43 @@ export function TasksPage({
   mini: MiniWindowControls
 }) {
   const phase = useSession((s) => s.phase)
-  const generation = useSession((s) => s.generation)
 
   const hydrated = useTasks((s) => s.hydrated)
   const replaced = useTasks((s) => s.replaced)
-  const [addField, setAddField] = useState<string | null>(null)
-  const [drafts, setDrafts] = useState<ReadonlyMap<string, string>>(() => new Map())
-  const draft = useCallback((key: string, update: (was: string | null) => string | null) => {
-    setDrafts((all) => {
-      const was = all.get(key) ?? null
-      const next = update(was)
-      if (next === was) return all
-      const changed = new Map(all)
-      if (next === null) changed.delete(key)
-      else changed.set(key, next)
-      return changed
-    })
-  }, [])
-  // Stable across the timer's once-a-second render, so no field re-runs its
-  // fold check for a tick.
-  const addFields = useMemo(
-    () => ({ current: addField, claim: setAddField, drafts, draft }),
-    [addField, drafts, draft],
-  )
+  const addFields = useAddFieldsValue()
   // Shared by today's carry and the backlog's, so only one holds anything at a time.
   const hand = useCarryHand()
 
   return (
     <div className="flex min-h-dvh flex-col bg-ink lg:h-dvh">
-      {/* The guide's header, for the guide's reasons: pinned on a wide screen,
+      {/* The bar every view shares (`AppBar`): pinned on a wide screen,
           sticky on a narrow one, and carrying the timer either way. */}
-      <header className="sticky top-0 z-20 shrink-0 border-b border-line bg-ink px-4 py-3 sm:px-6 lg:static">
-        <div className="mx-auto max-w-5xl">
-          {/* A page invites you to stay, so whatever the timer would be
-              saying stays in sight — including when it is waiting on you. */}
-          <AppHeader
-            current="tasks"
-            phase={phase}
-            mini={mini}
-            onOpenSettings={onOpenSettings}
-            status={<HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />}
-          />
-        </div>
-      </header>
+      <AppBar
+        current="tasks"
+        phase={phase}
+        mini={mini}
+        onOpenSettings={onOpenSettings}
+        status={<HeaderStatus active={active} now={now} phase={phase} timerMode={timerMode} />}
+      />
 
       <div className="mono-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {/* As wide as the header, not the guide's reading measure: a band
-            sets columns side by side, and the prose here is capped on its own. */}
-        <main className="mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10">
-          <h1 className="text-3xl font-light text-bright sm:text-4xl">Tasks</h1>
-          <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
-            Everything you mean to do, by area of life. A task sitting straight under an
-            area is that area's inbox — file it deeper later, or never. What you put down
-            for later waits above them until you decide what it is.
-          </p>
-
+            sets columns side by side, and the prose here is capped on its own.
+            Room at the foot for the corner's Today button, so the last of the
+            board can be scrolled out from under it. */}
+        <main className={`mx-auto ${PAGE_WIDTH} px-4 pt-8 pb-32 sm:px-6 sm:pt-10`}>
           {!hydrated ? (
-            <p className="mt-8 text-sm text-muted">Loading your tasks…</p>
+            <>
+              <h1 className="text-3xl font-light text-bright sm:text-4xl">Tasks</h1>
+              <p className="mt-8 text-sm text-muted">Loading your tasks…</p>
+            </>
           ) : (
             <AddFields.Provider value={addFields}>
-              {/* Its heading is drawn by the list, so `+ Intention` sits level
-                  with it. Keyed by the session's generation, as the stage is:
-                  what is being typed about today belongs to one particular
-                  day, and the midnight reset or an import must not carry it
-                  into the next, nor a task half carried between intentions.
-                  The backlog below is keyed by its own replacements instead
-                  (`Backlog`): it outlives the day, so a midnight reset keeps
-                  what is typed in it. */}
-              <section aria-label="Today" className="mt-8 border-t border-line pt-6">
-                <div className="max-w-3xl">
-                  <TodaySection key={generation} hand={hand} />
-                </div>
-              </section>
-
+              {/* Keyed by the backlog's own replacements (`Backlog`): it
+                  outlives the day, so a midnight reset keeps what is typed in
+                  it. Today's list is keyed by the day instead (`TodayPopup`). */}
               <Backlog key={replaced} hand={hand} />
+              <TodayPopup hand={hand} />
             </AddFields.Provider>
           )}
         </main>
@@ -212,8 +197,8 @@ export function TasksPage({
 }
 
 /**
- * Later and the areas, with the carry that moves tasks between columns and
- * files what waits in Later into them.
+ * The page's title and the board, with the carry that moves tasks between
+ * columns and puts the board in order.
  *
  * Keyed by the backlog's replacements (`replaced`), so an import — here, or
  * in another tab — starts it again. The drafts held in here name records by
@@ -233,23 +218,27 @@ function Backlog({ hand }: { hand: CarryHand }) {
   const today = useSession((s) => s.session.today)
   const allAreas = useTasks((s) => s.areas)
   const items = useTasks((s) => s.items)
+  const day = useSession((s) => s.dayKey)
   const addArea = useTasks((s) => s.addArea)
-  const unarchiveArea = useTasks((s) => s.unarchiveArea)
   const moveItem = useTasks((s) => s.moveItem)
   const placeItem = useTasks((s) => s.placeItem)
   const placeArea = useTasks((s) => s.placeArea)
-  const fileLater = useTasks((s) => s.fileLater)
-  const allLater = useTasks((s) => s.later)
 
-  const archived = allAreas.filter((a) => isLive(a) && a.archivedAt !== undefined)
+  const [view, setView] = useState<BacklogView>('open')
   // Per backlog snapshot, not per render: the header's timer re-renders this
   // page every second, and the backlog has not changed on most of those.
+  const archived = useMemo(
+    () => allAreas.filter((a) => isLive(a) && a.archivedAt !== undefined),
+    [allAreas],
+  )
   const areas = useMemo(() => activeAreas(allAreas), [allAreas])
+  // What each area has put away, counted on the switch even while the board is showing.
+  const byArea = useMemo(
+    () => areas.map((area) => ({ area, entries: putAwayIn(area.id, items) })),
+    [areas, items],
+  )
   const inPlay = useMemo(() => activeTasks(items, allAreas), [items, allAreas])
   const inPlayById = useMemo(() => new Map(inPlay.map((t) => [t.id, t])), [inPlay])
-  const waiting = useMemo(() => waitingLater(allLater), [allLater])
-  const letGo = useMemo(() => letGoLater(allLater), [allLater])
-  const waitingById = useMemo(() => new Map(waiting.map((l) => [l.id, l])), [waiting])
   // What an epic's or outcome's sun chooses: every open task in play beneath it.
   const beneath = useMemo(() => openTasksBeneath(taskTree(items, allAreas)), [items, allAreas])
   // The areas, epics and outcomes the board draws, which are carried only to
@@ -266,37 +255,31 @@ function Backlog({ hand }: { hand: CarryHand }) {
     return byId
   }, [areas, items])
 
-  // The board's carry: a task goes to any column but its own, and something
-  // waiting in Later goes to any column at all, becoming a task there — which
-  // is a new record, so it is the task's id the keyboard's focus follows.
+  // The board's carry: a task goes to any column but its own.
   const find = useCallback(
-    ({ id }: { id: string }): Carried | undefined =>
-      inPlayById.get(id) ?? waitingById.get(id) ?? drawnPlaces.get(id),
-    [inPlayById, waitingById, drawnPlaces],
+    ({ id }: { id: string }): Carried | undefined => inPlayById.get(id) ?? drawnPlaces.get(id),
+    [inPlayById, drawnPlaces],
   )
   const takes = useCallback(
     (carried: Carried, parentId: string) =>
-      isItem(carried) ? carried.kind === 'task' && carried.parentId !== parentId : !isArea(carried),
+      !isArea(carried) && carried.kind === 'task' && carried.parentId !== parentId,
     [],
   )
   const move = useCallback(
     (carried: Carried, parentId: string) => {
-      if (isItem(carried)) {
-        moveItem(carried.id, parentId)
-        return carried.id
-      }
-      return isArea(carried) ? undefined : (fileLater(carried.id, parentId) ?? undefined)
+      if (isArea(carried)) return
+      moveItem(carried.id, parentId)
+      return carried.id
     },
-    [moveItem, fileLater],
+    [moveItem],
   )
-  // Between two rows: a task lands there in any column, what waits in Later
-  // is filed there, and an epic, an outcome or an area only moves among its
-  // own siblings. A slot where it already stands takes nothing, so no line is
-  // drawn where letting go would change nothing.
+  // Between two rows: a task lands there in any column, and an epic, an
+  // outcome or an area only moves among its own siblings. A slot where it
+  // already stands takes nothing, so no line is drawn where letting go would
+  // change nothing.
   const fits = useCallback(
     (carried: Carried, { parent, kind, before }: Slot) => {
       if (isArea(carried)) return kind === 'area' && !staysPut(areas, carried.id, before)
-      if (!isItem(carried)) return kind === 'task'
       if (carried.kind !== kind) return false
       if (parent !== carried.parentId) return kind === 'task'
       const list =
@@ -310,97 +293,103 @@ function Backlog({ hand }: { hand: CarryHand }) {
   const place = useCallback(
     (carried: Carried, { parent, before }: Slot) => {
       if (isArea(carried)) return placeArea(carried.id, before)
-      if (!isItem(carried)) return fileLater(carried.id, parent, before) ?? undefined
       placeItem(carried.id, parent, before)
     },
-    [placeArea, placeItem, fileLater],
+    [placeArea, placeItem],
   )
   const carry = useCarryState({ find, takes, move, fits, place, hand })
 
   return (
     <Carry.Provider value={carry}>
-      {/* Inside the board's carry, since what waits here is carried
-          into the board to become a task. */}
-      <LaterSection waiting={waiting} letGo={letGo} />
-
-      <AreaList areas={areas} items={items} today={today} beneath={beneath} />
-
-      <div className="mt-6">
-        <AddForm
-          draftKey="area"
-          opener="Add area"
-          variant="prominent"
-          label="New area"
-          placeholder="Health, Home, Side project"
-          maxLength={60}
-          className="max-w-md"
-          onAdd={addArea}
+      {/* The title and the switch share a line, so nothing stands between the
+          page's name and the board it names. On a phone the switch wraps
+          under the title, still above the intro. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+        <h1 className="text-3xl font-light text-bright sm:text-4xl">Tasks</h1>
+        <BacklogSwitch
+          view={view}
+          putAway={putAwayCount(byArea, archived)}
+          onView={(next) => {
+            // Nothing on the other view takes what is in hand.
+            carry.putDown()
+            setView(next)
+          }}
         />
-
-        {archived.length > 0 && (
-          <details className="mt-4">
-            <summary className="cursor-pointer text-xs text-muted hover:text-body">
-              Archived ({archived.length})
-            </summary>
-            <ul className="mt-2 flex max-w-md flex-col gap-1.5">
-              {archived.map((area) => (
-                <li key={area.id} className="group/row flex items-center justify-between gap-3 text-sm">
-                  <span className="min-w-0 wrap-break-word text-muted">{area.name}</span>
-                  <IconButton
-                    onClick={() => unarchiveArea(area.id)}
-                    label={`Restore ${area.name}`}
-                    hint="Restore"
-                    className={revealOnHover}
-                  >
-                    <RestoreIcon />
-                  </IconButton>
-                </li>
-              ))}
-            </ul>
-          </details>
-        )}
       </div>
+      <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
+        Everything you mean to do, by area of life. A task sitting straight under an
+        area is that area's inbox — file it deeper later, or never. Today's tasks and
+        intentions open from the sun in the corner.
+      </p>
+
+      <section aria-label="Backlog">
+        {view === 'open' ? (
+          <>
+            <AreaList areas={areas} items={items} today={today} beneath={beneath} day={day} />
+            <div className="mt-6">
+              <AddForm
+                draftKey="area"
+                opener="Add area"
+                variant="area"
+                label="New area"
+                placeholder="Health, Home, Side project"
+                maxLength={60}
+                className="max-w-md"
+                onAdd={addArea}
+              />
+            </div>
+          </>
+        ) : (
+          <PutAwayView byArea={byArea} archivedAreas={archived} items={items} />
+        )}
+      </section>
       <CarryStatus />
     </Carry.Provider>
   )
 }
 
-/**
- * Today on this page: today's list with its intentions (`TodayList`). Tasks
- * are chosen with the sun on their rows below; carrying between intentions
- * has its own carry here, apart from the board's, sharing one hand with it.
- *
- * The intention field keeps the page's rule for add fields: opening it folds
- * any other that is empty, and opening another folds it while nothing has been
- * written in it.
- */
-function TodaySection({ hand }: { hand: CarryHand }) {
-  const [intention, setIntention] = useState<string | null>(null)
-  const [renaming, setRenaming] = useIntentionRename()
-  const formId = useId()
-  const { current, claim } = useContext(AddFields)
-  // Another field was opened: fold this one if nothing has been written in it.
-  useEffect(() => {
-    if (current !== null && current !== formId) setIntention((t) => (t === '' ? null : t))
-  }, [current, formId])
+/** The backlog's two views: the work on the board, or everything put away. */
+type BacklogView = 'open' | 'putAway'
 
+/**
+ * The switch between the board and what is put away, as a pair of pressed
+ * buttons beside the page's title — the calendar column's switch between the
+ * day and All Tasks (`ColumnSwitch`), in the page's own heading. The count
+ * says how much the other view holds without opening it.
+ *
+ * Held by `Backlog` rather than saved, so every visit to the page opens on
+ * the work, as a reload or an import does: the page is the board, and what is
+ * put away is looked up from it rather than somewhere the page is left. Turning
+ * it over puts down whatever the board's carry holds, since nothing on the
+ * other view would take it.
+ */
+function BacklogSwitch({
+  view,
+  putAway,
+  onView,
+}: {
+  view: BacklogView
+  putAway: number
+  onView: (view: BacklogView) => void
+}) {
+  const option = (value: BacklogView, name: string, count?: number) => (
+    <button
+      type="button"
+      onClick={() => onView(value)}
+      aria-pressed={view === value}
+      className={`rounded-md px-2 py-0.5 text-xs font-medium tracking-widest uppercase transition ${
+        view === value ? 'bg-surface-raised text-bright' : 'text-muted hover:text-bright'
+      }`}
+    >
+      {name}
+      {count !== undefined && count > 0 && <span className="ml-1.5 text-muted">{count}</span>}
+    </button>
+  )
   return (
-    <TodayCarry hand={hand}>
-      <TodayList
-        heading={
-          <h2 className="text-xs font-medium tracking-widest text-muted uppercase">Today</h2>
-        }
-        newIntention={intention}
-        onNewIntention={(next) => {
-          if (intention === null && next !== null) claim(formId)
-          if (next === null && current === formId) claim(null)
-          setIntention(next)
-        }}
-        renaming={renaming}
-        onRenaming={setRenaming}
-        empty="Nothing chosen for today yet. Choose a task with the sun on its row below."
-      />
-    </TodayCarry>
+    <div role="group" aria-label="Show in the backlog" className="-mx-2 flex items-center gap-1">
+      {option('open', 'Open')}
+      {option('putAway', 'Put away', putAway)}
+    </div>
   )
 }
 
@@ -410,9 +399,7 @@ function TodaySection({ hand }: { hand: CarryHand }) {
  */
 type CarriedArea = { id: string; title: string; area: Area }
 
-/** Everything the board carries: a task, a line from Later, or a place to reorder. */
-type Carried = Item | Later | CarriedArea
-
-const isItem = (carried: Carried): carried is Item => 'kind' in carried
+/** Everything the board carries: a task, or a place to reorder. */
+type Carried = Item | CarriedArea
 
 const isArea = (carried: Carried): carried is CarriedArea => 'area' in carried

@@ -27,7 +27,7 @@ import { createPortal } from 'react-dom'
 import { Clock } from '@/components/Clock'
 import { SettingsPanel } from '@/components/SettingsPanel'
 import { Companion } from '@/components/Companion/Companion'
-import { AppHeader } from '@/components/AppHeader'
+import { APP_WIDTH, AppBar } from '@/components/AppHeader'
 import { Stage } from '@/components/stage/Stage'
 import { StageCarousel } from '@/components/stage/StageCarousel'
 import {
@@ -85,7 +85,9 @@ import {
  * The tasks page is the second, deferred for the same reason and in the same
  * way: it is a route you navigate to, and nothing on the first paint renders
  * it. The task *store* is not deferred — the purpose prompt reads it — only the
- * page that edits it. The routine page is the third, for the same reason: the
+ * page that edits it. The timeline page follows it, deferred the same way:
+ * what it holds — Later — lives in the task store, and only the page that
+ * deals with it is fetched. The routine page is the next, for the same reason: the
  * usual hours and the series it edits live in the session log, which is never
  * deferred, and only the page that writes them is.
  *
@@ -207,6 +209,7 @@ export function App() {
     setTimerMode((mode) => (mode === 'remaining' ? 'elapsed' : 'remaining'))
   const guide = useDeferred(() => import('@/components/Guide/GuidePage'))
   const tasksPage = useDeferred(() => import('@/components/Tasks/TasksPage'))
+  const timelinePage = useDeferred(() => import('@/components/TimelinePage/TimelinePage'))
   const routinePage = useDeferred(() => import('@/components/Routine/RoutinePage'))
   // Where the user is in the day, held above both columns: see `workspace.ts`
   // for what it holds and every rule that lets some of it go.
@@ -640,6 +643,30 @@ export function App() {
     )
   }
 
+  if (route === 'timeline') {
+    return (
+      <>
+        {timelinePage.view ? (
+          <timelinePage.view.TimelinePage
+            now={now}
+            active={session.active}
+            timerMode={timerMode}
+            onOpenSettings={openSettings}
+            mini={mini}
+          />
+        ) : (
+          <div className="flex min-h-dvh items-center justify-center bg-ink p-4">
+            {timelinePage.failed && (
+              <PageDidNotLoad name="timeline page" onOpenSettings={openSettings} />
+            )}
+          </div>
+        )}
+        {settings}
+        {miniWindow}
+      </>
+    )
+  }
+
   if (route === 'tasks') {
     return (
       <>
@@ -665,7 +692,10 @@ export function App() {
   }
 
   return (
-    <div className="min-h-dvh bg-ink">
+    <div className="flex min-h-dvh flex-col bg-ink lg:h-dvh">
+      {/* The bar every view shares, above the two columns rather than inside
+          their measure, so it does not move when you go to another page. */}
+      <AppBar sticky={false} current="day" phase={phase} mini={mini} onOpenSettings={openSettings} />
       {/*
         Two layouts, one breakpoint. Wide enough for the two columns and the
         app owns the viewport: `lg:h-dvh` pins it, and each panel scrolls
@@ -677,10 +707,7 @@ export function App() {
         they hold and the document scrolls, which is the one scroll a phone
         does well.
       */}
-      <div className="mx-auto flex max-w-6xl flex-col p-4 sm:p-6 lg:h-dvh">
-        <header className="mb-5">
-          <AppHeader current="day" phase={phase} mini={mini} onOpenSettings={openSettings} />
-        </header>
+      <div className={`mx-auto flex w-full ${APP_WIDTH} flex-col p-4 sm:p-6 lg:min-h-0 lg:flex-1`}>
 
         {/* One hand for carrying tasks around both columns, so a task can be
             dragged from All Tasks onto one of today's intentions on the stage,

@@ -9,6 +9,7 @@ import {
   addOnTasksPage,
   addTaskIn,
   addTodayTask,
+  atRest,
   goToStage,
   openBlockBacklog,
   openMono,
@@ -120,7 +121,7 @@ test('All Tasks keeps the backlog: tasks are finished and reopened there', async
   // Done from its row: crossed out there and in today, and no longer a choice.
   // Its actions are behind a ⋯, as a place's are, shown on hover.
   const more = tree.getByRole('button', { name: 'More for task Reply to Priya', exact: true })
-  await page.mouse.move(0, 0)
+  await atRest(page)
   await expect(more).toHaveCSS('opacity', '0')
   await taskAction(tree, 'Reply to Priya', 'Mark task Reply to Priya done')
   await expect(tree.getByRole('checkbox', { name: 'Reply to Priya' })).toHaveCount(0)
@@ -267,7 +268,9 @@ test('areas, epics and outcomes are kept from All Tasks, from the popup of their
   const popup = (name: string) => tree.getByRole('group', { name: `Actions for ${name}` })
 
   // At rest a row's ⋯ is hidden; hovering the row shows it, and a press opens
-  // its popup, floating under it rather than pushing the rows below down.
+  // its popup, floating under it rather than pushing the rows below down. Not
+  // at rest until the caret just pressed on that row is let go of.
+  await atRest(page)
   await expect(more('SC Prefix')).toHaveCSS('opacity', '0')
   await tree.getByText('SC Prefix', { exact: true }).hover()
   await expect(more('SC Prefix')).toHaveCSS('opacity', '1')
@@ -881,6 +884,7 @@ test("a place's heading in today takes everything it heads there out of today", 
     name: 'Take everything in Login pages out of today',
     exact: true,
   })
+  await atRest(page)
   await expect(out).toHaveCSS('opacity', '0')
   await notGrouped.getByText('Login pages', { exact: true }).hover()
   await expect(out).toHaveCSS('opacity', '1')
@@ -911,10 +915,11 @@ test("a task's × in today's list shows on hover or focus, not at rest", async (
     exact: true,
   })
 
+  await atRest(page)
   await expect(remove).toHaveCSS('opacity', '0')
   await todayList(page).getByText('Reply to Priya', { exact: true }).hover()
   await expect(remove).toHaveCSS('opacity', '1')
-  await page.mouse.move(0, 0)
+  await atRest(page)
   await expect(remove).toHaveCSS('opacity', '0')
   await remove.focus()
   await expect(remove).toHaveCSS('opacity', '1')

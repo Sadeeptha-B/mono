@@ -172,6 +172,33 @@ test('the guide is a page of its own, and keeps a running block in sight', async
   await expect(stage(page).getByRole('button', { name: /Show time remaining$/ })).toHaveText('15:00')
 })
 
+test("a guide section jumped to on a phone comes to rest below the bar, timer and all", async ({
+  page,
+}) => {
+  // Regression: sections kept a fixed margin for a one-row bar after the
+  // phone's places took a row of their own, and during a block a section
+  // jumped to sat with its heading under the bar.
+  await page.setViewportSize({ width: 390, height: 844 })
+  await page.emulateMedia({ reducedMotion: 'reduce' })
+  await openMono(page)
+  await addStandup(page)
+  await startBlock(page, 'Write the planner tests')
+  await page.getByRole('link', { name: 'Guide', exact: true }).click()
+  await expect(page.getByTitle('Back to the timer')).toBeVisible()
+
+  const bar = page.getByRole('banner')
+  for (const title of ['Set up today', 'Find your next block']) {
+    await page.getByRole('button', { name: new RegExp(`${title}$`) }).click()
+    const heading = page.getByRole('heading', { name: title, level: 2 })
+    await expect
+      .poll(async () => {
+        const [under, over] = [(await heading.boundingBox())!, (await bar.boundingBox())!]
+        return under.y - (over.y + over.height)
+      })
+      .toBeGreaterThanOrEqual(0)
+  }
+})
+
 test('settings open from the guide, which quotes them', async ({ page }) => {
   // The guide explains each setting using its current value, so it is the one
   // page where you are most likely to want to change one. It used to be the one

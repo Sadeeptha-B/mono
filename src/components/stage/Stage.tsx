@@ -208,7 +208,7 @@ export function Stage(props: Props) {
               grid holds the controls, so ✎ Log and ⤴ Later under the tasks
               and the urges under the logs stand level however long either
               list is. What is put down for later is not listed here at all:
-              it is not about this block, and waits on the tasks page. Each
+              it is not about this block, and waits on the timeline page. Each
               cell is a box of its own even when empty, so a list with nothing
               in it yet cannot pull the controls up into its place. */}
           <div className="grid gap-x-8 sm:grid-cols-2">

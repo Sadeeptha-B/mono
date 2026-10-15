@@ -67,6 +67,13 @@ export const RestoreIcon = ({ className = '' }: { className?: string }) => (
     </Icon>
 )
 
+/** An arrow down into a tray: put somewhere for good — a Later filed as a task. */
+export const FileIcon = ({ className = '' }: { className?: string }) => (
+    <Icon className={className}>
+        <path d="M2.5 9.5v3a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-3M8 2.5v7M5.5 7L8 9.5 10.5 7" />
+    </Icon>
+)
+
 /** An arrow turning back on itself: open again. */
 export const ReopenIcon = ({ className = '' }: { className?: string }) => (
     <Icon className={className}>

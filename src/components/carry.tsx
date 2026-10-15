@@ -68,9 +68,7 @@ import {
 import { useRefocus } from './ui'
 
 /**
- * What can be carried: a task, or on the tasks page something put down for
- * later, which is carried into the backlog to become a task there, or a place
- * to put in order. The gesture needs only something to find again and a title
+ * What can be carried: a task, or a place to put in order. The gesture needs only something to find again and a title
  * to say it is moving; what putting it down writes is each surface's own
  * (`move`).
  *
