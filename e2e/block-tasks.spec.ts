@@ -328,6 +328,7 @@ test('a heading carried onto the block hands the focus back to the heading as it
 
   // Nothing is left waiting for the old heading: choosing its task again
   // draws it, and the focus stays on the box that chose it.
+  await blockBacklog(page).getByRole('button', { name: 'Epic: Mono auth', exact: true }).click()
   const csrf = blockBacklog(page).getByRole('checkbox', { name: 'CSRF token', exact: true })
   await csrf.check()
   await expect(
@@ -350,6 +351,7 @@ test("taking a running block's tasks out of today lets them go from it, but neve
   await addTodayTask(page, 'Ship the planner')
   await stage(page).getByRole('button', { name: 'Start the day' }).click()
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+  await blockBacklog(page).getByRole('button', { name: 'Epic: Mono auth', exact: true }).click()
   await blockBacklog(page).getByRole('checkbox', { name: 'All of Login pages', exact: true }).check()
   await blockBacklog(page).getByRole('checkbox', { name: 'Ship the planner', exact: true }).check()
   await startButton(page).click()
@@ -540,6 +542,9 @@ async function withAuthEpic(page: Page) {
   }
   await page.getByRole('link', { name: 'Back to today' }).click()
   await page.getByRole('button', { name: /Start (deep|short) block/ }).click()
+  const browser = await openBlockBacklog(page)
+  await browser.getByRole('button', { name: 'Epic: Mono auth', exact: true }).click()
+  await browser.getByRole('button', { name: 'Outcome: Login pages', exact: true }).click()
 }
 
 test('ticking all of an outcome names the purpose after it', async ({ page }) => {

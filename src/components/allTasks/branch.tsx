@@ -8,10 +8,10 @@
  * built again each time the tree draws, which is when every branch draws
  * anyway.
  *
- * A place's name is the button that folds it (`folds.ts`), rather than a caret
- * of its own beside the box: a caret there would push the place's box over its
- * tasks' boxes, so the two levels read as one list. Folded, the place draws
- * its row alone, with how many open tasks are in it.
+ * A place folds by its caret or name, with its tick between them. The tick
+ * sits twelve pixels into this level; the next level starts twenty-two
+ * pixels in, keeping outcomes and their tasks from reading as one list.
+ * Folded, the place draws its row alone and counts the open tasks inside.
  */
 
 import { createContext, useContext, type HTMLAttributes } from 'react'
@@ -137,15 +137,6 @@ export function PlaceBranch({
         } ${into ? 'bg-surface-raised' : ''}`}
       >
         {guides(depth)}
-        {tree.onToggleMany && node.kind !== 'area' && renamingPlace?.id !== node.id && (
-          <PlaceTick
-            name={node.name}
-            taskIds={tree.openUnder.get(node.id) ?? []}
-            selected={tree.selected}
-            onToggle={tree.onToggleMany}
-            keepsOne={tree.keepsOne}
-          />
-        )}
         {renamingPlace?.id === node.id ? (
           <span className="flex min-w-0 flex-1 py-1">
             <InlineField
@@ -165,6 +156,15 @@ export function PlaceBranch({
         ) : (
           <>
             <FoldName
+              tick={tree.onToggleMany && node.kind !== 'area' ? (
+                <PlaceTick
+                  name={node.name}
+                  taskIds={tree.openUnder.get(node.id) ?? []}
+                  selected={tree.selected}
+                  onToggle={tree.onToggleMany}
+                  keepsOne={tree.keepsOne}
+                />
+              ) : null}
               node={node}
               top={depth === 0}
               open={holds ? !folded : null}

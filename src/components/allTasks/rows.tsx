@@ -109,12 +109,15 @@ export function PlaceTick({
  */
 export function FoldName({
   node,
+  tick,
   top,
   open,
   onFold,
   inside,
 }: {
   node: TaskTreeNode
+  /** The selection box after the caret, kept outside the fold button. */
+  tick: ReactNode
   /** Whether it is an area, whose name is drawn brighter. */
   top: boolean
   /** Whether what is under it is drawn, or null when there is nothing under it. */
@@ -130,11 +133,11 @@ export function FoldName({
     </>
   )
   return (
-    <span className="min-w-0 flex-1 py-1.5 text-sm wrap-break-word">
+    <span className="relative min-w-0 flex-1 py-1.5 text-sm wrap-break-word">
       {open === null ? (
         <span className="flex items-baseline gap-1.5">
           <span aria-hidden="true" className="w-1.5 shrink-0" />
-          <span className="min-w-0">{name}</span>
+          <span className={`min-w-0 ${tick ? 'ml-[21px]' : ''}`}>{name}</span>
         </span>
       ) : (
         <button
@@ -147,9 +150,13 @@ export function FoldName({
           <span className="flex h-[1lh] shrink-0 items-center text-muted">
             <Caret open={open} />
           </span>
-          <span className="min-w-0">{name}</span>
+          <span className={`min-w-0 ${tick ? 'ml-[21px]' : ''}`}>{name}</span>
         </button>
       )}
+      {/* The fold button leaves a gap after its caret for this sibling box.
+          It stays outside the button for native checkbox semantics and its
+          own keyboard stop, while the full name still folds the place. */}
+      {tick && <span className="absolute top-0 left-3 flex">{tick}</span>}
       {open === false && inside > 0 && (
         <span className="ml-1.5 text-xs text-muted">{inside} open</span>
       )}

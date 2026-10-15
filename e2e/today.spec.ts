@@ -14,6 +14,7 @@ import {
   openMono,
   stage,
   startDay,
+  storedRecord,
   taskAction,
   todayBrowser,
   todayList,
@@ -60,6 +61,8 @@ test("today's tasks are chosen from the backlog in place, and put back the same 
 
   await goToStage(page, 'Today')
   const tree = todayBrowser(page)
+  await tree.getByRole('button', { name: 'Epic: Mono auth', exact: true }).click()
+  await tree.getByRole('button', { name: 'Outcome: Login pages', exact: true }).click()
   await expect(tree).toContainText('Outcome: Login pages')
   // A box for each task, and one for each epic and outcome, which takes all of it.
   await expect(tree.getByRole('checkbox')).toHaveCount(5)
@@ -259,6 +262,7 @@ test('areas, epics and outcomes are kept from All Tasks, from the popup of their
   await page.getByRole('link', { name: 'Back to today' }).click()
   await goToStage(page, 'Today')
   const tree = todayBrowser(page)
+  await tree.getByRole('button', { name: 'Epic: SC Prefix', exact: true }).click()
   const more = (name: string) => tree.getByRole('button', { name: `More for ${name}`, exact: true })
   const popup = (name: string) => tree.getByRole('group', { name: `Actions for ${name}` })
 
@@ -632,7 +636,7 @@ test("today's tasks survive a reload and are gone the next day", async ({ page }
 })
 
 /** Work › Mono auth › Login pages with two tasks, and one straight under the epic. */
-async function buildLoginPages(page: Page) {
+async function buildLoginPages(page: Page, expand = true) {
   await page.getByRole('link', { name: 'Tasks', exact: true }).click()
   await addOnTasksPage(page, 'epic', 'Work', 'Mono auth')
   await addOnTasksPage(page, 'outcome', 'Mono auth', 'Login pages')
@@ -641,6 +645,11 @@ async function buildLoginPages(page: Page) {
   await addOnTasksPage(page, 'task', 'Mono auth', 'CSRF token')
   await page.getByRole('link', { name: 'Back to today' }).click()
   await goToStage(page, 'Today')
+  if (expand) {
+    const tree = todayBrowser(page)
+    await tree.getByRole('button', { name: 'Epic: Mono auth', exact: true }).click()
+    await tree.getByRole('button', { name: 'Outcome: Login pages', exact: true }).click()
+  }
 }
 
 test('a whole outcome or epic is ticked for today at once', async ({ page }) => {
@@ -667,17 +676,16 @@ test('a whole outcome or epic is ticked for today at once', async ({ page }) => 
   await expect(todayList(page)).not.toContainText('CSRF token')
 })
 
-test('a place in All Tasks folds to its name, and stays folded from one question to the next', async ({
+test('All Tasks starts collapsed below areas and remembers folds across questions and reloads', async ({
   page,
 }) => {
   await openMono(page)
-  await buildLoginPages(page)
+  await buildLoginPages(page, false)
   const tree = todayBrowser(page)
   const name = (browser: Locator) => browser.getByRole('button', { name: 'Epic: Mono auth', exact: true })
   const search = tree.getByLabel('Find a task in Tasks for today')
 
-  await expect(name(tree)).toHaveAttribute('aria-expanded', 'true')
-  await name(tree).click()
+  await expect(tree.getByRole('button', { name: 'Area: Work', exact: true })).toHaveAttribute('aria-expanded', 'true')
   await expect(name(tree)).toHaveAttribute('aria-expanded', 'false')
   await expect(tree).not.toContainText('Outcome: Login pages')
   await expect(tree.getByText('CSRF token', { exact: true })).toHaveCount(0)
@@ -691,6 +699,24 @@ test('a place in All Tasks folds to its name, and stays folded from one question
   await expect(tree.getByText('Session cookie', { exact: true })).toBeVisible()
   await search.fill('')
   await expect(tree.getByText('Session cookie', { exact: true })).toHaveCount(0)
+
+  // Expanding the epic leaves the outcome collapsed. Open both, then prove
+  // explicit choices survive a reload as well as a change of question.
+  await name(tree).click()
+  const outcome = tree.getByRole('button', { name: 'Outcome: Login pages', exact: true })
+  await expect(outcome).toHaveAttribute('aria-expanded', 'false')
+  await outcome.click()
+  const outcomeBox = await tree.getByRole('checkbox', { name: 'All of Login pages', exact: true }).boundingBox()
+  const taskBox = await tree.getByRole('checkbox', { name: 'Login form', exact: true }).boundingBox()
+  const caret = await outcome.locator('svg').boundingBox()
+  expect(outcomeBox!.x).toBeGreaterThan(caret!.x + caret!.width)
+  expect(taskBox!.x - outcomeBox!.x).toBeGreaterThanOrEqual(8)
+  await expect.poll(() => storedRecord(page, 'CSRF token')).not.toBeNull()
+  await page.reload()
+  await goToStage(page, 'Today')
+  await expect(name(tree)).toHaveAttribute('aria-expanded', 'true')
+  await expect(outcome).toHaveAttribute('aria-expanded', 'true')
+  await name(tree).click()
 
   // The block's purpose prompt draws All Tasks afresh, folded as it was left.
   await start(page).click()
