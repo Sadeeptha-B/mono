@@ -12,10 +12,18 @@
  * on the stage or the calendar. They edit different things, and rows called
  * "Working hours 1 start" in both places are ambiguous to a screen reader and
  * to a test alike.
+ *
+ * Changing a stretch's start moves its end with it (`withStart` in
+ * `stretch.ts`). The length kept is the one the stretch had when its start
+ * field took the focus, not the one before each change: a native time field
+ * reports every segment as it is typed, so typing 9 PM over 9 AM passes
+ * through a start the cap at 23:59 would shorten, and measuring again from
+ * there would lose the hours the cap took. Held until the field lets go.
  */
 
 import { useRef } from 'react'
 
+import { lengthOf, nextAfter, withStart } from './stretch'
 import { GhostButton, labelClass, TimeInput } from './ui'
 import type { DefaultRegion } from '@/domain/types'
 
@@ -38,9 +46,21 @@ export function RegionShapeEditor({
   hideLegend = false,
 }: Props) {
   const keys = useRowKeys(regions.length)
+  // The length of the stretch whose start has the focus — see the note at the
+  // top. A ref, because it is read only by the handlers and never drawn.
+  const held = useRef<{ index: number; length: number | null } | null>(null)
 
   const update = (index: number, patch: Partial<DefaultRegion>) =>
     onChange(regions.map((r, i) => (i === index ? { ...r, ...patch } : r)))
+
+  const moveStart = (index: number, start: string) =>
+    onChange(
+      regions.map((r, i) =>
+        i === index
+          ? withStart(r, start, held.current?.index === index ? held.current.length : lengthOf(r))
+          : r,
+      ),
+    )
 
   const remove = (index: number) => {
     keys.removeAt(index)
@@ -95,7 +115,19 @@ export function RegionShapeEditor({
                 variant="compact"
                 aria-label={`${label} ${index + 1} start`}
                 value={region.start}
-                onChange={(e) => update(index, { start: e.target.value })}
+                // Taken once per visit, not on every `focusin` React reports
+                // as focus: a field that already has the focus can hear one
+                // again without a blur between, and measuring then would
+                // undo the hold.
+                onFocus={() => {
+                  if (held.current?.index !== index) {
+                    held.current = { index, length: lengthOf(region) }
+                  }
+                }}
+                onBlur={() => {
+                  held.current = null
+                }}
+                onChange={(e) => moveStart(index, e.target.value)}
               />
               {/* Twenty pixels the fields need in a dialog on a phone, spent on
                   a word that is decoration: both inputs carry their own label,
@@ -168,14 +200,3 @@ function useRowKeys(count: number) {
     },
   }
 }
-
-/** A two-hour stretch beginning where the previous one ended. */
-function nextAfter(end: string): DefaultRegion {
-  const [h = 0, m = 0] = end.split(':').map(Number)
-  const startMinutes = Math.min(h * 60 + m, 22 * 60)
-  const endMinutes = Math.min(startMinutes + 120, 23 * 60 + 59)
-  return { start: toHHMM(startMinutes), end: toHHMM(endMinutes) }
-}
-
-const toHHMM = (minutes: number): string =>
-  `${String(Math.floor(minutes / 60)).padStart(2, '0')}:${String(minutes % 60).padStart(2, '0')}`
