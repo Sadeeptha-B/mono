@@ -36,9 +36,10 @@
  *
  * A place's name folds it down to its own row, and opens it again, so a
  * crowded backlog can be read a part at a time; a folded place says how much
- * is open in it. The folds are the tab's (`folds.ts`), so they hold from one
- * question to the next. A search looks through them, since what it finds has
- * to be drawn to be chosen, and `+ Task` opens the place it writes into.
+ * is open in it. Areas start open; epics and outcomes start folded. Saved
+ * choices (`folds.ts`) hold across questions and reloads. A search looks
+ * through them, since what it finds has to be drawn to be chosen, and
+ * `+ Task` opens the place it writes into.
  *
  * A task found here can be put right without leaving: its `⋯` marks it done,
  * renames it in place or deletes it, as the tasks page's own row would, and
@@ -154,11 +155,9 @@ export const TaskBrowser = memo(function TaskBrowser({
   const needle = query.trim().toLowerCase()
   const shown = useMemo(() => narrow(tree, needle), [tree, needle])
   // A search looks through the folds: what it finds is drawn.
-  const tabFolds = useFolds((s) => s.folded)
+  const { folded: tabFolds, toggle: toggleFold, unfold } = useFolds(tree)
   const folded = needle === '' ? tabFolds : NONE_FOLDED
   const drawn = useMemo(() => foldAway(shown, folded), [shown, folded])
-  const toggleFold = useFolds((s) => s.toggle)
-  const unfold = useFolds((s) => s.unfold)
 
   const root = useRef<HTMLDivElement>(null)
   const search = useRef<HTMLInputElement>(null)

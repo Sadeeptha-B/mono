@@ -478,6 +478,8 @@ test("a task ticked today stays in today's backlog, crossed out rather than offe
   await page.getByRole('link', { name: 'Back to today' }).click()
   await goToStage(page, 'Today')
   const tree = todayBrowser(page)
+  await tree.getByRole('button', { name: 'Epic: Mono auth', exact: true }).click()
+  await tree.getByRole('button', { name: 'Outcome: Login pages', exact: true }).click()
   await expect(tree.getByRole('checkbox', { name: 'CSRF token' })).toBeVisible()
   await expect(tree.getByText('Login form', { exact: true })).toHaveCSS(
     'text-decoration-line',
