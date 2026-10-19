@@ -693,6 +693,13 @@ test('All Tasks starts collapsed below areas and remembers folds across question
   await expect(tree).not.toContainText('Outcome: Login pages')
   await expect(tree.getByText('CSRF token', { exact: true })).toHaveCount(0)
   await expect(tree).toContainText('3 open')
+  // Said after the name's last word, inside its line, not on a line of its own.
+  const [count, label] = await Promise.all(
+    [tree.getByText('3 open', { exact: true }), name(tree)].map((l) => l.boundingBox()),
+  )
+  expect(count!.y).toBeGreaterThanOrEqual(label!.y)
+  expect(count!.y + count!.height).toBeLessThanOrEqual(label!.y + label!.height + 1)
+  expect(count!.x).toBeGreaterThan(label!.x)
   // Folded, its box still takes all of it.
   await tree.getByRole('checkbox', { name: 'All of Mono auth', exact: true }).check()
   await expect(todayList(page)).toContainText('Session cookie')
