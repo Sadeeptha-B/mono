@@ -249,10 +249,15 @@ function TemporalInput({
 }: TemporalInputProps & { type: 'time' | 'date' }) {
   const input = useRef<HTMLInputElement>(null)
   const lastPointerType = useRef<string | null>(null)
-  const frameClass =
-    variant === 'compact'
-      ? 'min-w-0 flex-1 border-muted/55 px-2 @max-xs:px-1.5'
-      : 'w-full border-muted/70 px-3.5'
+  // A field marked invalid draws it on its edge too, so what a screen reader
+  // is told and what is seen are the same mark. Focus still turns it `deep`.
+  const invalid = props['aria-invalid'] === true || props['aria-invalid'] === 'true'
+  const edge = invalid
+    ? 'border-commit/70'
+    : variant === 'compact'
+      ? 'border-muted/55'
+      : 'border-muted/70'
+  const frameClass = variant === 'compact' ? 'min-w-0 flex-1 px-2 @max-xs:px-1.5' : 'w-full px-3.5'
 
   const activateFromFrame = (event: MouseEvent<HTMLDivElement>) => {
     const field = input.current
@@ -281,7 +286,7 @@ function TemporalInput({
         lastPointerType.current = event.pointerType
       }}
       onClick={activateFromFrame}
-      className={`${frameClass} max-w-full overflow-hidden rounded-lg border bg-ink py-2.5 focus-within:border-deep`}
+      className={`${frameClass} ${edge} max-w-full overflow-hidden rounded-lg border bg-ink py-2.5 focus-within:border-deep`}
     >
       <input
         {...props}

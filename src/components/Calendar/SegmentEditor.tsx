@@ -386,7 +386,7 @@ export function HoursComposer({
         Edits apply for today only. Your usual hours are on <RoutineLink />.
       </p>
 
-      <TodayHoursFields draft={draft} onDraft={onDraft} now={now} hideLegend />
+      <TodayHoursFields draft={draft} onDraft={onDraft} hideLegend />
 
       <Actions>
         <GhostButton type="button" onClick={onCancel} className={composerButton}>

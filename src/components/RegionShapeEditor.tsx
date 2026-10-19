@@ -18,12 +18,23 @@
  * field took the focus, not the one before each change: a native time field
  * reports every segment as it is typed, so typing 9 PM over 9 AM passes
  * through a start the cap at 23:59 would shorten, and measuring again from
- * there would lose the hours the cap took. Held until the field lets go.
+ * there would lose the hours the cap took. Held until the field lets go, and
+ * held against the row's key rather than its position, so a row removed while
+ * a start has the focus cannot hand its length to the row that takes its place.
+ *
+ * It says, under the rows, what the planner will make of them, because both
+ * of the things it does to a draft are otherwise silent. A row that is not a
+ * stretch — ending at or before its start, which a start carried to 23:59
+ * becomes — is marked invalid and named, since the plan leaves it out and
+ * today's save drops it. Rows that overlap are named with the one stretch
+ * they will run as, quietly rather than as an error: carrying a start into
+ * the afternoon is the usual way to get there, and joining may be what was
+ * meant (`joined` in `stretch.ts`).
  */
 
 import { useRef } from 'react'
 
-import { lengthOf, nextAfter, withStart } from './stretch'
+import { clockOf, joined, lengthOf, nextAfter, withStart } from './stretch'
 import { GhostButton, labelClass, TimeInput } from './ui'
 import type { DefaultRegion } from '@/domain/types'
 
@@ -48,7 +59,10 @@ export function RegionShapeEditor({
   const keys = useRowKeys(regions.length)
   // The length of the stretch whose start has the focus — see the note at the
   // top. A ref, because it is read only by the handlers and never drawn.
-  const held = useRef<{ index: number; length: number | null } | null>(null)
+  const held = useRef<{ key: string; length: number | null } | null>(null)
+
+  const invalid = regions.flatMap((region, index) => (lengthOf(region) === null ? [index] : []))
+  const joins = joined(regions)
 
   const update = (index: number, patch: Partial<DefaultRegion>) =>
     onChange(regions.map((r, i) => (i === index ? { ...r, ...patch } : r)))
@@ -57,7 +71,11 @@ export function RegionShapeEditor({
     onChange(
       regions.map((r, i) =>
         i === index
-          ? withStart(r, start, held.current?.index === index ? held.current.length : lengthOf(r))
+          ? withStart(
+              r,
+              start,
+              held.current?.key === keys.at(index) ? held.current.length : lengthOf(r),
+            )
           : r,
       ),
     )
@@ -101,58 +119,77 @@ export function RegionShapeEditor({
           </p>
         )}
 
-        {regions.map((region, index) => (
-          <div key={keys.at(index)} className="flex items-center gap-2 @max-xs:gap-1.5">
-            {/* The pair is wrapped so that it can stack without taking the ×
-                with it. Trimming pixels runs out below about 18rem — settings
-                on a 320px phone — and two clipped fields side by side are worse
-                than one under the other, so at that width they stop being a
-                row. The × stays beside them, centred on the pair. Compact
-                `TimeInput` frames keep the tighter padding without putting it
-                back on either native temporal control. */}
-            <div className="flex min-w-0 flex-1 items-center gap-2 @max-xs:gap-1.5 @max-2xs:flex-col @max-2xs:items-stretch">
-              <TimeInput
-                variant="compact"
-                aria-label={`${label} ${index + 1} start`}
-                value={region.start}
-                // Taken once per visit, not on every `focusin` React reports
-                // as focus: a field that already has the focus can hear one
-                // again without a blur between, and measuring then would
-                // undo the hold.
-                onFocus={() => {
-                  if (held.current?.index !== index) {
-                    held.current = { index, length: lengthOf(region) }
-                  }
-                }}
-                onBlur={() => {
-                  held.current = null
-                }}
-                onChange={(e) => moveStart(index, e.target.value)}
-              />
-              {/* Twenty pixels the fields need in a dialog on a phone, spent on
-                  a word that is decoration: both inputs carry their own label,
-                  and two clock fields side by side already read as a range. */}
-              <span aria-hidden className="text-xs text-muted @max-xs:hidden">
-                to
-              </span>
-              <TimeInput
-                variant="compact"
-                aria-label={`${label} ${index + 1} end`}
-                value={region.end}
-                onChange={(e) => update(index, { end: e.target.value })}
-              />
+        {regions.map((region, index) => {
+          const rowInvalid = invalid.includes(index)
+          return (
+            <div key={keys.at(index)} className="flex items-center gap-2 @max-xs:gap-1.5">
+              {/* The pair is wrapped so that it can stack without taking the ×
+                  with it. Trimming pixels runs out below about 18rem — settings
+                  on a 320px phone — and two clipped fields side by side are worse
+                  than one under the other, so at that width they stop being a
+                  row. The × stays beside them, centred on the pair. Compact
+                  `TimeInput` frames keep the tighter padding without putting it
+                  back on either native temporal control. */}
+              <div className="flex min-w-0 flex-1 items-center gap-2 @max-xs:gap-1.5 @max-2xs:flex-col @max-2xs:items-stretch">
+                <TimeInput
+                  variant="compact"
+                  aria-label={`${label} ${index + 1} start`}
+                  aria-invalid={rowInvalid}
+                  value={region.start}
+                  // Taken once per visit, not on every `focusin` React reports
+                  // as focus: a field that already has the focus can hear one
+                  // again without a blur between, and measuring then would
+                  // undo the hold.
+                  onFocus={() => {
+                    const key = keys.at(index)
+                    if (held.current?.key !== key) {
+                      held.current = { key, length: lengthOf(region) }
+                    }
+                  }}
+                  onBlur={() => {
+                    held.current = null
+                  }}
+                  onChange={(e) => moveStart(index, e.target.value)}
+                />
+                {/* Twenty pixels the fields need in a dialog on a phone, spent on
+                    a word that is decoration: both inputs carry their own label,
+                    and two clock fields side by side already read as a range. */}
+                <span aria-hidden className="text-xs text-muted @max-xs:hidden">
+                  to
+                </span>
+                <TimeInput
+                  variant="compact"
+                  aria-label={`${label} ${index + 1} end`}
+                  aria-invalid={rowInvalid}
+                  value={region.end}
+                  onChange={(e) => update(index, { end: e.target.value })}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => remove(index)}
+                aria-label={`Remove ${label.toLowerCase()} ${index + 1}`}
+                className="shrink-0 rounded px-2 py-1 text-muted transition hover:text-commit @max-xs:px-1"
+              >
+                ×
+              </button>
             </div>
-            <button
-              type="button"
-              onClick={() => remove(index)}
-              aria-label={`Remove ${label.toLowerCase()} ${index + 1}`}
-              className="shrink-0 rounded px-2 py-1 text-muted transition hover:text-commit @max-xs:px-1"
-            >
-              ×
-            </button>
-          </div>
-        ))}
+          )
+        })}
       </div>
+
+      {invalid.length > 0 && (
+        <p className="mt-3 text-xs leading-relaxed text-commit">
+          {stretches(invalid)} will be left out: a stretch has to end after it starts,
+          and cannot run past midnight.
+        </p>
+      )}
+      {joins.map((join) => (
+        <p key={join.rows.join()} className="mt-3 text-xs leading-relaxed text-muted">
+          {stretches(join.rows)} overlap, so they will run as one, {clockOf(join.start)}–
+          {clockOf(join.end)}.
+        </p>
+      ))}
 
       {/* Wraps rather than squeezing: in the calendar's 22rem column the hint
           has nowhere near the room it has in settings, and a line of prose
@@ -171,6 +208,13 @@ export function RegionShapeEditor({
       </div>
     </fieldset>
   )
+}
+
+/** "Stretch 2", "Stretches 1 and 3", "Stretches 1, 2 and 4", from row indices. */
+function stretches(rows: readonly number[]): string {
+  const numbers = rows.map((row) => String(row + 1))
+  if (numbers.length === 1) return `Stretch ${numbers[0]}`
+  return `Stretches ${numbers.slice(0, -1).join(', ')} and ${numbers.at(-1)}`
 }
 
 /**

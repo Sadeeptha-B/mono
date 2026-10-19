@@ -394,7 +394,7 @@ export function DaySetupPanel({
             title="Are these your hours today?"
             detail={hoursDetail(now, regions.length > 0, withinHours, nextRegionStart)}
           />
-          <TodayHoursFields draft={hours} onDraft={onHours} now={now} />
+          <TodayHoursFields draft={hours} onDraft={onHours} />
           {/* The other half of this answer: what every day starts from. */}
           <p className="mt-3 text-xs text-muted">
             Every day starts from your usual hours, kept on <RoutineLink />.

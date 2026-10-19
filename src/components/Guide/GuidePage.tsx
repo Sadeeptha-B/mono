@@ -16,10 +16,12 @@
  * the explanation update without leaving the page.
  *
  * A short introduction gives a new reader the basic loop, then the sections
- * follow a day from setup through focus and rest. Each subject has one home;
- * practical instructions belong here, while design rationale stays in the
- * repository documentation. The later sections are there to return to when
- * someone wants to organise tasks, set a routine or adjust their surroundings.
+ * follow a day from setup through focus and rest. Each subject has one home.
+ * It is a walkthrough rather than a reference: what each part is for and how
+ * to use it, leaving out what the interface teaches by being used and every
+ * limit and edge case, while design rationale stays in the repository
+ * documentation. The later sections are there to return to when someone
+ * wants to organise tasks, set a routine or adjust their surroundings.
  */
 
 import { useMemo, type ReactNode } from 'react'
@@ -269,8 +271,8 @@ function sectionsFor(settings: Settings): Section[] {
       body: (
         <>
           <P>
-            Open <Em>Today</Em> to see your timer and calendar. On a small screen,
-            the calendar sits below the timer. A new day begins with three questions:
+            Open <Em>Today</Em> to see your timer and calendar. A new day begins with
+            three questions:
           </P>
           <div className="mt-4 space-y-3">
             <Step
@@ -282,28 +284,23 @@ function sectionsFor(settings: Settings): Section[] {
             />
             <Step
               name="2. Check your hours"
-              asks="Choose when you want to work today. You can add separate stretches, such as a morning and an afternoon. Moving a start time moves the whole stretch. The calendar previews your changes."
+              asks="Choose when you want to work today, in one stretch or several, such as a morning and an afternoon."
               choices={[
                 ['Hours', 'Changes here apply to today. Set your usual hours on Routine, linked from this question and Settings.'],
               ]}
             />
             <Step
               name="3. Choose your tasks"
-              asks="All Tasks opens beside the question. Search your backlog and tick what you want to work on, or use + Task in a place's ⋯ menu to write something new."
+              asks="Tick what you want to work on in All Tasks, beside the question, or write something new with + Task."
               choices={[
                 ['Start the day', 'Choose at least one task, then press this when you are ready.'],
               ]}
             />
           </div>
           <P>
-            Use <Em>Back</Em>, <Em>Next</Em> or the dots under the questions to move
-            between them. Between blocks, the dots let you revisit your answers;
-            {' '}<Em>Focus</Em> brings you back to the next block.
-          </P>
-          <P>
-            The tasks question gives you {intending} minutes to decide. At zero the
-            timer stops and offers another round. You start the day yourself when
-            you are ready.
+            If you need time to decide, the tasks question has a {intending}-minute
+            timer. Between blocks, the dots under the questions bring them back;
+            {' '}<Em>Focus</Em> returns you to the next block.
           </P>
         </>
       ),
@@ -320,14 +317,12 @@ function sectionsFor(settings: Settings): Section[] {
           </P>
           <P>
             The calendar shows today's plan and what you have already done. Lit bands
-            mark your working hours, and the bright line marks now. Each entry takes
-            up its actual length; spare time between blocks stays open.
+            mark your working hours, and the bright line marks now.
           </P>
           <P>
             Use <Em>Hours</Em>, <Em>Commitment</Em> and <Em>Break</Em> above the
-            calendar to adjust your day. Commitments and breaks have edit and
-            remove controls, and you can drag either to a new time, even after
-            it has ended. Focus blocks adjust automatically as the day changes.
+            calendar to change your day. Commitments and breaks can be edited, moved
+            or removed, even after they have happened, and the blocks fit around them.
           </P>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Card title="Prefer deep blocks" tone="text-deep">
@@ -351,42 +346,39 @@ function sectionsFor(settings: Settings): Section[] {
         <>
           <Flow />
           <P>
-            Press <Em>Start block</Em> to choose at least one task from{' '}
-            <Em>All Tasks</Em>. You can also choose a whole intention from today's
-            list below it. A task chosen from outside today's list joins it.
+            Press <Em>Start block</Em> and choose at least one task, from{' '}
+            <Em>All Tasks</Em> or as a whole intention from today's list.
           </P>
           <P>
-            Give the block a purpose: one sentence about what you want to do in this
-            stretch, such as <Em>Draft the opening of the proposal</Em>. Mono suggests
-            a name from your tasks; keep it or rewrite it. Press <Em>Start</Em> to
-            begin the full block. If you need time to decide, the play button beside
-            the question gives you {reflect} minutes.
+            Then give the block a purpose: one sentence about what you want to do in
+            this stretch, such as <Em>Draft the opening of the proposal</Em>. Mono
+            suggests one from your tasks. Press <Em>Start</Em> to begin. If you need
+            time to decide, the play button beside the question gives you {reflect}{' '}
+            minutes.
           </P>
           <P>
             While you work, your purpose and tasks stay under the timer. Click the
             timer to switch between time remaining and time spent. Tick tasks done
-            as you finish them. Completing a task and completing a block are separate:
-            a block can be useful even when the task needs more time.
+            as you finish them; a block can end with its tasks still open.
           </P>
           <div className="mt-4 space-y-3">
             <Setting name="Log">
-              Write a line about how the block is going. Enter saves it. Logs appear
-              as marks on the calendar; point at one to read, edit or delete it.
-              Deleted logs remain in the saved journal and exports.
+              Write a line about how the block is going. Logs appear as marks on the
+              calendar; point at one to read, edit or delete it. Deleted logs stay in
+              exports.
             </Setting>
             <Setting name="Later">
-              Capture an idea, question or tangent to come back to. Enter saves it
-              to Later on the Timeline page.
+              Put down an idea or tangent to come back to. It waits on the Timeline
+              page.
             </Setting>
             <Setting name="Urges">
-              Press + when you notice an urge to leave the task, whether you follow
-              it or stay. The count is a way to notice distractions. Use − to undo a tap.
+              Press + each time you feel the pull to leave the task, whether or not
+              you follow it. − undoes a tap.
             </Setting>
           </div>
           <P>
             If your work changes, switch the calendar to <Em>All Tasks</Em> to add or
-            remove tasks from the running block. It keeps at least one task, and
-            your original purpose stays in place.
+            remove the block's tasks.
           </P>
           <P>
             At <Em>Block done</Em>, tick anything you finished, then choose{' '}
@@ -401,15 +393,13 @@ function sectionsFor(settings: Settings): Section[] {
       body: (
         <>
           <P>
-            Choose when you need a break. Pick its length, and Mono shows how it
-            changes the blocks and focus minutes left today before you confirm.
-            A break that fits into spare time may leave the plan unchanged.
+            Take a break whenever you need one. Pick its length, and Mono shows what
+            it costs the rest of the day before you confirm.
           </P>
           <P>
-            To reserve rest for later, use <Em>Break</Em> above the calendar. You can
-            edit or move a planned break, but not onto a commitment. A commitment
-            placed over a planned break moves the break to just after it. Once its
-            time has passed, a planned break asks whether you took it.
+            To plan rest for later, use <Em>Break</Em> above the calendar. A
+            commitment placed over a planned break moves the break to just after it.
+            Once its time has passed, a planned break asks whether you took it.
           </P>
           <P>
             During a break, <Em>Back to work</Em> ends it early and returns you to
@@ -431,36 +421,26 @@ function sectionsFor(settings: Settings): Section[] {
             can live at any of these levels.
           </P>
           <P>
-            Drag tasks and headings to move or reorder them. With a keyboard, pick
-            up a task using its dots, then choose <Em>Move here</Em> at its
-            destination; <Em>Escape</Em> cancels. Hover an action icon to see its name,
-            or open a row's <Em>⋯</Em> menu in All Tasks. Double-click a title to
-            rename it. On the board, click away to keep what you typed;{' '}
-            <Em>Escape</Em> cancels.
+            Drag tasks and headings to reorder or move them, and double-click a
+            title to rename it.
           </P>
           <P>
-            The sun icon chooses a task for today or takes it out again. On an epic
-            or outcome, it chooses all open tasks inside. Today's list opens from
-            the sun button in the corner. Use <Em>+ Intention</Em> to give a group
-            of today's tasks a shared aim, such as <Em>Get the proposal ready</Em>,
-            then drag tasks into it. Mark the intention done when you feel that aim
-            is met.
+            The sun icon adds a task to today, or every open task in an epic or
+            outcome. Today's list opens from the sun in the corner, where{' '}
+            <Em>+ Intention</Em> gives a group of today's tasks a shared aim, such as{' '}
+            <Em>Get the proposal ready</Em>.
           </P>
           <P>
-            Your backlog carries on across days. Tomorrow, <Em>From last time</Em>
-            offers unfinished tasks for you to choose again. Use <Em>Drop</Em> for
-            work you have decided to let go. Finish or archive an epic or outcome to
-            put it away with its contents. Everything put away is under{' '}
-            <Em>Put away</Em> beside the page's title, where it can be reopened; a
-            task ticked today stays crossed out where it was. Outcomes start folded;
-            open or fold one, or an epic, with the arrow on its card. Deleting an
-            area, epic or outcome deletes everything inside it.
+            Your backlog carries on across days, and each morning{' '}
+            <Em>From last time</Em> offers what was left unfinished. <Em>Drop</Em>{' '}
+            lets a task go; finishing or archiving an epic or outcome puts it away
+            with everything inside. All of it waits under <Em>Put away</Em>, beside
+            the page's title, to be reopened. Deleting an area, epic or outcome
+            deletes everything inside it.
           </P>
           <P>
-            Thoughts captured in <Em>Later</Em>, from the arrow icon in any page's
-            header, wait on the <Em>Timeline</Em> page. Use <Em>File into…</Em> on
-            one to turn it into a task in an area, epic or outcome, <Em>Let go</Em>{' '}
-            to put it aside, or <Em>Delete</Em> to remove it.
+            Notes put in <Em>Later</Em>, from the arrow in the header, wait on the{' '}
+            <Em>Timeline</Em> page. <Em>File into…</Em> turns one into a task.
           </P>
         </>
       ),
@@ -477,11 +457,9 @@ function sectionsFor(settings: Settings): Section[] {
             currently {usualHours}.
           </P>
           <P>
-            For each commitment, choose how often it repeats and check the upcoming
-            dates shown in the form. It appears on each matching day's calendar.
-            Editing or removing it on Today changes just that occurrence. Edit the
-            series on Routine to change future occurrences; ones already underway
-            or changed individually keep their details.
+            Each one appears on the days it falls on. Changing it on Today changes
+            that day only; changing it on Routine changes every day still following
+            it.
           </P>
         </>
       ),
@@ -493,23 +471,13 @@ function sectionsFor(settings: Settings): Section[] {
         <>
           <P>
             <Em>Pop out</Em> in the header opens a small timer window that stays above
-            your other apps. It is available in supported Chromium browsers, such as
-            Chrome and Edge; the button appears when your browser supports it.
+            your other apps, in Chromium browsers such as Chrome and Edge.
           </P>
           <P>
-            Keep working with the timer and purpose in view. You can tick tasks done,
-            write a log, capture something for Later and count urges there too.
-            Point at the purpose to see your tasks, or at a mark on the block's strip
-            to read a log. Between blocks, you can continue or take a break.
-          </P>
-          <P>
-            Use <Em>Open Mono</Em> when you need the calendar or want to choose tasks.
-            Resize the window to suit you; <Em>Reset size</Em> restores its compact
-            size. Closing it leaves the session running in the tab.
-          </P>
-          <P>
-            Settings lets you choose whether it opens when a block starts or when
-            you start a timer to decide on tasks or a purpose.
+            You can tick tasks done, write a log, put something in Later and count
+            urges there, and between blocks, carry on or take a break. Use{' '}
+            <Em>Open Mono</Em> for the calendar or to choose tasks. Settings chooses
+            when it opens by itself.
           </P>
         </>
       ),
@@ -521,8 +489,8 @@ function sectionsFor(settings: Settings): Section[] {
         <>
           <P>
             <Em>Need to stop a block?</Em> Choose <Em>End early</Em>. Mono records it
-            as cut short and adjusts the rest of the day. Blocks run continuously;
-            to return later, start a new one. Tasks you finished stay done.
+            as cut short and replans the rest of the day. Blocks can't be paused;
+            start a new one when you are back.
           </P>
           <P>
             <Em>Coming back after being away?</Em> If a block ended while the tab
@@ -534,9 +502,7 @@ function sectionsFor(settings: Settings): Section[] {
             calendar to make room for a block.
           </P>
           <P>
-            A new day starts with your routine and a fresh choice of tasks. If a
-            block or break runs past midnight, the reset waits until it ends.
-            Your history is kept.
+            Each new day starts from your routine and a fresh choice of tasks.
           </P>
         </>
       ),
@@ -553,21 +519,19 @@ function sectionsFor(settings: Settings): Section[] {
             <Em>{sound}{settings.ambience === 'off' ? '' : ` at ${Math.round(settings.ambienceVolume * 100)}%`}</Em>.
           </P>
           <P>
-            Choose brown noise, pink noise, rain or the room's suggested sound.
-            You hear a short preview when you choose it; during focus, it fades in
-            and then fades away for breaks and questions. The timer's speaker
-            temporarily mutes ambience. The completion chime has its own setting.
+            Choose brown noise, pink noise, rain or the room's own sound. It plays
+            during focus and fades away for breaks; the timer's speaker mutes it.
           </P>
           <P>
             In <Em>Settings</Em>, adjust block lengths and the two decision timers,
             choose how to fill free time, and turn the completion chime or background
-            notifications on or off. Notifications can arrive late when the tab is
-            hidden, so check Mono when you return.
+            notifications on or off. Notifications can arrive late while the tab is
+            hidden.
           </P>
           <P>
             The cat walks across its room as your block progresses. The room grows
             with the focus you complete today, and at the end of working hours you
-            get a small postcard of your day. Tomorrow begins with a fresh room.
+            get a small postcard of your day.
           </P>
         </>
       ),
@@ -578,19 +542,17 @@ function sectionsFor(settings: Settings): Section[] {
       body: (
         <>
           <P>
-            Mono saves your tasks, Later notes, settings and history in this browser.
-            You can use it without an account. Your data stays on this device;
-            moving to another browser or device takes an export and import.
+            Mono keeps everything in this browser, with no account. To move to
+            another browser or device, export here and import there.
           </P>
           <P>
-            Use <Em>Export</Em> in Settings to download a backup. <Em>Import</Em>
-            restores a Mono backup, replacing your current day, settings and tasks
-            with the file's contents. Export first if you want to keep your current data.
+            <Em>Export</Em> in Settings downloads a backup. <Em>Import</Em> replaces
+            everything here with a backup's contents, so export first if you want to
+            keep what you have.
           </P>
           <Note>
-            If the header says <Em>Not saving</Em>, export before closing or reloading
-            the tab. The browser has stopped saving changes, and the export keeps
-            a copy of what is on screen.
+            If the header says <Em>Not saving</Em>, the browser has stopped saving
+            changes. Export before closing or reloading the tab.
           </Note>
         </>
       ),

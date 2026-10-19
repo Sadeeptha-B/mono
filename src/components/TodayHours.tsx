@@ -3,9 +3,10 @@
  *
  * Three surfaces edit the same thing now — the question the day opens with, the
  * calendar's Hours composer, and the escape hatch on the out-of-hours panel —
- * so the drafting, the resolve back into epoch milliseconds, and the warning
- * about stretches that cannot survive it live here rather than in three places
- * that would slowly disagree.
+ * so the drafting and the resolve back into epoch milliseconds live here
+ * rather than in three places that would slowly disagree. The warning about
+ * stretches that cannot survive the resolve is the editor's own
+ * (`RegionShapeEditor`), because the routine page needs it too.
  *
  * Times are authored as wall clock and only become milliseconds at save, which
  * is what keeps the domain on the right side of that boundary: it never sees an
@@ -42,7 +43,7 @@ export const toWallClock = (region: WorkRegion): DefaultRegion => ({
  *
  * A stretch has to end after it starts, and `wallClockOn` refuses a time that
  * would run past midnight — the plan is scoped to one calendar day. Both are
- * silent here and reported by the caller, which knows where to put the line.
+ * silent here; the editor marks such a row before it is ever saved.
  */
 export function resolveHours(now: Ms, draft: readonly DefaultRegion[]): ResolvedRegion[] {
   return draft
@@ -136,31 +137,19 @@ export function useHoursDraft(regions: readonly WorkRegion[]): {
 export function TodayHoursFields({
   draft,
   onDraft,
-  now,
   hideLegend = false,
 }: {
   draft: DefaultRegion[]
   onDraft: (regions: DefaultRegion[]) => void
-  now: Ms
   /** For callers whose own heading already names the hours. */
   hideLegend?: boolean
 }) {
-  const dropped = draft.length - resolveHours(now, draft).length
-
   return (
-    <>
-      <RegionShapeEditor
-        regions={draft}
-        onChange={onDraft}
-        label={TODAY_HOURS_LABEL}
-        hideLegend={hideLegend}
-      />
-      {dropped > 0 && (
-        <p className="mt-3 text-xs leading-relaxed text-commit">
-          {dropped} stretch{dropped === 1 ? '' : 'es'} will be dropped — a stretch has to
-          end after it starts, and cannot run past midnight.
-        </p>
-      )}
-    </>
+    <RegionShapeEditor
+      regions={draft}
+      onChange={onDraft}
+      label={TODAY_HOURS_LABEL}
+      hideLegend={hideLegend}
+    />
   )
 }
