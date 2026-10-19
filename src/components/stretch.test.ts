@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { lengthOf, nextAfter, withStart } from './stretch'
+import { clockOf, joined, lengthOf, nextAfter, withStart } from './stretch'
 
 describe('stretch helpers', () => {
   it('measures a stretch that runs forwards, and nothing else', () => {
@@ -47,5 +47,46 @@ describe('stretch helpers', () => {
   it('starts another stretch where the last one ended', () => {
     expect(nextAfter('18:00')).toEqual({ start: '18:00', end: '20:00' })
     expect(nextAfter('23:30')).toEqual({ start: '22:00', end: '23:59' })
+  })
+
+  it('names the stretches that overlap, with the one they will run as', () => {
+    // The carried start: 9–12 moved to 11 is 11–14, into the afternoon.
+    expect(
+      joined([
+        { start: '11:00', end: '14:00' },
+        { start: '13:00', end: '17:00' },
+      ]),
+    ).toEqual([{ rows: [0, 1], start: '11:00', end: '17:00' }])
+
+    // Written out of order, and a third reached only through the second.
+    expect(
+      joined([
+        { start: '16:00', end: '18:00' },
+        { start: '20:00', end: '21:00' },
+        { start: '09:00', end: '12:00' },
+        { start: '11:00', end: '16:30' },
+      ]),
+    ).toEqual([{ rows: [0, 2, 3], start: '09:00', end: '18:00' }])
+  })
+
+  it('says nothing of stretches that only meet, or are not stretches yet', () => {
+    expect(
+      joined([
+        { start: '09:00', end: '12:00' },
+        { start: '12:00', end: '17:00' },
+      ]),
+    ).toEqual([])
+    expect(
+      joined([
+        { start: '09:00', end: '12:00' },
+        { start: '23:59', end: '23:59' },
+        { start: '18:00', end: '10:00' },
+      ]),
+    ).toEqual([])
+  })
+
+  it('writes a time the way the rest of the app does', () => {
+    expect(clockOf('09:05')).toBe('9:05 AM')
+    expect(clockOf('17:00')).toBe('5:00 PM')
   })
 })

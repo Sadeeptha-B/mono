@@ -272,6 +272,8 @@ again.
 Regions do not wrap past midnight — the plan is scoped to a calendar day, so a
 late stretch ends at 23:59 rather than running into tomorrow. Moving a
 stretch's start moves its end with it, keeping its length up to that 23:59.
+Stretches that overlap are planned as one, and the editor says so; one that
+ends at or before its start is marked and left out.
 
 ## Rooms, ambience and the companion
 

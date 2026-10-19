@@ -86,6 +86,15 @@ npm run build:ext:dev # extension with localhost origins for manual development
   app. Build its section tree from one `Settings` snapshot rather than a second
   list of individual fields. Update it when behaviour changes — but leave the
   companion's small delights undocumented on purpose.
+- **The guide is a walkthrough, not a reference.** It is read quickly by
+  someone learning Mono, so it follows a day and says what each part is for
+  and how to use it, in plain, direct sentences. Leave out what using the app
+  already teaches (a button that names itself, a drag that does what a drag
+  does, a layout seen on arrival) and every limit, edge case, alternative
+  input method, rationale and litotes. A small feature earns a clause, not a
+  paragraph. When behaviour changes, rewrite the sentence that covers it
+  rather than adding another. The nuance and the why belong in docblocks and
+  `docs/decisions.md`.
 - **Colour has one source.** `src/ambient/palette.ts` builds every room's
   twelve tokens from one lightness ramp and a per-room hue and chroma, in
   OKLCH. Every room shares the ramp: a room is a hue, never a brightness. Runtime theming, room metadata, PWA metadata and generated art read it

@@ -81,6 +81,31 @@ test('a new start moves the stretch, and stops it at midnight', async ({ page })
   await expect(end).toHaveValue('23:59')
   await start.fill('08:00')
   await expect(end).toHaveValue('17:00')
+
+  // At 23:59 there is no time left in it, and the row says so before a save
+  // would quietly drop it.
+  await start.fill('23:59')
+  await expect(end).toHaveValue('23:59')
+  await expect(end).toHaveAttribute('aria-invalid', 'true')
+  await expect(stage(page).getByText(/Stretch 1 will be left out/)).toBeVisible()
+  await start.fill('08:00')
+  await expect(end).not.toHaveAttribute('aria-invalid', 'true')
+})
+
+test('a stretch carried into the next says they will run as one', async ({ page }) => {
+  await openMono(page)
+  await goToStage(page, 'Hours')
+  await stage(page).getByLabel('Hours 1 end', { exact: true }).fill('12:00')
+  await stage(page).getByRole('button', { name: '+ Add a stretch' }).click()
+  await stage(page).getByLabel('Hours 2 start', { exact: true }).fill('13:00')
+  await stage(page).getByLabel('Hours 2 end', { exact: true }).fill('17:00')
+
+  // Joining may be what was meant, so the rows stay as written.
+  await stage(page).getByLabel('Hours 1 start', { exact: true }).fill('11:00')
+  await expect(stage(page).getByLabel('Hours 1 end', { exact: true })).toHaveValue('14:00')
+  await expect(
+    stage(page).getByText('Stretches 1 and 2 overlap, so they will run as one, 11:00 AM–5:00 PM.'),
+  ).toBeVisible()
 })
 
 test('hours edited on one question survive finishing from the other', async ({ page }) => {
