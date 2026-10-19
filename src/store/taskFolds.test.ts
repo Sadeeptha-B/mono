@@ -42,6 +42,20 @@ describe('backlog view folds', () => {
     expect(localStorage.getItem('mono.board-folds')).toBe('{"epic":true}')
   })
 
+  it('folds many at once as one choice each, leaving every other choice alone', async () => {
+    const { useBoardFolds, epicTasksFold } = await import('./taskFolds')
+    useBoardFolds.getState().setFolded('outcome', false)
+    useBoardFolds.getState().setFolded('one', false)
+    useBoardFolds.getState().setManyFolded(['one', 'two'], true)
+    expect(useBoardFolds.getState().choices).toEqual({ outcome: false, one: true, two: true })
+    expect(vi.mocked(localStorage.setItem)).toHaveBeenCalledTimes(3)
+    vi.resetModules()
+    const reloaded = await import('./taskFolds')
+    expect(reloaded.useBoardFolds.getState().choices).toEqual({ outcome: false, one: true, two: true })
+    // An epic's own tasks fold under a key of their own, never the epic's.
+    expect(epicTasksFold('one')).not.toBe('one')
+  })
+
   it('keeps working in memory when storage refuses reads or writes', async () => {
     vi.mocked(localStorage.getItem).mockImplementation(() => { throw new Error('denied') })
     vi.mocked(localStorage.setItem).mockImplementation(() => { throw new Error('full') })

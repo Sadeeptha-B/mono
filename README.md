@@ -129,14 +129,14 @@ rest of the day, so it never gets covered up.
 The **tasks page** at `#/tasks` is a page for the guide's reason: you go there
 and stay a while. It is the backlog as a board — areas of life, each with an
 inbox of the tasks that sit directly under it, then its epics, each epic's
-outcomes, and tasks at any of those levels. Today's tasks, grouped under the
-intentions some of them are given, open from a sun in the page's corner.
+outcomes, and tasks at any of those levels.
 Each area is a band split by a rule: epics and the inbox
 down the left, and level with each, its outcomes as columns of tasks. Epics and
 outcomes are finished by hand; finishing or archiving one hides everything
 inside without changing it, and deleting one, or an area, deletes its subtree.
 The board shows only work — open tasks, and today's finished ones crossed out
-beside them — and an epic or outcome folds down to its card; everything done,
+beside them — and an area, an epic, an outcome or an epic's own tasks folds
+down to what heads it, every epic in an area at once if asked; everything done,
 dropped or archived is the backlog's other view, **Put away**, from a switch
 beside the page's title.
 Areas, epics, outcomes and tasks are put in order by dragging, there or in All
@@ -156,6 +156,12 @@ from the header.
 The **timeline page** at `#/timeline` is where epics will be laid out over
 time. For now it holds **Later**, what was put down to come back to, waiting to
 be filed into an area, epic or outcome as a task, let go or deleted.
+
+Every page has a sun in its bottom-right corner that opens a small card with
+two tabs: **Today**, today's tasks grouped under the intentions some of them
+are given, and **Draft**, a notepad for working tasks out before they go into
+the backlog. It stays open as you move between pages, and the draft is kept on
+the device as it is typed.
 
 The header itself is places on the left — **Today**, **Tasks** and
 **Timeline** — and tools as icons on the right: Later, the room's swatch, the

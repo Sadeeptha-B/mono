@@ -27,6 +27,7 @@
 import { useMemo, type ReactNode } from 'react'
 
 import { APP_WIDTH, AppBar } from '../AppHeader'
+import { CornerCard } from '../CornerCard'
 import { HeaderStatus } from '../HeaderStatus'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
 import type { TimerMode } from '@/domain/time'
@@ -78,7 +79,8 @@ export function GuidePage({
       />
 
       <div className="mono-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-        <div className={`mx-auto ${APP_WIDTH} px-4 py-8 sm:px-6 sm:py-10`}>
+        {/* Room at the foot for the corner's button (`CornerCard`). */}
+        <div className={`mx-auto ${APP_WIDTH} px-4 pt-8 pb-32 sm:px-6 sm:pt-10`}>
           <h1 className="text-3xl font-light text-bright sm:text-4xl">How Mono works</h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
             Make room for what matters, give each block a purpose, and take the day
@@ -143,6 +145,7 @@ export function GuidePage({
           </div>
         </div>
       </div>
+      <CornerCard />
     </div>
   )
 }
@@ -426,9 +429,10 @@ function sectionsFor(settings: Settings): Section[] {
           </P>
           <P>
             The sun icon adds a task to today, or every open task in an epic or
-            outcome. Today's list opens from the sun in the corner, where{' '}
+            outcome. The sun in the corner of every page opens today's list, where{' '}
             <Em>+ Intention</Em> gives a group of today's tasks a shared aim, such as{' '}
-            <Em>Get the proposal ready</Em>.
+            <Em>Get the proposal ready</Em>. Beside it, <Em>Draft</Em> is a notepad
+            for working out tasks before you add them.
           </P>
           <P>
             Your backlog carries on across days, and each morning{' '}

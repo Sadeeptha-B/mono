@@ -78,8 +78,8 @@ export function useAddFieldsValue() {
  * one click, and only on the rarer visit that adds rather than ticks.
  *
  * Two shapes. A task, an outcome or an epic opens as a card (`task`,
- * `outcome`, `epic`): `+ Add task` at the foot of a column, the outlined slot
- * where a new outcome's column will stand, or `+ Add epic` under an area's
+ * `outcome`, `epic`): `+ Add task` at the foot of a column, the small outlined
+ * `+` at the top right of an epic's outcomes, or `+ Add epic` under an area's
  * cards, gives way to an empty card of the kind it adds, drawn where that card
  * will be — the way a board tool adds one. An area is not a card, but the
  * same rule holds: `+ Add area` at the foot of the board opens an empty area
@@ -269,9 +269,11 @@ export function AddForm({
 
 /**
  * A task, outcome or epic being added, as the card it will be: folded, the
- * quiet `+ Add task` or `+ Add epic`, or the outlined slot an outcome's column
- * will stand in; open, an empty card of that kind in the same place, its field
- * where the title will be and a × that throws it away. An area the same way,
+ * quiet `+ Add task` or `+ Add epic`, or for an outcome a small outlined `+`
+ * alone, its words in its name and on hover, since the epic's board places it
+ * apart from the columns (`EpicBoard`); open, an empty card of that kind where
+ * it will stand, its field where the title will be and a × that throws it
+ * away. An area the same way,
  * as the name heading a band rather than a card, with the band's rule under
  * it and `+ Add area` sized as the page's last word rather than a column's.
  * Only drawn: what is typed, and how it is kept, are `AddForm`'s.
@@ -337,11 +339,11 @@ function AddCard({
         ref={openerRef}
         type="button"
         onClick={onOpen}
-        {...(openerLabel ? { 'aria-label': openerLabel } : {})}
-        className="flex w-full items-center gap-1.5 rounded-xl border border-dashed border-line px-3 py-4 text-left text-xs text-muted transition hover:border-muted hover:text-bright"
+        aria-label={openerLabel ?? opener}
+        title={opener}
+        className="flex size-7 items-center justify-center rounded-lg border border-dashed border-line text-muted transition hover:border-muted hover:text-bright"
       >
-        <PlusIcon className="size-3" />
-        {opener}
+        <PlusIcon className="size-3.5" />
       </button>
     )
   }

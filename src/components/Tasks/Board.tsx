@@ -8,12 +8,16 @@
  * under them. Everything else put away is on the page's other view
  * (`PutAwayView`), so a column is as long as what is left to do in it.
  *
- * An epic or an outcome folds by the caret on its card (`useBoardFold`), and
- * stays as it was left across visits. Outcomes start folded, epics open, so
- * a long backlog first reads as its places. A folded outcome is its card alone, saying how
- * much it holds; a folded epic is its card and one line beside it. Either
- * still takes a carried task, which lands last in it, so filing into a place
- * does not mean opening it first.
+ * An area, an epic or an outcome folds by the caret in front of its name
+ * (`useBoardFold`), and so does the column of tasks straight under an epic;
+ * each stays as it was left across visits. Outcomes start folded, the rest
+ * open, so a long backlog first reads as its places. A folded outcome is its
+ * card alone, saying how much it holds; a folded epic is its card and one line
+ * beside it; a folded area is its name and one line; a folded column of an
+ * epic's own tasks is its heading and a count. Each still takes a carried
+ * task, which lands last in it — a folded area's in its inbox — so filing
+ * into a place does not mean opening it first. An area's actions also fold
+ * or unfold every epic in it at once, for reading an area as its epics.
  *
  * A title — an area's, a card's, a task's — is renamed by a double-click on
  * it as well as by its ✎, which stays for the keyboard and a touch screen. A
@@ -22,7 +26,7 @@
  * Every rename on it is held by `useRename`, which says why.
  */
 
-import { useCallback, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useContext, useRef, useState, type ReactNode } from 'react'
 
 import {
   CarryGrip,
@@ -33,14 +37,23 @@ import {
   TOP,
   useCarriedRow,
   useDropList,
+  useLanding,
   useSlotEdge,
 } from '../carry'
 import { HoverNote } from '../HoverNote'
-import { ArchiveIcon, CheckIcon, DeleteIcon, DropIcon, MoveIcon, TodayIcon } from '../icons'
+import {
+  ArchiveIcon,
+  CheckIcon,
+  DeleteIcon,
+  DropIcon,
+  FoldAllIcon,
+  MoveIcon,
+  TodayIcon,
+} from '../icons'
 import { KEEPS_BLOCK, KEEPS_BLOCK_PLACE, useKeepsBlock } from '../keepsBlock'
 import { Caret, EditGlyph, IconButton, RenameField, revealOnHover, useRefocus } from '../ui'
 import { useSession } from '@/store/session'
-import { useBoardFolds } from '@/store/taskFolds'
+import { epicTasksFold, useBoardFolds } from '@/store/taskFolds'
 import { useTasks } from '@/store/tasks'
 import {
   childrenOf,
@@ -53,7 +66,7 @@ import {
 import type { DayKey } from '@/domain/time'
 import { isToday, type Today } from '@/domain/today'
 import { DeleteButton, liveInside } from './DeleteButton'
-import { AddForm } from './addFields'
+import { AddFields, AddForm } from './addFields'
 
 /**
  * The bands, in order. One rule above the first and one under each, so every
@@ -101,6 +114,10 @@ type TreeProps = {
  * The band is a row of the list of areas and the list of its own epics at
  * once: an area dragged over it falls through to the list of areas, and an
  * epic is taken here.
+ *
+ * Folded, the band is its name row alone, the right of it saying how much it
+ * holds and taking a carried task into the inbox. Its actions then lose the
+ * fold over every epic, which has nothing on screen to fold.
  */
 function AreaBand({
   area,
@@ -116,9 +133,60 @@ function AreaBand({
   const { dragProps } = useCarriedRow({ id: area.id, title: area.name }, rename.field === null)
   const edge = useSlotEdge(TOP, 'area', area.id, last)
   const epicDrop = useDropList(area.id, ['epic'])
+  const [folded, toggleFold] = useBoardFold(area.id, STARTS_FOLDED.area)
+  const choices = useBoardFolds((s) => s.choices)
+  const setManyFolded = useBoardFolds((s) => s.setManyFolded)
 
   const openEpics = childrenOf(area.id, tree.items).filter(
     (i) => i.kind === 'epic' && isOpenContainer(i),
+  )
+  // The fold over every epic folds them all unless all are folded already.
+  const epicsFolded =
+    openEpics.length > 0 && openEpics.every((e) => choices[e.id] ?? STARTS_FOLDED.epic)
+  const inbox = openTasksUnder(area.id, tree.items).length
+
+  const actions = rename.field === null && (
+    <div className="flex flex-wrap items-center gap-x-1 gap-y-1 md:justify-end md:pt-0.5">
+      {!folded && openEpics.length > 0 && (
+        <IconButton
+          onClick={() => setManyFolded(openEpics.map((e) => e.id), !epicsFolded)}
+          label={`${epicsFolded ? 'Unfold' : 'Fold'} every epic in ${area.name}`}
+          hint={epicsFolded ? 'Unfold epics' : 'Fold epics'}
+          className={revealOnHover}
+        >
+          <FoldAllIcon fold={!epicsFolded} />
+        </IconButton>
+      )}
+      <StepButtons
+        title={area.name}
+        axis="list"
+        first={first}
+        last={last}
+        onStep={(by) => shiftArea(area.id, by)}
+      />
+      <IconButton
+        onClick={() => rename.start(area.name)}
+        label={`Rename ${area.name}`}
+        hint="Rename"
+        className={revealOnHover}
+      >
+        <EditGlyph />
+      </IconButton>
+      <IconButton
+        onClick={() => archiveArea(area.id)}
+        label={`Archive ${area.name}`}
+        hint="Archive"
+        className={revealOnHover}
+      >
+        <ArchiveIcon />
+      </IconButton>
+      <DeleteButton
+        title={area.name}
+        inside={liveInside(area.id, tree.items)}
+        onDelete={() => deleteArea(area.id)}
+        className={revealOnHover}
+      />
+    </div>
   )
 
   return (
@@ -127,58 +195,65 @@ function AreaBand({
       <Row
         className="group/row"
         side={
-          // A rename puts a form where the heading was, since a form cannot
-          // sit inside a heading. The heading is what drags the band.
-          rename.field === null ? (
-            <h2
-              {...dragProps}
-              onDoubleClick={() => rename.start(area.name)}
-              className="cursor-grab text-lg text-bright wrap-break-word"
-            >
-              {area.name}
-            </h2>
-          ) : (
-            <div className="flex">
-              <RenameField label={`Rename ${area.name}`} {...rename.field} />
-            </div>
-          )
+          <div className="flex items-start gap-1">
+            <FoldButton
+              id={area.id}
+              label={`What ${area.name} holds`}
+              folded={folded}
+              onFold={toggleFold}
+              className="-ml-1 mt-1"
+            />
+            {/* A rename puts a form where the heading was, since a form cannot
+                sit inside a heading. The heading is what drags the band. */}
+            {rename.field === null ? (
+              <h2
+                {...dragProps}
+                onDoubleClick={() => rename.start(area.name)}
+                className="min-w-0 cursor-grab text-lg text-bright wrap-break-word"
+              >
+                {area.name}
+              </h2>
+            ) : (
+              <div className="flex min-w-0 flex-1">
+                <RenameField label={`Rename ${area.name}`} {...rename.field} />
+              </div>
+            )}
+          </div>
         }
       >
-        {rename.field === null && (
-          <div className="flex flex-wrap items-center gap-x-1 gap-y-1 md:justify-end md:pt-0.5">
-            <StepButtons
-              title={area.name}
-              axis="list"
-              first={first}
-              last={last}
-              onStep={(by) => shiftArea(area.id, by)}
-            />
-            <IconButton
-              onClick={() => rename.start(area.name)}
-              label={`Rename ${area.name}`}
-              hint="Rename"
-              className={revealOnHover}
-            >
-              <EditGlyph />
-            </IconButton>
-            <IconButton
-              onClick={() => archiveArea(area.id)}
-              label={`Archive ${area.name}`}
-              hint="Archive"
-              className={revealOnHover}
-            >
-              <ArchiveIcon />
-            </IconButton>
-            <DeleteButton
-              title={area.name}
-              inside={liveInside(area.id, tree.items)}
-              onDelete={() => deleteArea(area.id)}
-              className={revealOnHover}
-            />
-          </div>
+        {folded ? (
+          <DropZone target={area.id} className="min-w-0">
+            <MoveHere target={area.id} name={area.name} landOn={foldLanding(area.id)} />
+            <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1">
+              <p className="text-sm text-muted md:pt-0.5">
+                {openEpics.length === 0 && inbox === 0
+                  ? 'Nothing open in it.'
+                  : [
+                      ...(openEpics.length > 0 ? [count(openEpics.length, 'epic')] : []),
+                      ...(inbox > 0 ? [`${inbox} in the inbox`] : []),
+                    ].join(' · ')}
+              </p>
+              {actions}
+            </div>
+          </DropZone>
+        ) : (
+          actions
         )}
       </Row>
 
+      {!folded && <AreaContents area={area} openEpics={openEpics} {...tree} />}
+    </div>
+  )
+}
+
+/** What an unfolded area holds: a row per open epic, the row that adds one, and its inbox. */
+function AreaContents({
+  area,
+  openEpics,
+  ...tree
+}: TreeProps & { area: Area; openEpics: readonly Item[] }) {
+  return (
+    <>
       {openEpics.map((epic, i) => (
         <EpicRow
           key={epic.id}
@@ -218,7 +293,7 @@ function AreaBand({
           </DropZone>
         </Board>
       </Row>
-    </div>
+    </>
   )
 }
 
@@ -273,14 +348,19 @@ function Row({
  */
 function Board({
   drop,
+  className = '',
   children,
 }: {
   /** What a row of outcomes takes from a drag, from `useDropList`. */
   drop?: ReturnType<typeof useDropList>
+  className?: string
   children: ReactNode
 }) {
   return (
-    <div {...drop} className="grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] items-start gap-4">
+    <div
+      {...drop}
+      className={`grid grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] items-start gap-4 ${className}`}
+    >
       {children}
     </div>
   )
@@ -297,10 +377,13 @@ function Board({
  * line is a place a task can be carried to, landing among the epic's own
  * tasks — where the folded-away `Tasks` column would have put it.
  *
- * The add slot sits in the row of outcomes rather than under the board because
- * a new outcome is a new column: it appears where the button was. The tasks
- * after it are headed `Tasks`, since a column with nothing at its
- * head read as one more outcome — see the header.
+ * A new outcome is a new column, and its empty card is drawn as one, after
+ * the last outcome, where it will stand. What asks for it is a small `+` at
+ * the board's top right, in a strip kept clear for it, rather than a slot
+ * taking a column of its own: as a whole column it cost a row an outcome, and
+ * on most boards it was the biggest thing in view. The tasks after the
+ * outcomes are headed `Tasks`, since a column with nothing at its head read as
+ * one more outcome — see the header.
  */
 function EpicRow({
   epic,
@@ -313,7 +396,7 @@ function EpicRow({
   )
   const edge = useSlotEdge(epic.parentId, 'epic', epic.id, last)
   const outcomeDrop = useDropList(epic.id, ['outcome'], 'grid')
-  const [folded, toggle] = useBoardFold(epic.id, false)
+  const [folded, toggle] = useBoardFold(epic.id, STARTS_FOLDED.epic)
   const taskIds = tree.beneath.get(epic.id) ?? []
 
   return (
@@ -335,7 +418,7 @@ function EpicRow({
     >
       {folded ? (
         <DropZone target={epic.id} className="min-w-0 md:pt-2.5">
-          <MoveHere target={epic.id} name={epic.title} />
+          <MoveHere target={epic.id} name={epic.title} landOn={foldLanding(epic.id)} />
           <p className="text-sm text-muted">
             {openOutcomes.length === 0 && taskIds.length === 0
               ? 'Nothing open in it.'
@@ -352,7 +435,18 @@ function EpicRow({
   )
 }
 
-/** An unfolded epic's board: its outcomes, the slot that adds one, and its own tasks. */
+/**
+ * An unfolded epic's board: its outcomes, the `+` that adds one, and its own
+ * tasks.
+ *
+ * The `+` is laid over the strip the board keeps clear down its right edge
+ * (`pr-9`), out of the grid's flow, so it takes no column: a positioned child
+ * of a grid is not one of its cells. Opened, the same element joins the flow
+ * as the new outcome's card, after the last outcome, and goes back to the
+ * corner once it folds. One element throughout, so the opener the × hands the
+ * focus back to is the one drawn again (`AddForm`). The strip is narrow enough
+ * that a row at every view's width still holds four columns.
+ */
 function EpicBoard({
   epic,
   openOutcomes,
@@ -363,8 +457,10 @@ function EpicBoard({
   openOutcomes: readonly Item[]
   drop: ReturnType<typeof useDropList>
 }) {
+  const addKey = `outcome:${epic.id}`
+  const adding = useContext(AddFields).drafts.has(addKey)
   return (
-    <Board drop={drop}>
+    <Board drop={drop} className="relative pr-9">
       {openOutcomes.map((outcome, i) => (
         <OutcomeColumn
           key={outcome.id}
@@ -374,9 +470,9 @@ function EpicBoard({
           {...tree}
         />
       ))}
-      <div className="min-w-0">
+      <div className={adding ? 'min-w-0' : 'absolute top-0 right-0'}>
         <AddForm
-          draftKey={`outcome:${epic.id}`}
+          draftKey={addKey}
           variant="outcome"
           opener="Add outcome"
           openerLabel={`Add an outcome to ${epic.title}`}
@@ -387,10 +483,51 @@ function EpicBoard({
           }
         />
       </div>
-      <DropZone target={epic.id} className="min-w-0">
-        <h4 className="mb-2 border-b border-line px-1 pt-1 pb-1.5 text-[10px] font-medium tracking-widest text-muted uppercase">
+      <EpicTasks epic={epic} {...tree} />
+    </Board>
+  )
+}
+
+/**
+ * The tasks straight under an epic, as a column after its outcomes, headed
+ * `Tasks`. Its heading folds it, as an outcome's caret folds an outcome, under
+ * a key of its own (`epicTasksFold`) so the epic's own fold is untouched.
+ * Folded, it says how many are open and still takes a carried task, which
+ * lands last among them.
+ */
+function EpicTasks({ epic, ...tree }: TreeProps & { epic: Item }) {
+  const key = epicTasksFold(epic.id)
+  const [folded, toggle] = useBoardFold(key, STARTS_FOLDED.epicTasks)
+  const open = folded ? openTasksUnder(epic.id, tree.items).length : 0
+  const heading = useRef<HTMLButtonElement>(null)
+  useLanding(foldLanding(key), heading)
+  return (
+    <DropZone target={epic.id} className="min-w-0">
+      <h4 className="mb-2 border-b border-line px-1 pt-1 pb-1.5">
+        <button
+          ref={heading}
+          type="button"
+          onClick={toggle}
+          // Its name starts with what it shows, `Tasks`, and says whose.
+          aria-label={`Tasks straight under ${epic.title}`}
+          aria-expanded={!folded}
+          title={folded ? 'Unfold' : 'Fold'}
+          className="-ml-1 inline-flex items-center gap-1 rounded text-[10px] font-medium tracking-widest text-muted uppercase transition hover:text-bright"
+        >
+          <span className="inline-flex size-4 items-center justify-center">
+            <Caret open={!folded} />
+          </span>
           Tasks
-        </h4>
+        </button>
+      </h4>
+      {folded ? (
+        <>
+          <MoveHere target={epic.id} name={epic.title} landOn={foldLanding(key)} />
+          <p className="px-1 text-xs text-muted">
+            {open === 0 ? 'No open tasks.' : count(open, 'open task')}
+          </p>
+        </>
+      ) : (
         <TaskList
           parent={epic.id}
           name={epic.title}
@@ -398,8 +535,8 @@ function EpicBoard({
           empty="No tasks directly under this epic."
           {...tree}
         />
-      </DropZone>
-    </Board>
+      )}
+    </DropZone>
   )
 }
 
@@ -419,7 +556,7 @@ function OutcomeColumn({
   ...tree
 }: TreeProps & { outcome: Item; first: boolean; last: boolean }) {
   const edge = useSlotEdge(outcome.parentId, 'outcome', outcome.id, last)
-  const [folded, toggle] = useBoardFold(outcome.id, true)
+  const [folded, toggle] = useBoardFold(outcome.id, STARTS_FOLDED.outcome)
   const taskIds = tree.beneath.get(outcome.id) ?? []
   return (
     <section
@@ -441,7 +578,7 @@ function OutcomeColumn({
           summary={taskIds.length === 0 ? 'No open tasks.' : count(taskIds.length, 'open task')}
         />
         {folded ? (
-          <MoveHere target={outcome.id} name={outcome.title} />
+          <MoveHere target={outcome.id} name={outcome.title} landOn={foldLanding(outcome.id)} />
         ) : (
           <TaskList
             parent={outcome.id}
@@ -523,17 +660,12 @@ function ContainerCard({
     >
       <div className="flex flex-wrap items-center justify-between gap-x-2">
         <span className="-ml-1 flex items-center gap-0.5">
-          <button
-            type="button"
-            onClick={onFold}
-            // A disclosure: one name for what it shows, and whether it shows it.
-            aria-label={`What ${item.title} holds`}
-            aria-expanded={!folded}
-            title={folded ? 'Unfold' : 'Fold'}
-            className="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted transition hover:bg-surface-raised hover:text-bright"
-          >
-            <Caret open={!folded} />
-          </button>
+          <FoldButton
+            id={item.id}
+            label={`What ${item.title} holds`}
+            folded={folded}
+            onFold={onFold}
+          />
           <span className="text-[10px] font-medium tracking-widest text-muted uppercase">
             {noun}
           </span>
@@ -993,12 +1125,64 @@ function useRename(rename: (title: string) => void) {
 }
 
 /**
- * Whether the board has an epic or outcome folded, and the press that turns
- * it over. An epic starts open and an outcome folded (`startsFolded`), so an
- * area reads as its epics and the outcomes in each, and an outcome's tasks
- * are shown once asked for. A choice made by hand is kept by id
- * (`useBoardFolds`), apart from All Tasks'; one written here starts open
- * (`unfoldNew`), since it was made to be filled.
+ * The caret that folds what a name heads: an area's band, or an epic's or
+ * outcome's card. Always shown rather than on hover, because it says
+ * something — whether anything is folded away — as the grip and a lit sun do.
+ *
+ * Folded, it is where a task put down in the place from the keyboard leaves
+ * the focus (`foldLanding`), since the task's own row is folded away with it.
+ */
+function FoldButton({
+  id,
+  label,
+  folded,
+  onFold,
+  className = '',
+}: {
+  /** The area, epic or outcome it folds. */
+  id: string
+  /** `What … holds`: one name for what it shows, and whether it shows it. */
+  label: string
+  folded: boolean
+  onFold: () => void
+  className?: string
+}) {
+  const control = useRef<HTMLButtonElement>(null)
+  useLanding(foldLanding(id), control)
+  return (
+    <button
+      ref={control}
+      type="button"
+      onClick={onFold}
+      aria-label={label}
+      aria-expanded={!folded}
+      title={folded ? 'Unfold' : 'Fold'}
+      className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted transition hover:bg-surface-raised hover:text-bright ${className}`}
+    >
+      <Caret open={!folded} />
+    </button>
+  )
+}
+
+/**
+ * What a folded place's `Move here` lands on (`landOn`): the control that
+ * folds it, by the place's fold key. Never a task's id, which is a UUID.
+ */
+const foldLanding = (foldKey: string): string => `fold:${foldKey}`
+
+/**
+ * How each thing the board folds starts, until it is folded by hand. Outcomes
+ * start folded, so an area reads as its epics and the outcomes in each and an
+ * outcome's tasks are shown once asked for; areas, epics and an epic's own
+ * tasks start open, as they were drawn before they could fold.
+ */
+const STARTS_FOLDED = { area: false, epic: false, outcome: true, epicTasks: false } as const
+
+/**
+ * Whether the board has something folded, and the press that turns it over.
+ * How it starts is `STARTS_FOLDED`'s. A choice made by hand is kept by id
+ * (`useBoardFolds`), apart from All Tasks'; an outcome written here starts
+ * open (`unfoldNew`), since it was made to be filled.
  */
 function useBoardFold(id: string, startsFolded: boolean): [boolean, () => void] {
   const folded = useBoardFolds((s) => s.choices[id] ?? startsFolded)

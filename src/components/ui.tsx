@@ -739,6 +739,7 @@ export function RenameField({
   saveOnLeave = false,
   textClass = 'text-sm',
   maxLength = 120,
+  autoFocus = true,
 }: {
   label: string
   value: string
@@ -750,6 +751,12 @@ export function RenameField({
   textClass?: 'text-xs' | 'text-sm' | 'text-[15px]'
   /** A title is short; a block's log is a sentence or two. */
   maxLength?: number
+  /**
+   * Whether it takes the focus as it is drawn: by default, since the press
+   * that drew it asked for it. Today's list holds its rename across being
+   * drawn again, and asks only when its ✎ was pressed in that drawing.
+   */
+  autoFocus?: boolean
 }) {
   // A field left as it was opened writes nothing: walking away from a rename
   // is not making one, and a write of the old title would stand over a rename
@@ -774,7 +781,7 @@ export function RenameField({
           }
         }}
         aria-label={label}
-        autoFocus
+        autoFocus={autoFocus}
         maxLength={maxLength}
         className={`${fieldClass} py-1 ${textClass}`}
       />
