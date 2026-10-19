@@ -102,8 +102,13 @@ export function PlaceTick({
 /**
  * A place's name, which folds it and opens it again: a caret before the level
  * and the name, all one button, so the whole name is the target. Folded, how
- * many open tasks are in it is said after the name, outside the button, so the
- * button keeps one name. A place with nothing under it has nothing to fold,
+ * many open tasks are in it follows the name's last word, small and quiet,
+ * wrapping with the name and never inside itself. It was a sibling after the
+ * button, and the button is as wide as a long name, so the count fell to a line
+ * of its own at the row's left edge, under the caret, or broke between its
+ * number and its word. It is drawn inside the button but hidden from its name,
+ * so the button keeps one name, and said to a screen reader after it instead.
+ * A place with nothing under it has nothing to fold,
  * and draws the caret's room empty so its name stays in line with its
  * siblings'.
  */
@@ -126,10 +131,16 @@ export function FoldName({
   /** How many open tasks are in it, said while it is folded. */
   inside: number
 }) {
+  const counted = open === false && inside > 0
   const name = (
     <>
       <span className="text-muted">{LEVEL[node.kind]}: </span>
       <span className={top ? 'font-medium text-bright' : 'text-body'}>{node.name}</span>
+      {counted && (
+        <span aria-hidden="true" className="ml-1.5 text-xs whitespace-nowrap text-muted">
+          {inside} open
+        </span>
+      )}
     </>
   )
   return (
@@ -157,9 +168,7 @@ export function FoldName({
           It stays outside the button for native checkbox semantics and its
           own keyboard stop, while the full name still folds the place. */}
       {tick && <span className="absolute top-0 left-3 flex">{tick}</span>}
-      {open === false && inside > 0 && (
-        <span className="ml-1.5 text-xs text-muted">{inside} open</span>
-      )}
+      {counted && <span className="sr-only">, {inside} open</span>}
     </span>
   )
 }
