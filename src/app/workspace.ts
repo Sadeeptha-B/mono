@@ -26,7 +26,7 @@ import type { ChoosingFor, ColumnView } from '@/components/AllTasksPane'
 import { emptyBlockPick, tickTasks, type BlockPick } from '@/components/blockPick'
 import type { TodayTimer } from '@/components/stage/TodayPanel'
 import { FIRST_SETUP_STAGE, stageFor, type SetupStageId, type StageId } from '@/components/stage/stages'
-import type { Composer } from '@/components/Timeline/SegmentEditor'
+import type { Composer } from '@/components/Calendar/SegmentEditor'
 import type { Phase } from '@/domain/machine'
 import { minutesToMs, type DefaultRegion, type Ms } from '@/domain/types'
 

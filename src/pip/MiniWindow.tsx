@@ -23,7 +23,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react'
 
 import { BlockControls } from '@/components/BlockLog'
 import { Companion } from '@/components/Companion/Companion'
-import { SegmentGlance } from '@/components/Timeline/SegmentGlance'
+import { SegmentGlance } from '@/components/Calendar/SegmentGlance'
 import {
   MiniAway,
   MiniBreakLength,

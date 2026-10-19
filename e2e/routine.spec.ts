@@ -6,7 +6,7 @@
  * the day itself. The rules and their variations are unit-tested beside the
  * domain (`recurrence.test.ts`, `events.test.ts`); these prove the wiring. The
  * usual working hours share the page, and the specs that change them are with
- * the rest of the hours in `timeline.spec.ts` and the persistence spec.
+ * the rest of the hours in `calendar.spec.ts` and the persistence spec.
  *
  * `openMono` opens on Thursday 20 August 2026 at 2pm.
  */

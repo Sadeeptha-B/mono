@@ -23,7 +23,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useState, type FocusEvent, type RefObject } from 'react'
 
-import { placeCard, type Box } from './Timeline/marks'
+import { placeCard, type Box } from './Calendar/marks'
 
 /** How the card opens: `beside` its target over what it is on, or above or below it. */
 export type CardOptions = {
