@@ -39,7 +39,7 @@ import { fieldClass, labelClass, MinutesInput, TimeInput } from './ui'
 import { COMMITMENT_MINUTES, MARGIN_MINUTES, parseBoundedMinutes } from './minutes'
 import { isWallClock } from '@/domain/recurrence'
 import { wallClockOn } from '@/domain/time'
-import type { Commitment, Ms } from '@/domain/types'
+import type { Commitment, CommitmentPatch, Ms } from '@/domain/types'
 
 export type CommitmentDraft = {
   title: string
@@ -167,6 +167,67 @@ export function readCommitmentEdit(
 ): Omit<Commitment, 'id'> | null {
   const next = readCommitment(now, draft)
   return next === null ? null : { prepMin: 0, recoverMin: 0, ...next }
+}
+
+/**
+ * The fields of an edit somebody has typed into: only those, never a copy of
+ * the commitment they were typed over.
+ *
+ * An edit to a commitment that already exists is these laid over the
+ * commitment as the store holds it now (`shownDraft`), and saving it sends
+ * only these (`readCommitmentChanges`). A whole draft seeded when the form
+ * opened was a photograph, and the commitment can move under it: dragged on
+ * the calendar while the stage's form is open on it, or edited by the
+ * calendar's own form. Saving the photograph put the old time back, even for
+ * a form that had only had its title changed. Laid over the store instead,
+ * an untouched field shows where the commitment is now, and what nobody typed
+ * is never written.
+ */
+export type CommitmentEdits = Partial<CommitmentDraft>
+
+const DRAFT_FIELDS = ['title', 'time', 'durationText', 'prepText', 'recoverText'] as const
+
+/** The edit as its form shows it: the commitment now, with what was typed over it. */
+export const shownDraft = (subject: Commitment, edits: CommitmentEdits): CommitmentDraft => ({
+  ...draftFromCommitment(subject),
+  ...edits,
+})
+
+/**
+ * The edits a form showing `next` holds: each field that says something other
+ * than the commitment does now. A field typed back to what it was is no
+ * longer an edit, so a form changed and changed back is one nobody touched.
+ */
+export function editsOf(subject: Commitment, next: CommitmentDraft): CommitmentEdits {
+  const current = draftFromCommitment(subject)
+  const edits: CommitmentEdits = {}
+  for (const field of DRAFT_FIELDS) if (next[field] !== current[field]) edits[field] = next[field]
+  return edits
+}
+
+/**
+ * What saving the edits changes, as a patch of only the fields typed into, or
+ * null while the form does not read as a commitment. Empty when nothing was
+ * typed, which writes nothing.
+ *
+ * Read whole first (`readCommitmentEdit`), so a form is ready by the same rule
+ * whichever of its fields were touched, and a margin cleared is sent as zero
+ * rather than left out.
+ */
+export function readCommitmentChanges(
+  now: Ms,
+  subject: Commitment,
+  edits: CommitmentEdits,
+): CommitmentPatch | null {
+  const next = readCommitmentEdit(now, shownDraft(subject, edits))
+  if (next === null) return null
+  return {
+    ...(edits.title === undefined ? {} : { title: next.title }),
+    ...(edits.time === undefined ? {} : { startsAt: next.startsAt }),
+    ...(edits.durationText === undefined ? {} : { durationMin: next.durationMin }),
+    ...(edits.prepText === undefined ? {} : { prepMin: next.prepMin ?? 0 }),
+    ...(edits.recoverText === undefined ? {} : { recoverMin: next.recoverMin ?? 0 }),
+  }
 }
 
 const parseMargin = (raw: string): number | null =>

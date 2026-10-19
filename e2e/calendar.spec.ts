@@ -1,6 +1,6 @@
 /** Editing and laying out the calendar on every supported screen size. */
 
-import { expect, test } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 import {
   openMono,
   stage,
@@ -13,6 +13,7 @@ import {
   shapeDay,
   openRoutine,
   backToToday,
+  importSession,
 } from './support/mono'
 
 const framedTime = (surface: ReturnType<typeof stage>, label: string) => {
@@ -190,13 +191,274 @@ test('a commitment stays on the calendar once it is over', async ({ page }) => {
   await page.clock.fastForward('00:02')
 
   await expect(blocksOf(page, 'Daily standup')).toHaveCount(1)
-  await expect(page.getByRole('button', { name: 'Remove Daily standup' })).toHaveCount(0)
+  // And still the user's to correct: a meeting that ran at another time, or
+  // never ran, is put right on the record afterwards.
+  await expect(page.getByRole('button', { name: 'Edit Daily standup' })).toHaveCount(1)
+  await page.getByRole('button', { name: 'Remove Daily standup' }).click()
+  await expect(blocksOf(page, 'Daily standup')).toHaveCount(0)
 })
 
-test('a commitment clears only the breaks it swallows', async ({ page }) => {
+test('a planned break that has passed asks whether it was taken', async ({ page }) => {
+  // It used to vanish the moment its last minute passed, and a break written
+  // in for the morning was never drawn at all. Now it stays as the plan, and
+  // ✓ makes it the record.
+  await openMono(page)
+  await shapeDay(page)
+
+  await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
+  await calendar(page).getByLabel('From', { exact: true }).fill('11:00')
+  // Long enough to be drawn with its words, which a quarter of an hour is not.
+  await calendar(page).getByLabel('For (minutes)', { exact: true }).fill('30')
+  await calendar(page).getByRole('button', { name: 'Add break', exact: true }).click()
+
+  await expect(blocksOf(page, 'Break')).toHaveAttribute('title', 'Break · 11:00 AM · 30m')
+  await expect(calendar(page).getByText('planned · taken?')).toBeVisible()
+  await calendar(page).getByRole('button', { name: 'Mark Break as taken' }).click()
+
+  // On the record now: no longer asking, still the user's to put right.
+  await expect(blocksOf(page, 'Break')).toHaveAttribute('title', 'Break · 11:00 AM · 30m')
+  await expect(calendar(page).getByText('planned · taken?')).toHaveCount(0)
+  await expect(calendar(page).getByRole('button', { name: 'Mark Break as taken' })).toHaveCount(0)
+  await calendar(page).getByRole('button', { name: 'Edit Break' }).click()
+  await expect(calendar(page).getByText('Edit break taken')).toBeVisible()
+  await calendar(page).getByRole('button', { name: 'Cancel', exact: true }).click()
+
+  // Survives a reload: it went into the log as a break taken.
+  await page.reload()
+  await expect(blocksOf(page, 'Break')).toHaveAttribute('title', 'Break · 11:00 AM · 30m')
+  await expect(calendar(page).getByText('planned · taken?')).toHaveCount(0)
+  await calendar(page).getByRole('button', { name: 'Remove Break' }).click()
+  await expect(blocksOf(page, 'Break')).toHaveCount(0)
+})
+
+test('a break too short for its words still offers its controls', async ({ page }) => {
+  // Regression: a block under about fourteen minutes drew no controls at all,
+  // so a ten-minute break could be neither confirmed, edited nor removed.
+  await openMono(page)
+  await shapeDay(page)
+
+  await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
+  await calendar(page).getByLabel('From', { exact: true }).fill('11:00')
+  await calendar(page).getByLabel('For (minutes)', { exact: true }).fill('10')
+  await calendar(page).getByRole('button', { name: 'Add break', exact: true }).click()
+
+  const pin = blocksOf(page, 'Break')
+  await expect(pin).toHaveAttribute('title', 'Break · 11:00 AM · 10m')
+  await pin.hover()
+  await calendar(page).getByRole('button', { name: 'Mark Break as taken' }).click()
+
+  // On the record, and still reachable from the keyboard to put right.
+  await expect(calendar(page).getByRole('button', { name: 'Mark Break as taken' })).toHaveCount(0)
+  await calendar(page).getByRole('button', { name: 'Edit Break' }).focus()
+  await expect(calendar(page).getByRole('button', { name: 'Edit Break' })).toHaveCSS('opacity', '1')
+  await page.keyboard.press('Enter')
+  await expect(calendar(page).getByText('Edit break taken')).toBeVisible()
+  await calendar(page).getByRole('button', { name: 'Cancel', exact: true }).click()
+  await pin.hover()
+  await calendar(page).getByRole('button', { name: 'Remove Break' }).click()
+  await expect(pin).toHaveCount(0)
+})
+
+/** Two five-minute pins back to back, at eleven, behind now: each asks to be confirmed. */
+async function pinBackToBack(page: Page) {
+  await openMono(page)
+  await shapeDay(page)
+  for (const time of ['11:00', '11:05']) {
+    await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
+    await calendar(page).getByLabel('From', { exact: true }).fill(time)
+    await calendar(page).getByLabel('For (minutes)', { exact: true }).fill('5')
+    await calendar(page).getByRole('button', { name: 'Add break', exact: true }).click()
+  }
+  await expect(blocksOf(page, 'Break')).toHaveCount(2)
+}
+
+test("back-to-back short breaks each offer their own controls, not each other's", async ({
+  page,
+}) => {
+  // Their cards are taller than they are, so each reaches over the other.
+  // Only the one pointed at is shown, or takes the pointer at all.
+  await pinBackToBack(page)
+  const edit = calendar(page).getByRole('button', { name: 'Edit Break' })
+  for (const [index, time] of [[0, '11:00'], [1, '11:05']] as const) {
+    await blocksOf(page, 'Break').nth(index).hover()
+    await edit.nth(index).click()
+    await expect(calendar(page).getByLabel('From', { exact: true })).toHaveValue(time)
+    await calendar(page).getByRole('button', { name: 'Cancel', exact: true }).click()
+  }
+})
+
+test.describe('on a touch screen', () => {
+  test.use({ hasTouch: true })
+
+  test("a tap shows one short break's controls, and they act on that break", async ({ page }) => {
+    await pinBackToBack(page)
+    const edit = calendar(page).getByRole('button', { name: 'Edit Break' })
+    for (const [index, time] of [[0, '11:00'], [1, '11:05']] as const) {
+      await blocksOf(page, 'Break').nth(index).tap()
+      await edit.nth(index).tap()
+      await expect(calendar(page).getByLabel('From', { exact: true })).toHaveValue(time)
+      await calendar(page).getByRole('button', { name: 'Cancel', exact: true }).tap()
+    }
+  })
+})
+
+test('a break taken is put right on the calendar, and the running one is left alone', async ({
+  page,
+}) => {
+  const at = (h: number, m = 0) => new Date(2026, 7, 20, h, m).getTime()
+  await openMono(page)
+  await importSession(page, {
+    version: 10,
+    dayKey: '2026-08-20',
+    events: [
+      { type: 'day/shaped', at: at(9) },
+      {
+        type: 'block/started', at: at(10), id: 'morning', blockKind: 'deep',
+        endsAt: at(10, 45), purpose: 'Write the migration',
+      },
+      { type: 'block/completed', at: at(10, 45) },
+      // Twenty minutes of a planned half hour, so it is drawn with its words.
+      { type: 'break/started', at: at(11), id: 'walk', endsAt: at(11, 30) },
+      { type: 'break/ended', at: at(11, 20) },
+      // On a break now, since five to two.
+      { type: 'break/started', at: at(13, 55), id: 'tea', endsAt: at(14, 10) },
+    ],
+  })
+
+  const breaks = blocksOf(page, 'Break')
+  const walk = calendar(page).locator('[title^="Break · 11:00 AM"]')
+  await expect(walk).toHaveAttribute('title', 'Break · 11:00 AM · 20m')
+  // The running break has nothing to edit, move or take off: it is the
+  // stage's until it ends. The one taken this morning has all three.
+  await expect(breaks).toHaveCount(2)
+  await expect(calendar(page).getByRole('button', { name: 'Edit Break' })).toHaveCount(1)
+  await expect(calendar(page).getByRole('button', { name: 'Remove Break' })).toHaveCount(1)
+
+  // Its length, from its form, which knows it as a break taken.
+  await calendar(page).getByRole('button', { name: 'Edit Break' }).click()
+  await expect(calendar(page).getByText('Edit break taken')).toBeVisible()
+  await calendar(page).getByLabel('For (minutes)', { exact: true }).fill('25')
+  await calendar(page).getByRole('button', { name: 'Save break', exact: true }).click()
+  await expect(walk).toHaveAttribute('title', 'Break · 11:00 AM · 25m')
+
+  // Dragged half an hour earlier onto the morning's block, it goes to the
+  // near side of the block rather than onto it: the record keeps clear of
+  // the record.
+  await walk.scrollIntoViewIfNeeded()
+  const box = (await walk.boundingBox())!
+  const x = box.x + 12
+  const y = box.y + box.height / 2
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x, y - 48, { steps: 6 })
+  await page.mouse.up()
+  const moved = calendar(page).locator('[title^="Break · 10:45 AM"]')
+  await expect(moved).toHaveAttribute('title', 'Break · 10:45 AM · 25m')
+
+  await calendar(page).getByRole('button', { name: 'Remove Break' }).click()
+  await expect(breaks).toHaveCount(1)
+})
+
+test('a drag held at the edge of the column scrolls the day, then grows it', async ({ page }) => {
+  // Opened at nine so the day is taller than the column beside the stage.
+  await openMono(page, new Date(2026, 7, 20, 9, 0, 0))
+  await shapeDay(page)
+  await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
+  await calendar(page).getByLabel('From', { exact: true }).fill('09:30')
+  await calendar(page).getByRole('button', { name: 'Add break', exact: true }).click()
+
+  const column = calendar(page).locator('.mono-scroll')
+  const seen = (await column.boundingBox())!
+  const pin = blocksOf(page, 'Break')
+  const box = (await pin.boundingBox())!
+  const x = box.x + 12
+
+  await page.mouse.move(x, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(x, seen.y + seen.height - 4, { steps: 10 })
+  const before = await column.evaluate((el) => el.scrollTop)
+  // The clock is paused, and the scrolling runs a frame at a time.
+  await page.clock.runFor(400)
+  expect(await column.evaluate((el) => el.scrollTop)).toBeGreaterThan(before)
+  // Past the six o'clock end of the day the axis drew, an hour at a time.
+  await page.clock.runFor(2000)
+  await expect(calendar(page).getByText('8 PM', { exact: true })).toBeVisible()
+  await page.mouse.up()
+
+  // Carried past the bottom of the day rather than to the bottom of what was
+  // on screen when it was picked up, and the evening it grew is drawn.
+  await expect(pin).toHaveAttribute('title', /^Break · (6|7|8|9|10|11):\d\d PM · 15m$/)
+})
+
+test('a drag held at the top of the day grows it earlier', async ({ page }) => {
+  // Opened at two, nothing earlier is drawn: the axis starts at two.
+  await openMono(page)
+  await shapeDay(page)
+  await calendar(page).getByRole('button', { name: 'Commitment', exact: true }).click()
+  await calendar(page).getByLabel('What', { exact: true }).fill('Lunch')
+  await calendar(page).getByLabel('At', { exact: true }).fill('15:00')
+  await calendar(page).getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(calendar(page).getByText('1 PM', { exact: true })).toHaveCount(0)
+
+  const column = calendar(page).locator('.mono-scroll')
+  const lunch = blocksOf(page, 'Lunch')
+  await lunch.scrollIntoViewIfNeeded()
+  const box = (await lunch.boundingBox())!
+  const x = box.x + 12
+  await column.evaluate((el) => el.scrollTo(0, 0))
+  const seen = (await column.boundingBox())!
+  const start = (await lunch.boundingBox())!
+
+  await page.mouse.move(x, start.y + start.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(x, seen.y + 2, { steps: 10 })
+  await page.clock.runFor(1500)
+  await expect(calendar(page).getByText('12 PM', { exact: true })).toBeVisible()
+  await page.mouse.up()
+
+  // Put right earlier than anything the day had drawn: lunch ran at noon-ish.
+  await expect(lunch).toHaveAttribute('title', /^Lunch · (10|11):\d\d AM · |^Lunch · 12:\d\d PM · /)
+})
+
+test('stacked under the stage, a drag held at the top grows the day and keeps hold', async ({
+  page,
+}) => {
+  // Regression: where the page scrolls the day, the drag scrolled on past the
+  // start of the day into the stage, then grew the axis with nothing keeping
+  // the drawing still, carried the block off the bottom of the screen, and let
+  // it go where it had been an hour before.
+  await page.setViewportSize({ width: 768, height: 844 })
+  await openMono(page)
+  await shapeDay(page)
+  await calendar(page).getByRole('button', { name: 'Commitment', exact: true }).click()
+  await calendar(page).getByLabel('What', { exact: true }).fill('Lunch')
+  await calendar(page).getByLabel('At', { exact: true }).fill('15:00')
+  await calendar(page).getByRole('button', { name: 'Add', exact: true }).click()
+  await expect(calendar(page).getByText('1 PM', { exact: true })).toHaveCount(0)
+
+  const lunch = blocksOf(page, 'Lunch')
+  await lunch.scrollIntoViewIfNeeded()
+  const box = (await lunch.boundingBox())!
+  const x = box.x + 12
+
+  await page.mouse.move(x, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(x, 2, { steps: 10 })
+  await page.clock.runFor(1500)
+  await expect(calendar(page).getByText('12 PM', { exact: true })).toBeVisible()
+  // Still under the pointer's end of the screen rather than carried off it.
+  await expect(lunch).toBeInViewport()
+  await page.mouse.up()
+
+  // Let go where it was drawn, earlier than anything the day had drawn.
+  await expect(lunch).toHaveAttribute('title', /^Lunch · (10|11):\d\d AM · |^Lunch · 12:\d\d PM · /)
+  await expect(lunch).toBeInViewport()
+})
+
+test('a commitment moves only the breaks it lands on, down past it', async ({ page }) => {
   // Adding one used to delete every pin still to come, so a meeting at five
-  // wiped a break pinned for three. Only the rest it would be drawn on top of
-  // goes now.
+  // wiped a break pinned for three. Then it deleted only the rest it would be
+  // drawn on top of. Now that one moves to just after it instead.
   await openMono(page)
   await shapeDay(page)
 
@@ -218,13 +480,46 @@ test('a commitment clears only the breaks it swallows', async ({ page }) => {
   await calendar(page).getByRole('button', { name: 'Add', exact: true }).click()
 
   await expect(blocksOf(page, 'Design review')).toHaveCount(1)
-  await expect(blocksOf(page, 'Break')).toHaveCount(1)
-  await expect(blocksOf(page, 'Break')).toHaveAttribute('title', /3:00 PM/)
+  await expect(blocksOf(page, 'Break')).toHaveCount(2)
+  await expect(blocksOf(page, 'Break').first()).toHaveAttribute('title', /3:00 PM/)
+  await expect(blocksOf(page, 'Break').last()).toHaveAttribute('title', /5:45 PM/)
+})
+
+test('a break pushed past the end of the day is drawn whole while the drag is held', async ({
+  page,
+}) => {
+  // Regression: the axis only reached as far as the day already drew, so a
+  // pin pushed past six was a sliver against the edge until the drop.
+  await openMono(page)
+  await shapeDay(page)
+  await calendar(page).getByRole('button', { name: 'Commitment', exact: true }).click()
+  await calendar(page).getByLabel('What', { exact: true }).fill('Review')
+  await calendar(page).getByLabel('At', { exact: true }).fill('16:30')
+  await calendar(page).getByLabel('For (minutes)', { exact: true }).fill('60')
+  await calendar(page).getByRole('button', { name: 'Add', exact: true }).click()
+  await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
+  await calendar(page).getByLabel('From', { exact: true }).fill('17:30')
+  await calendar(page).getByRole('button', { name: 'Add break', exact: true }).click()
+
+  const review = blocksOf(page, 'Review')
+  const pin = blocksOf(page, 'Break')
+  await review.scrollIntoViewIfNeeded()
+  const box = (await review.boundingBox())!
+  const drawn = (await pin.boundingBox())!.height
+
+  // Half an hour later is 48 pixels, and puts the break at six to quarter past.
+  await page.mouse.move(box.x + 12, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 12, box.y + box.height / 2 + 48, { steps: 6 })
+  await expect(calendar(page).getByText('5:00 PM', { exact: true })).toBeVisible()
+  expect((await pin.boundingBox())!.height).toBeCloseTo(drawn, 0)
+  await page.mouse.up()
+  await expect(pin).toHaveAttribute('title', 'Break · 6:00 PM · 15m')
 })
 
 test('a break cannot be pinned across a commitment', async ({ page }) => {
   // The other half of the rule above. A commitment arriving on top of a pin
-  // clears it; a pin aimed at a commitment is refused, and refused *here*,
+  // moves it; a pin aimed at a commitment is refused, and refused *here*,
   // where the person picking a time can see why — the reducer declines it too,
   // but a form that closes having silently done nothing is not an answer.
   await openMono(page)
@@ -249,10 +544,9 @@ test('a break cannot be pinned across a commitment', async ({ page }) => {
   await expect(blocksOf(page, 'Break')).toHaveAttribute('title', /3:00 PM/)
 })
 
-test('an editor closes when the thing it is editing is cleared', async ({ page }) => {
-  // Not by the × — that path already closed it — but by the pin being cleared
-  // out from under the form. It used to stay open and quietly become an *add*
-  // form: the same fields, the same values, a different meaning.
+test('an editor follows the break a commitment moves out from under it', async ({ page }) => {
+  // A pin a commitment lands on is moved down past it, with its form open.
+  // Left holding where it was, the form would put it back on the meeting.
   await openMono(page)
   await shapeDay(page)
 
@@ -273,7 +567,7 @@ test('an editor closes when the thing it is editing is cleared', async ({ page }
   await stage(page).getByLabel('For (minutes)', { exact: true }).fill('45')
   await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
 
-  await expect(calendar(page).getByLabel('From', { exact: true })).toBeHidden()
+  await expect(calendar(page).getByLabel('From', { exact: true })).toHaveValue('17:45')
 })
 
 test('removing the thing an editor is open on closes the editor', async ({ page }) => {
@@ -338,6 +632,111 @@ test('a break and a commitment are edited where they are drawn', async ({ page }
   await page.reload()
   await expect(blocksOf(page, 'Break')).toHaveAttribute('title', 'Break · 3:00 PM · 45m')
   await expect(blocksOf(page, 'Design review')).toHaveCount(1)
+})
+
+test('a commitment is dragged to a new time, and Escape puts it back', async ({ page }) => {
+  await openMono(page)
+  await addStandup(page)
+
+  const standup = blocksOf(page, 'Daily standup')
+  await standup.scrollIntoViewIfNeeded()
+  const box = (await standup.boundingBox())!
+  // Pressed at its left, clear of the ✎ and × the pointer reveals on its right.
+  const x = box.x + 12
+  const y = box.y + box.height / 2
+
+  // An hour is 96 pixels, so up 96 is an hour earlier.
+  await page.mouse.move(x, y)
+  await page.mouse.down()
+  await page.mouse.move(x, y - 96, { steps: 8 })
+  await expect(calendar(page).getByText('4:00 PM', { exact: true })).toBeVisible()
+  await page.mouse.up()
+  await expect(standup).toHaveAttribute('title', 'Daily standup · 4:00 PM · 15m')
+
+  // Survives a reload: it went into the log as an edit to the same commitment.
+  await page.reload()
+  await expect(blocksOf(page, 'Daily standup')).toHaveCount(1)
+  await expect(standup).toHaveAttribute('title', 'Daily standup · 4:00 PM · 15m')
+
+  // A drag let go of with Escape writes nothing.
+  await standup.scrollIntoViewIfNeeded()
+  const again = (await standup.boundingBox())!
+  await page.mouse.move(again.x + 12, again.y + again.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(again.x + 12, again.y + again.height / 2 + 48, { steps: 6 })
+  await expect(calendar(page).getByText('4:30 PM', { exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await page.mouse.up()
+  await expect(standup).toHaveAttribute('title', 'Daily standup · 4:00 PM · 15m')
+})
+
+test("a commitment dragged under the stage's open form stays where it was put", async ({
+  page,
+}) => {
+  // Regression: the stage's form held a copy of the whole commitment, so its
+  // Done put back the time it was opened at, even when only the title had
+  // been changed. It holds only what is typed into it now.
+  await openMono(page)
+  await addStandup(page)
+  await goToStage(page, 'Commitments')
+  await stage(page).getByRole('button', { name: 'Edit Daily standup' }).click()
+  const at = stage(page).getByLabel('At', { exact: true })
+  await expect(at).toHaveValue('17:00')
+
+  const standup = blocksOf(page, 'Daily standup')
+  await standup.scrollIntoViewIfNeeded()
+  const box = (await standup.boundingBox())!
+  await page.mouse.move(box.x + 12, box.y + box.height / 2)
+  await page.mouse.down()
+  await page.mouse.move(box.x + 12, box.y + box.height / 2 - 96, { steps: 8 })
+  await page.mouse.up()
+  await expect(standup).toHaveAttribute('title', 'Daily standup · 4:00 PM · 15m')
+
+  // The form shows where it went, and keeping a new title keeps the move.
+  await expect(at).toHaveValue('16:00')
+  await stage(page).getByLabel('This commitment', { exact: true }).fill('Design review')
+  await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
+  await expect(blocksOf(page, 'Design review')).toHaveAttribute(
+    'title',
+    'Design review · 4:00 PM · 15m',
+  )
+})
+
+test('a break is dragged anywhere but onto a commitment, and is moved by one', async ({
+  page,
+}) => {
+  await openMono(page)
+  await addStandup(page)
+  await calendar(page).getByRole('button', { name: 'Break', exact: true }).click()
+  await calendar(page).getByLabel('From', { exact: true }).fill('15:00')
+  await calendar(page).getByRole('button', { name: 'Add break', exact: true }).click()
+
+  const pin = blocksOf(page, 'Break')
+  const standup = blocksOf(page, 'Daily standup')
+  // Pressed at its left, clear of the ✎ and × on its right. An hour is 96px,
+  // so 1.6px is a minute.
+  const drag = async (block: typeof pin, minutes: number) => {
+    await block.scrollIntoViewIfNeeded()
+    const box = (await block.boundingBox())!
+    const x = box.x + 12
+    const y = box.y + box.height / 2
+    await page.mouse.move(x, y)
+    await page.mouse.down()
+    await page.mouse.move(x, y + minutes * 1.6, { steps: 8 })
+    await page.mouse.up()
+  }
+
+  await drag(pin, 60)
+  await expect(pin).toHaveAttribute('title', 'Break · 4:00 PM · 15m')
+
+  // Let go of over the five o'clock standup, it goes to the nearer side of it.
+  await drag(pin, 65)
+  await expect(pin).toHaveAttribute('title', 'Break · 5:15 PM · 15m')
+
+  // And the standup dragged onto it moves it down past the standup.
+  await drag(standup, 15)
+  await expect(standup).toHaveAttribute('title', 'Daily standup · 5:15 PM · 15m')
+  await expect(pin).toHaveAttribute('title', 'Break · 5:30 PM · 15m')
 })
 
 test('plans only inside working hours, and resumes after an unstructured gap', async ({

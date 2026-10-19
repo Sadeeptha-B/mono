@@ -15,7 +15,15 @@
 import { describe, expect, it } from 'vitest'
 
 import { commitmentsFor, reduce, replay, type MonoEvent } from './events'
-import type { Commitment, Ms, PlannedBreak, RecurringCommitment } from './types'
+import {
+  breakSpan,
+  commitmentSpan,
+  type Commitment,
+  type Ms,
+  type PlannedBreak,
+  type RecurringCommitment,
+} from './types'
+import { overlaps } from './intervals'
 
 const BASE_DAY = new Date(2026, 7, 20)
 
@@ -85,9 +93,10 @@ describe('editing a commitment', () => {
     expect(session.commitments[0]!).toMatchObject({ prepMin: 0, recoverMin: 0 })
   })
 
-  it('drops a pin the moved commitment now covers, and only that one', () => {
+  it('moves a pin the moved commitment now covers down past it, and only that one', () => {
     // Swim moves to two o'clock, which with half an hour of getting ready puts
-    // its span over the three o'clock tea. The half past five walk is nowhere
+    // its span over the three o'clock tea, so the tea goes to twenty past
+    // three, when the swim's span ends. The half past five walk is nowhere
     // near it and is left alone — and was clear of the swim where it started
     // too, since the twenty minutes of getting back run to twenty past.
     const walk: PlannedBreak = { id: 'walk', startsAt: at(17, 30), durationMin: 30 }
@@ -98,7 +107,7 @@ describe('editing a commitment', () => {
       { type: 'commitment/updated', at: at(10), id: 'swim', patch: { startsAt: at(14) } },
     ])
 
-    expect(session.overrides.map((b) => b.id)).toEqual(['walk'])
+    expect(session.overrides).toEqual([{ ...tea, startsAt: at(15, 20) }, walk])
   })
 
   it('measures against where the meeting ends up, not where it was', () => {
@@ -113,7 +122,7 @@ describe('editing a commitment', () => {
       { type: 'commitment/updated', at: at(10), id: 'swim', patch: { startsAt: at(14) } },
     ])
 
-    expect(session.overrides).toEqual([])
+    expect(session.overrides).toEqual([{ ...tea, startsAt: at(15, 20) }])
   })
 
   it('ignores an id that is not there, pins included', () => {
@@ -129,11 +138,46 @@ describe('editing a commitment', () => {
 })
 
 describe('adding a commitment', () => {
-  it('clears the pins it would swallow', () => {
+  it('moves the pins it lands on to just after it', () => {
     // A quarter past four is in the pool. The planner merges a pin overlapping
-    // a commitment into one busy interval, so this is rest that would be drawn
-    // as part of the swim and had by nobody.
+    // a commitment into one busy interval, so left there it would be rest drawn
+    // as part of the swim and had by nobody; the swim says it is later, not
+    // off, so it goes to twenty past five, when the swim's span ends.
     const session = replay([pinned(inPool), added(swim)])
+
+    expect(session.overrides).toEqual([{ ...inPool, startsAt: at(17, 20) }])
+  })
+
+  it('moves a pin past whatever is right after it too', () => {
+    // After the swim there is a call at twenty past five and a walk pinned
+    // after that, so the moved break lands where both have finished — never on
+    // the next meeting along, and never merged into another rest.
+    const call: Commitment = { id: 'call', title: 'Call', startsAt: at(17, 20), durationMin: 10 }
+    const walk: PlannedBreak = { id: 'walk', startsAt: at(17, 30), durationMin: 30 }
+    const session = replay([added(call), pinned(walk), pinned(inPool), added(swim)])
+
+    expect(session.overrides).toEqual([walk, { ...inPool, startsAt: at(18) }])
+  })
+
+  it('moves a pin out of working hours rather than losing it', () => {
+    // The day's hours end at six, and a seven o'clock meeting until half past
+    // eight puts the pin after work. It is still the user's, to drag back.
+    const evening: PlannedBreak = { id: 'evening', startsAt: at(19), durationMin: 30 }
+    const dinner: Commitment = { id: 'dinner', title: 'Dinner', startsAt: at(19), durationMin: 90 }
+    const session = replay([pinned(evening), added(dinner)])
+
+    expect(session.overrides).toEqual([{ ...evening, startsAt: at(20, 30) }])
+  })
+
+  it('clears a pin only when there is no room left before midnight', () => {
+    const late: PlannedBreak = { id: 'late', startsAt: at(23), durationMin: 30 }
+    const lateShow: Commitment = {
+      id: 'show',
+      title: 'Late show',
+      startsAt: at(22, 45),
+      durationMin: 60,
+    }
+    const session = replay([pinned(late), added(lateShow)])
 
     expect(session.overrides).toEqual([])
   })
@@ -157,21 +201,24 @@ describe('adding a commitment', () => {
   it('counts the time either side of the commitment as part of it', () => {
     // 15:00 tea against a swim whose pool time starts at 16:00: nothing
     // overlaps until the half hour of getting ready is counted, and then the
-    // 15:15 end of the tea is clear of the 15:30 start by fifteen minutes.
+    // 15:15 end of the tea is clear of the 15:30 start by fifteen minutes. The
+    // 15:20 one is not, and goes after the twenty minutes of getting back.
     const early: PlannedBreak = { id: 'early', startsAt: at(15, 20), durationMin: 15 }
     const session = replay([pinned(tea), pinned(early), added(swim)])
 
-    expect(session.overrides.map((b) => b.id)).toEqual(['tea'])
+    expect(session.overrides).toEqual([tea, { ...early, startsAt: at(17, 20) }])
   })
 
-  it('drops pins already spent, whether they clash or not', () => {
+  it('keeps pins already over that it does not land on', () => {
+    // The morning's pin is the record of rest that was planned, which used to
+    // be swept away by whatever commitment happened to be written next.
     const morning: PlannedBreak = { id: 'morning', startsAt: at(9), durationMin: 15 }
     const session = replay([
       pinned(morning),
       { type: 'commitment/added', at: at(11), commitment: swim },
     ])
 
-    expect(session.overrides).toEqual([])
+    expect(session.overrides).toEqual([morning])
   })
 })
 
@@ -213,16 +260,21 @@ describe('a break where a commitment already is', () => {
     expect(session.overrides).toEqual([tea])
   })
 
-  it('lands in the same state whichever order the log is in', () => {
+  it('never shares a minute with a commitment, whichever order the log is in', () => {
     // The rule is enforced from both sides, which is what lets it be stated as
     // a rule. An imported log — or one written by a version of Mono that had
-    // neither filter — replays to the same day either way round.
+    // neither half — replays to an honest day either way round: pin first and
+    // the swim moves it, swim first and the pin is refused.
     const pinFirst = replay([pinned(inPool), added(swim)])
     const meetingFirst = replay([added(swim), pinned(inPool)])
 
-    expect(pinFirst.overrides).toEqual([])
-    expect(meetingFirst.overrides).toEqual(pinFirst.overrides)
-    expect(meetingFirst.commitments).toEqual(pinFirst.commitments)
+    for (const session of [pinFirst, meetingFirst]) {
+      for (const pin of session.overrides) {
+        expect(overlaps(breakSpan(pin), commitmentSpan(swim))).toBe(false)
+      }
+    }
+    expect(pinFirst.overrides).toEqual([{ ...inPool, startsAt: at(17, 20) }])
+    expect(meetingFirst.overrides).toEqual([])
   })
 })
 
@@ -245,6 +297,224 @@ describe('editing a pinned break', () => {
     ])
 
     expect(session.overrides).toEqual([{ id: 'tea', startsAt: at(15), durationMin: 45 }])
+  })
+})
+
+/** A deep block run from `from` to `to`, finished. */
+const ran = (from: Ms, to: Ms): MonoEvent[] => [
+  {
+    type: 'block/started',
+    at: from,
+    id: `block-${from}`,
+    blockKind: 'deep',
+    endsAt: to,
+    purpose: 'Write',
+  },
+  { type: 'block/completed', at: to },
+]
+
+describe('a pin and what it keeps clear of', () => {
+  it('is refused across another pin, laid or moved there', () => {
+    const overTea: PlannedBreak = { id: 'over', startsAt: at(15, 10), durationMin: 15 }
+    const walk: PlannedBreak = { id: 'walk', startsAt: at(17), durationMin: 30 }
+
+    expect(replay([pinned(tea), pinned(overTea)]).overrides).toEqual([tea])
+    expect(
+      replay([
+        pinned(tea),
+        pinned(walk),
+        { type: 'break/updated', at: at(10), id: 'walk', patch: { startsAt: at(15, 5) } },
+      ]).overrides,
+    ).toEqual([tea, walk])
+  })
+
+  it('is refused on time already on the record', () => {
+    const morning: PlannedBreak = { id: 'morning', startsAt: at(9, 30), durationMin: 15 }
+    const session = replay([...ran(at(9), at(9, 45)), { ...pinned(morning), at: at(10) }])
+
+    expect(session.overrides).toEqual([])
+  })
+
+  it('can still be changed when what it overlaps came after it', () => {
+    // Pinned for half nine, then a block run straight through it: changing it,
+    // or moving it off the block, must not be refused for the block it is on.
+    const morning: PlannedBreak = { id: 'morning', startsAt: at(9, 30), durationMin: 15 }
+    const session = replay([
+      { ...pinned(morning), at: at(8) },
+      ...ran(at(9), at(9, 45)),
+      { type: 'break/updated', at: at(10), id: 'morning', patch: { durationMin: 20 } },
+      { type: 'break/updated', at: at(10), id: 'morning', patch: { startsAt: at(9, 50) } },
+    ])
+
+    expect(session.overrides).toEqual([{ ...morning, startsAt: at(9, 50), durationMin: 20 }])
+  })
+})
+
+describe('correcting a break already taken', () => {
+  /** A break taken at `from` and ended at `to`, seconds and all. */
+  const taken = (id: string, from: Ms, to: Ms, planned = to): MonoEvent[] => [
+    { type: 'break/started', at: from, id, endsAt: planned },
+    { type: 'break/ended', at: to },
+  ]
+  const SECONDS = 37_000
+  const moved = (
+    id: string,
+    patch: { startsAt?: Ms; durationMin?: number },
+    when = at(16),
+  ): MonoEvent => ({ type: 'break/updated', at: when, id, patch })
+  const breaks = (events: MonoEvent[]) => replay(events).history.filter((s) => s.kind === 'break')
+
+  it('moves it whole, keeping the length it really ran', () => {
+    // Twelve minutes and thirty-seven seconds of a fifteen-minute break.
+    const events = taken('rest', at(11), at(11, 12) + SECONDS, at(11, 15))
+
+    expect(breaks([...events, moved('rest', { startsAt: at(11, 30) })])).toEqual([
+      {
+        kind: 'break',
+        id: 'rest',
+        startedAt: at(11, 30),
+        endedAt: at(11, 42) + SECONDS,
+        plannedEndsAt: at(11, 45),
+      },
+    ])
+  })
+
+  it('takes a new length from its start', () => {
+    const events = taken('rest', at(11), at(11, 12) + SECONDS)
+
+    expect(breaks([...events, moved('rest', { durationMin: 20 })])[0]).toMatchObject({
+      startedAt: at(11),
+      endedAt: at(11, 20),
+    })
+  })
+
+  it('keeps the record in the order the day happened', () => {
+    // Moved from before the morning block to after it, the break is read after
+    // it by everything that reads history in order: the trail, the streak.
+    const session = replay([
+      ...taken('rest', at(9), at(9, 15)),
+      ...ran(at(10), at(10, 45)),
+      moved('rest', { startsAt: at(11) }),
+    ])
+
+    expect(session.history.map((s) => s.id)).toEqual([`block-${at(10)}`, 'rest'])
+  })
+
+  it('is refused onto other records, whatever is running, or the future', () => {
+    const events = [...taken('rest', at(9), at(9, 15)), ...ran(at(10), at(10, 45))]
+    const before = breaks(events)
+    const running: MonoEvent = {
+      type: 'block/started',
+      at: at(15, 50),
+      id: 'now',
+      blockKind: 'deep',
+      endsAt: at(16, 35),
+      purpose: 'Write',
+    }
+
+    expect(breaks([...events, moved('rest', { startsAt: at(10, 30) })])).toEqual(before)
+    expect(breaks([...events, running, moved('rest', { startsAt: at(15, 40) })])).toEqual(before)
+    expect(breaks([...events, moved('rest', { startsAt: at(15, 50) })])).toEqual(before)
+    expect(breaks([...events, moved('rest', { durationMin: 75 })])).toEqual(before)
+  })
+
+  it('may share its time with a commitment, as two facts about the same hour', () => {
+    // Correcting the break must not move or refuse because of the meeting:
+    // the plan keeps clear of commitments, the record only of the record.
+    const session = replay([
+      added({ id: 'call', title: 'Call', startsAt: at(11), durationMin: 30 }),
+      ...taken('rest', at(9), at(9, 15)),
+      moved('rest', { startsAt: at(11, 10) }),
+    ])
+
+    expect(session.history[0]).toMatchObject({ startedAt: at(11, 10), endedAt: at(11, 25) })
+    expect(session.commitments).toHaveLength(1)
+  })
+
+  it('is taken off the record by its id', () => {
+    const session = replay([
+      ...taken('rest', at(9), at(9, 15)),
+      ...ran(at(10), at(10, 45)),
+      { type: 'break/removed', at: at(16), id: 'rest' },
+    ])
+
+    expect(session.history.map((s) => s.kind)).toEqual(['block'])
+  })
+
+  it('changes nothing for an edit that changes nothing, or an id nobody has', () => {
+    const session = replay(taken('rest', at(9), at(9, 15)))
+
+    expect(reduce(session, moved('rest', { startsAt: at(9) }))).toBe(session)
+    expect(reduce(session, moved('missing', { startsAt: at(12) }))).toBe(session)
+    expect(reduce(session, { type: 'break/removed', at: at(16), id: 'missing' })).toBe(session)
+  })
+
+  it('never reaches a block, which stays as it ran', () => {
+    const session = replay(ran(at(10), at(10, 45)))
+
+    expect(reduce(session, moved(`block-${at(10)}`, { startsAt: at(12) }))).toBe(session)
+    expect(reduce(session, { type: 'break/removed', at: at(16), id: `block-${at(10)}` })).toBe(
+      session,
+    )
+  })
+})
+
+describe('confirming a pinned break', () => {
+  const confirmed = (id: string, when = at(16)): MonoEvent => ({
+    type: 'break/confirmed',
+    at: when,
+    id,
+  })
+
+  it('takes it off the plan and puts it on the record, at the time it was planned', () => {
+    const session = replay([pinned(tea), confirmed('tea')])
+
+    expect(session.overrides).toEqual([])
+    expect(session.history).toEqual([
+      {
+        kind: 'break',
+        id: 'tea',
+        startedAt: at(15),
+        endedAt: at(15, 15),
+        plannedEndsAt: at(15, 15),
+      },
+    ])
+  })
+
+  it('is refused before its time has passed, or over something else on the record', () => {
+    expect(replay([pinned(tea), confirmed('tea', at(15, 10))]).overrides).toEqual([tea])
+
+    const session = replay([pinned(tea), ...ran(at(14, 50), at(15, 35)), confirmed('tea')])
+    expect(session.overrides).toEqual([tea])
+    expect(session.history.map((s) => s.kind)).toEqual(['block'])
+  })
+
+  it('puts on the record only what a break ended early over it left', () => {
+    // Half an hour pinned, ten minutes of it taken through Mono, the rest had
+    // without pressing Break: the record gains the twenty, beside the ten.
+    const walk: PlannedBreak = { id: 'walk', startsAt: at(15), durationMin: 30 }
+    const session = replay([
+      pinned(walk),
+      { type: 'break/started', at: at(15), id: 'taken', endsAt: at(15, 30) },
+      { type: 'break/ended', at: at(15, 10) },
+      confirmed('walk'),
+    ])
+
+    expect(session.overrides).toEqual([])
+    expect(session.history.map((s) => [s.id, s.startedAt, s.endedAt])).toEqual([
+      ['taken', at(15), at(15, 10)],
+      ['walk', at(15, 10), at(15, 30)],
+    ])
+  })
+
+  it('is then corrected like any break taken', () => {
+    const session = replay([
+      pinned(tea),
+      confirmed('tea'),
+      { type: 'break/updated', at: at(16), id: 'tea', patch: { durationMin: 10 } },
+    ])
+
+    expect(session.history[0]).toMatchObject({ startedAt: at(15), endedAt: at(15, 10) })
   })
 })
 
@@ -289,7 +559,9 @@ describe('taking a break', () => {
     expect(session.overrides).toEqual([afternoon])
   })
 
-  it('drops pins already behind us, which nothing reads', () => {
+  it('keeps pins already behind us that it did not take', () => {
+    // A pin skipped at ten stays on the day as the rest that was planned. It
+    // used to go with whatever break happened to be taken next.
     const morning: PlannedBreak = { id: 'morning', startsAt: at(10), durationMin: 15 }
     const session = replay([
       pinned(morning),
@@ -297,7 +569,14 @@ describe('taking a break', () => {
       ...breakTaken(at(15), at(15, 15)),
     ])
 
-    expect(session.overrides.map((b) => b.id)).toEqual(['walk'])
+    expect(session.overrides.map((b) => b.id)).toEqual(['morning', 'walk'])
+  })
+
+  it('spends a pin it covers, however it lined up with it', () => {
+    // Started ten minutes late and run past the pin's end: the rest was had.
+    const session = replay([pinned(tea), ...breakTaken(at(15, 10), at(15, 30))])
+
+    expect(session.overrides).toEqual([])
   })
 
   it('records the break itself, at the length it really ran', () => {
@@ -746,12 +1025,14 @@ describe('recurring commitments', () => {
     expect(commitmentsFor(state, at(12)).map((c) => c.id)).toEqual([today])
   })
 
-  it("clear the pins today's occurrence lands on, and refuse a pin across it", () => {
+  it("move the pins today's occurrence lands on, and refuse a pin across it", () => {
     const covered: PlannedBreak = { id: 'covered', startsAt: at(9, 5), durationMin: 10 }
-    expect(replay([pinned(covered), started(at(8))]).overrides).toEqual([])
+    expect(replay([pinned(covered), started(at(8))]).overrides).toEqual([
+      { ...covered, startsAt: at(9, 15) },
+    ])
     expect(replay([started(at(8)), { ...pinned(covered), at: at(8, 30) }]).overrides).toEqual([])
 
-    // Moved onto a pin by a change to the series, the pin goes too.
+    // Moved onto a pin by a change to the series, the pin moves past it too.
     const later: PlannedBreak = { id: 'later', startsAt: at(11), durationMin: 10 }
     expect(
       replay([
@@ -759,7 +1040,7 @@ describe('recurring commitments', () => {
         { ...pinned(later), at: at(7, 30) },
         { type: 'recurring/updated', at: at(8), id: 'standup', patch: { time: '11:00' } },
       ]).overrides,
-    ).toEqual([])
+    ).toEqual([{ ...later, startsAt: at(11, 15) }])
   })
 
   it('end a series given an end, and lose the end when told it has none', () => {

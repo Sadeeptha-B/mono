@@ -864,9 +864,12 @@ export function App() {
                 onComposer={openComposer}
                 commitments={commitments}
                 breaks={session.overrides}
+                history={session.history}
+                active={session.active}
                 onAddBreak={store.planBreak}
                 onAddCommitment={store.addCommitment}
                 onUpdateBreak={store.updateBreak}
+                onMarkBreakTaken={store.markBreakTaken}
                 onUpdateCommitment={store.updateCommitment}
                 onSetRegions={store.setRegions}
                 onRemoveBreak={store.removeBreak}

@@ -16,7 +16,11 @@
  * seam, not a badge — so it is null every other time this is called. What the
  * trail records is wider than what the counters do: an abandoned block and an
  * away span both leave an unlit gap, because a day that is drawn honestly has
- * to include the parts that did not work. Nothing later removes an earned mark.
+ * to include the parts that did not work. Nothing later removes an earned mark,
+ * with one exception the user makes: a break taken off the record takes its
+ * own mark with it, since by their account it did not happen. A break moved
+ * on the record moves its mark too, because history is kept in the order the
+ * day happened (`withTakenBreak` in the log).
  */
 
 import { completeBlock } from './events'

@@ -42,6 +42,30 @@ than gain its own vertical scroll. Repeat once with larger browser text enabled.
 2. Start a block and sleep the machine across its end. You should get the
    "You were away" prompt with the right elapsed span.
 
+## Dragging on the calendar
+
+Playwright drives a synthetic mouse with a paused clock, so the feel of a drag
+is a hand check.
+
+1. With a real mouse, beside the stage, drag a commitment, a pin and a break
+   already taken. Each follows the pointer without trailing, shows the time it
+   would land at in the gutter, and a pin or a taken break hops to the near
+   side of whatever it is dragged onto.
+2. Pick a block up just under the top of the column and pull it down. The
+   column must not scroll up. Hold it at the bottom edge: the column scrolls,
+   and once it cannot, the day grows an hour at a time into the evening, with
+   the block staying under the pointer. Do the same at the top. Repeat on a
+   narrow window, where the page scrolls rather than the column: held at the
+   top, the page stops where the day starts rather than scrolling on into the
+   stage, and the block stays on screen as the day grows.
+3. Try a drag with a pen on a touch screen. It is not promised: note whether it
+   lifts, or whether the page pans and the drag is cancelled.
+4. On a phone, iOS Safari as well as Android Chrome, pin two five-minute breaks
+   back to back. Tap one: only its controls appear, and its ✎ opens that
+   break, not the other. Tapping elsewhere on the page hides them again.
+   Playwright's touch emulation is Chromium's; WebKit moves the focus
+   differently on a tap, which is what this relies on.
+
 ## Tasks and the backlog
 
 The backlog lives in IndexedDB, which the e2e specs exercise in a fresh profile

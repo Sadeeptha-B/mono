@@ -22,6 +22,9 @@
  * wrote, so they are the two that carry one. Everything else here is derived,
  * and the way to change a derived block is to change what it was derived from.
  *
+ * The two can also be picked up and dragged along the axis, for the lunch
+ * that runs late (`useCalendarDrag`).
+ *
  * Who scrolls depends on the width, and every `lg:` below is that one decision.
  * Beside the stage this column is a fixed-height box with the axis scrolling
  * inside it, so the day can be however long it likes without pushing the page
@@ -31,7 +34,7 @@
  * day it draws, and the document scrolls.
  */
 
-import { useEffect, useLayoutEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { format } from 'date-fns'
 
 import {
@@ -40,19 +43,31 @@ import {
   CommitmentComposer,
   editingId,
   HoursComposer,
+  type BreakClashCheck,
   type Composer,
   type ComposerKind,
-  type EntryComposer,
+  type EditedBreak,
 } from './SegmentEditor'
-import { MARK_LANE_PX, Marks, countsOf, writtenIn, writtenWithin } from './BlockMarks'
-import { styleFor } from './style'
-import { useBlockTasks } from '../BlockTasks'
-import { EditGlyph } from '../ui'
-import { dayBounds, formatClock, formatDuration } from '@/domain/time'
+import { Block } from './CalendarBlock'
 import {
-  commitmentSpan,
+  GUTTER_PX,
+  HOUR_PX,
+  layout,
+  placedAt,
+  pxFor,
+  TOP_PAD_PX,
+  yAt,
+} from './geometry'
+import { scrollsItself } from './edgeScroll'
+import { useCalendarDrag } from './useCalendarDrag'
+import { breakClash, type BreakSurroundings } from '@/domain/breakRoom'
+import { formatClock } from '@/domain/time'
+import {
+  breakSpan,
+  type ActiveSegment,
   type Commitment,
   type CommitmentPatch,
+  type CompletedSegment,
   type Interval,
   type Ms,
   type PlannedBreak,
@@ -62,29 +77,25 @@ import {
   type WorkRegion,
 } from '@/domain/types'
 
-const HOUR_PX = 96
-const HOUR_MS = 3_600_000
-/** Below this height a block cannot fit a legible label, so it renders bare. */
-const LABEL_MIN_PX = 22
-const GUTTER_PX = 52
-/** Headroom so the first hour label is not clipped by the scroll container. */
-const TOP_PAD_PX = 12
-
 type Props = {
   timeline: Timeline
   now: Ms
   /** Today's hours, for the editor. Not the same list as `timeline.regions`. */
   regions: readonly WorkRegion[]
   /**
-   * The two lists an editor can be pointed at, as the store holds them.
+   * What an editor can be pointed at, as the store holds it: the day's
+   * commitments, its pins, and its record, for the breaks on it.
    *
    * Taken from the store rather than off the timeline entry that was clicked,
-   * because the planner draws what is *left* of a break already under way — it
-   * clips the entry at `now` — and a form seeded from that would quietly shorten
-   * the break it claimed to be editing.
+   * because the planner draws a pin under a running break only from where that
+   * break ends, and a form seeded from that would quietly shorten the break it
+   * claimed to be editing.
    */
   commitments: readonly Commitment[]
   breaks: readonly PlannedBreak[]
+  history: readonly CompletedSegment[]
+  /** What is running, which a break put right on the record keeps clear of. */
+  active: ActiveSegment | null
   /** Which editor is expanded under the header, if any. Owned by `App`. */
   composer: Composer | null
   onComposer: (next: Composer | null) => void
@@ -92,7 +103,10 @@ type Props = {
   onRemoveCommitment: (id: string) => void
   onAddBreak: (input: Omit<PlannedBreak, 'id'>) => void
   onAddCommitment: (input: Omit<Commitment, 'id'>) => void
+  /** A pin, or a break already taken: the log reaches either by its id. */
   onUpdateBreak: (id: string, patch: PlannedBreakPatch) => void
+  /** A pin whose time has passed, said to have been taken. */
+  onMarkBreakTaken: (id: string) => void
   onUpdateCommitment: (id: string, patch: CommitmentPatch) => void
   onSetRegions: (regions: WorkRegion[]) => void
   /**
@@ -109,6 +123,8 @@ export function DayCalendar({
   regions,
   commitments,
   breaks,
+  history,
+  active,
   composer,
   onComposer,
   onRemoveBreak,
@@ -116,15 +132,50 @@ export function DayCalendar({
   onAddBreak,
   onAddCommitment,
   onUpdateBreak,
+  onMarkBreakTaken,
   onUpdateCommitment,
   onSetRegions,
   switcher,
 }: Props) {
   const scroller = useRef<HTMLDivElement>(null)
+  const content = useRef<HTMLDivElement>(null)
+  // How far a drag held at the end of the day has grown it (`useCalendarDrag`).
+  const [reach, setReach] = useState<Interval | null>(null)
   const { rangeStart, rangeEnd, hours, placed } = useMemo(
-    () => layout(timeline, now),
-    [timeline, now],
+    () => layout(timeline, now, reach),
+    [timeline, now, reach],
   )
+
+  /**
+   * The drawing kept still when the top of the axis moves.
+   *
+   * The axis starts at the first hour anything is drawn in, so it moves: a
+   * drag held at its top grows it an hour earlier, a block moved off the
+   * morning lets it start later, and the hour the day opened in passes. Each
+   * shifts everything drawn below by an hour's height, which under a pointer
+   * standing still is the day jumping, and under a drag is the landing jumping
+   * with it. So the scroll takes up exactly what the top gained or lost.
+   * When the page is what scrolls, only once the calendar is scrolled into,
+   * or while a drag holds the axis grown (`reach`) or has just let it go:
+   * above the calendar, at the stage, nothing under the pointer moved, but a
+   * drag's pointer is on the day, however far down the page the day starts.
+   * The landing is read again after this has scrolled (`useCalendarDrag`).
+   * The browser's own scroll anchoring is off on the axis (`overflow-anchor`),
+   * or the two would both make the correction.
+   */
+  const anchoredAt = useRef<{ start: Ms; held: boolean } | null>(null)
+  useLayoutEffect(() => {
+    const before = anchoredAt.current
+    const held = reach !== null
+    anchoredAt.current = { start: rangeStart, held }
+    if (before === null || before.start === rangeStart) return
+    const shift = pxFor(before.start - rangeStart)
+    const column = scroller.current
+    if (scrollsItself(column)) column.scrollTop += shift
+    else if (held || before.held || (content.current?.getBoundingClientRect().top ?? 0) < 0) {
+      window.scrollBy(0, shift)
+    }
+  }, [rangeStart, reach])
 
   // Bring the current hour into view once, the first time the column is laid
   // out. Doing this on every tick would yank the view back while the user is
@@ -140,15 +191,19 @@ export function DayCalendar({
     const el = scroller.current
     if (broughtIntoView.current || !el || el.clientHeight === 0) return
     broughtIntoView.current = true
-    const offset = ((now - rangeStart) / HOUR_MS) * HOUR_PX
+    const offset = pxFor(now - rangeStart)
     el.scrollTop = Math.max(0, offset - el.clientHeight / 3)
   })
 
-  const nowOffset = TOP_PAD_PX + ((now - rangeStart) / HOUR_MS) * HOUR_PX
+  const nowOffset = yAt(now, rangeStart)
   const nowVisible = now >= rangeStart && now <= rangeEnd
 
   const editing = composer === null ? null : editingId(composer)
-  const editingBreak = byId(breaks, composer?.kind === 'break' ? composer.editing : null)
+  const editingBreak = editedBreak(
+    breaks,
+    history,
+    composer?.kind === 'break' ? composer.editing : null,
+  )
   const editingCommitment = byId(
     commitments,
     composer?.kind === 'commitment' ? composer.editing : null,
@@ -161,7 +216,7 @@ export function DayCalendar({
    * is the obvious one — you clicked into a break to decide about it, and
    * deciding it should not be there at all is one of the answers — and it closed
    * itself. The other two never pass through this component: a pin spent by a
-   * break ending, and a pin cleared by a commitment that now covers it. Those
+   * break ending, and a pin a commitment lands on and cannot move. Those
    * left the form open, where it quietly became an *add*. Both halves of it read
    * the lookups above rather than the id in `composer`, so the same fields
    * holding the same values would have written a second entry, with the header
@@ -190,6 +245,42 @@ export function DayCalendar({
     if (orphaned) onComposer(null)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orphaned])
+
+  // Everything a break keeps clear of, for the form to explain by, the drag
+  // to find room by and a passed pin's ✓ to be offered by — the reducer's own
+  // rule (`breakClash`), asked early.
+  const surroundings: BreakSurroundings = { commitments, pins: breaks, history, active, at: now }
+  const clashOf: BreakClashCheck = (span, kind, edited) =>
+    breakClash(span, kind, surroundings, {
+      except: edited?.id ?? null,
+      previous: edited === null ? null : { start: edited.startsAt, end: edited.endsAt },
+    })
+
+  /**
+   * The ✓ on a pin whose time has passed, or null while there is nothing to
+   * confirm. Asked of the part drawn, which is the part it confirms: after a
+   * break ended early over it, what was left (`pinLeft`). Not offered where
+   * the record already says something else happened then — a block run
+   * straight through it — since that is a pin to move clear first, or to take
+   * off with its ×.
+   */
+  const markTaken = (entry: TimelineEntry): (() => void) | null => {
+    if (entry.kind !== 'planned-break' || !entry.unconfirmed) return null
+    const drawn = { start: entry.startsAt, end: entry.endsAt }
+    if (clashOf(drawn, 'record', null) !== null) return null
+    return () => onMarkBreakTaken(entry.id)
+  }
+
+  const { moving, dragOf } = useCalendarDrag({
+    scroller,
+    content,
+    axis: { start: rangeStart, end: rangeEnd },
+    surroundings,
+    editing,
+    onReach: setReach,
+    onUpdateCommitment,
+    onUpdateBreak,
+  })
 
   return (
     // This aside is a direct grid item. Its automatic min-content width lets a
@@ -262,15 +353,21 @@ export function DayCalendar({
         the form and what saving it does cannot disagree: an id pointing at
         something no longer on the day is simply a new one.
       */}
+      {/*
+        A break's form is keyed by where it is as well. A commitment landing on
+        it moves it out from under the form, and a draft of where it was is
+        one that puts it back on top of the commitment; so it opens again on
+        where the break went.
+      */}
       {composer?.kind === 'break' && (
         <BreakComposer
-          key={editingBreak?.id ?? 'new'}
+          key={editingBreak ? `${editingBreak.id}@${editingBreak.startsAt}` : 'new'}
           now={now}
           editing={editingBreak}
-          commitments={commitments}
-          onSubmit={(input) => {
-            if (editingBreak) onUpdateBreak(editingBreak.id, input)
-            else onAddBreak(input)
+          clash={clashOf}
+          onSubmit={(input, changed) => {
+            if (editingBreak === null) onAddBreak(input)
+            else if (Object.keys(changed).length > 0) onUpdateBreak(editingBreak.id, changed)
             onComposer(null)
           }}
           onCancel={() => onComposer(null)}
@@ -281,9 +378,11 @@ export function DayCalendar({
           key={editingCommitment?.id ?? 'new'}
           now={now}
           editing={editingCommitment}
-          onSubmit={(input) => {
-            if (editingCommitment) onUpdateCommitment(editingCommitment.id, input)
-            else onAddCommitment(input)
+          onSubmit={(input, changed) => {
+            if (editingCommitment === null) onAddCommitment(input)
+            else if (Object.keys(changed).length > 0) {
+              onUpdateCommitment(editingCommitment.id, changed)
+            }
             onComposer(null)
           }}
           onCancel={() => onComposer(null)}
@@ -292,7 +391,8 @@ export function DayCalendar({
 
       <div ref={scroller} className="mono-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         <div
-          className="relative"
+          ref={content}
+          className="relative [overflow-anchor:none]"
           style={{ height: hours.length * HOUR_PX + TOP_PAD_PX * 2, paddingLeft: GUTTER_PX }}
         >
           {/* The axis: one row per hour, labelled on the left. */}
@@ -328,17 +428,42 @@ export function DayCalendar({
             />
           ))}
 
-          {placed.map((item) => (
-            <Block
-              key={item.key}
-              item={item}
-              now={now}
-              editing={editing}
-              onEdit={onComposer}
-              onRemoveBreak={onRemoveBreak}
-              onRemoveCommitment={onRemoveCommitment}
-            />
-          ))}
+          {placed.map((item) => {
+            const drag = dragOf(item.entry)
+            const shown = drag.at ? placedAt(item, drag.at, rangeStart, rangeEnd) : item
+            return (
+              <Block
+                key={item.key}
+                // In the air it is the column's width, not its lane's: the
+                // blocks it shared a lane with are not where it is going.
+                item={drag.lifted ? { ...shown, lane: 0, lanes: 1 } : shown}
+                now={now}
+                editing={editing}
+                onEdit={onComposer}
+                onRemoveBreak={onRemoveBreak}
+                onRemoveCommitment={onRemoveCommitment}
+                onMarkTaken={markTaken(item.entry)}
+                drag={drag}
+              />
+            )
+          })}
+
+          {/* Where the dragged block would land, in the gutter level with its
+              top, where the hours are read. */}
+          {moving && (
+            <div
+              aria-hidden
+              className={`tnum pointer-events-none absolute left-0 z-30 rounded-md border bg-surface-raised px-1 text-[11px] whitespace-nowrap ${
+                moving.kind === 'commitment'
+                  ? 'border-commit/40 text-commit'
+                  : 'border-rest/40 text-rest'
+              }`}
+              style={{ top: yAt(moving.startsAt, rangeStart) - 8 }}
+            >
+              {formatClock(moving.startsAt)}
+              {moving.todayOnly && ' · today only'}
+            </div>
+          )}
 
           {nowVisible && (
             <div
@@ -407,6 +532,23 @@ const byId = <T extends { id: string }>(items: readonly T[], id: string | null):
   id === null ? null : (items.find((item) => item.id === id) ?? null)
 
 /**
+ * The break with this id as its form edits it: a pin, or else a break on the
+ * record, or null when neither is still there. The same lookup `break/updated`
+ * makes, in the same order, so the form edits what saving it changes.
+ */
+function editedBreak(
+  pins: readonly PlannedBreak[],
+  history: readonly CompletedSegment[],
+  id: string | null,
+): EditedBreak | null {
+  if (id === null) return null
+  const pin = pins.find((p) => p.id === id)
+  if (pin) return { id, startsAt: pin.startsAt, endsAt: breakSpan(pin).end, kind: 'pin' }
+  const taken = history.find((s) => s.kind === 'break' && s.id === id)
+  return taken ? { id, startsAt: taken.startedAt, endsAt: taken.endedAt, kind: 'record' } : null
+}
+
+/**
  * A work region, clipped to the hours actually on the axis.
  *
  * The axis no longer reaches back to cover an empty morning — see `layout` —
@@ -427,8 +569,8 @@ function RegionBand({
   const end = Math.min(region.end, rangeEnd)
   if (end <= start) return null
 
-  const top = TOP_PAD_PX + ((start - rangeStart) / HOUR_MS) * HOUR_PX
-  const height = ((end - start) / HOUR_MS) * HOUR_PX
+  const top = yAt(start, rangeStart)
+  const height = pxFor(end - start)
 
   return (
     <div
@@ -437,356 +579,4 @@ function RegionBand({
       style={{ top, height, left: GUTTER_PX - 4 }}
     />
   )
-}
-
-function Block({
-  item,
-  now,
-  editing,
-  onEdit,
-  onRemoveBreak,
-  onRemoveCommitment,
-}: {
-  item: Placed
-  now: Ms
-  /** What the open composer is editing, so this can say if it is this. */
-  editing: string | null
-  onEdit: (next: EntryComposer) => void
-  onRemoveBreak: (id: string) => void
-  onRemoveCommitment: (id: string) => void
-}) {
-  const { entry, top, height, shown, lane, lanes } = item
-  const style = styleFor(entry)
-  const isPast = entry.endsAt <= now
-  const isActive = entry.kind === 'active'
-  const showLabel = height >= LABEL_MIN_PX
-  const editor = editorFor(entry, now)
-  const isEditing = editor !== null && editor.editing === editing
-  // The block's counts are the whole block's; its marks are only those on
-  // the part of it this day draws.
-  const written = writtenIn(entry)
-  const drawn =
-    written && writtenWithin(written, { start: entry.startsAt, end: entry.endsAt }, shown)
-  const tasks = useBlockTasks(
-    (entry.kind === 'past' || entry.kind === 'active') && entry.segment.kind === 'block'
-      ? entry.segment.taskIds
-      : [],
-  )
-  const drawnHeight = Math.max(height, 4)
-
-  const remove =
-    entry.kind === 'planned-break'
-      ? () => onRemoveBreak(entry.id)
-      : entry.kind === 'commitment'
-        ? () => onRemoveCommitment(entry.commitment.id)
-        : null
-
-  const width = `calc((100% - ${GUTTER_PX}px) / ${lanes} - 4px)`
-  const left = `calc(${GUTTER_PX}px + (100% - ${GUTTER_PX}px) * ${lane} / ${lanes})`
-
-  // Two boxes rather than one. The block clips its own text to its own height,
-  // which is what sizes its list of tasks to a short block; the marks and a
-  // log's card sit on its edges and have to be drawn outside it, so they
-  // belong to a wrapper that does not clip. The wrapper keeps the marks'
-  // layers to itself (`isolate`), and rises above its neighbours while the
-  // pointer or focus is in it or a card in it is open for an edit, so an open
-  // card is not drawn under the next block down. Dimming a past block is the
-  // inner box's alone, or the card would be dimmed with it.
-  return (
-    <div
-      className={[
-        'group absolute isolate hover:z-30 focus-within:z-30 [&:has([data-open])]:z-30',
-        isActive || isEditing ? 'z-10' : '',
-      ].join(' ')}
-      style={{ top, height: drawnHeight, width, left }}
-    >
-      <div
-        className={[
-          'h-full overflow-hidden rounded-md border py-1 pl-2 transition',
-          style.border,
-          style.bg,
-          isPast && !isActive ? 'opacity-40' : '',
-          isActive ? 'ring-1 ring-inset ' + style.ring : '',
-          isEditing ? 'ring-1 ring-inset ring-bright/70' : '',
-        ].join(' ')}
-        // Its words stop short of the column of marks down its right edge.
-        style={{ paddingRight: drawn ? MARK_LANE_PX : 8 }}
-        title={`${style.label} · ${formatClock(entry.startsAt)} · ${formatDuration(
-          entry.endsAt - entry.startsAt,
-        )}${written ? ` · ${countsOf(written, ' · ')}` : ''}`}
-      >
-        {showLabel ? (
-          <>
-            <div className="flex items-baseline justify-between gap-1.5">
-              <span className={`truncate text-xs font-medium ${style.text}`}>
-                {style.label}
-              </span>
-              {/*
-                Named controls rather than a click anywhere on the block. The
-                block is a drawing of a span of the day, and the day is a thing
-                you point at while you think — a bare surface that silently means
-                "open a form" is the kind of affordance you discover by accident.
-                Hidden until the pointer or the keyboard arrives, so the axis
-                stays a picture of the day at rest; `focus-within` is what keeps
-                them reachable without a mouse.
-              */}
-              {(editor !== null || (remove !== null && !isPast)) && (
-                <span className="flex shrink-0 items-baseline gap-1 opacity-0 transition group-focus-within:opacity-100 group-hover:opacity-100">
-                  {editor !== null && (
-                    <button
-                      type="button"
-                      onClick={() => onEdit(editor)}
-                      aria-label={`Edit ${style.label}`}
-                      className="text-muted transition hover:text-bright"
-                    >
-                      <EditGlyph />
-                    </button>
-                  )}
-                  {remove !== null && !isPast && (
-                    <button
-                      type="button"
-                      onClick={remove}
-                      // Removing one day of a series skips that day, and says
-                      // so: the series itself is on the routine page.
-                      aria-label={
-                        entry.kind === 'commitment' && entry.commitment.recurringId !== undefined
-                          ? `Skip ${style.label} today`
-                          : `Remove ${style.label}`
-                      }
-                      className="text-muted transition hover:text-commit"
-                    >
-                      ×
-                    </button>
-                  )}
-                </span>
-              )}
-            </div>
-            {height >= 44 && style.detail && (
-              <div className="truncate text-[11px] text-muted italic">{style.detail}</div>
-            )}
-            {/* A block's tasks take the duration's place, since the block's
-                height already says how long it was. However many there are,
-                the box clips them at its own height — that is what sizes them
-                to the block. Its logs are not printed here: each is a mark on
-                its edge, there in full under the pointer. */}
-            {height >= 44 && tasks.length > 0
-              ? tasks.map((task) => (
-                  <div
-                    key={task.id}
-                    className={`truncate text-[11px] ${task.status === 'done' ? 'text-muted line-through' : 'text-body/80'}`}
-                  >
-                    {task.title}
-                  </div>
-                ))
-              : height >= 60 && (
-                  <div className="tnum mt-0.5 text-[11px] text-muted">
-                    {formatDuration(entry.endsAt - entry.startsAt)}
-                  </div>
-                )}
-          </>
-        ) : (
-          <span className="sr-only">{style.label}</span>
-        )}
-        {written && <span className="sr-only">{countsOf(written, ', ')}</span>}
-      </div>
-
-      {drawn && (
-        <Marks
-          written={drawn}
-          span={shown}
-          length={drawnHeight}
-          axis="column"
-          tone={style.mark ?? 'bg-muted'}
-          dim={isPast && !isActive}
-        />
-      )}
-    </div>
-  )
-}
-
-/**
- * The editor this entry opens, or null if it does not open one.
- *
- * Only the two things the user put on the day by hand. Everything else here is
- * derived — the way to move a focus block is to change the hours or the
- * commitments it was planned around, and offering to edit one directly would be
- * offering to edit the output of a pure function.
- *
- * A commitment's margins are part of the commitment rather than entries in
- * their own right, so the travel either side opens the same form. Whether it is
- * still worth opening is asked of the whole span rather than of the entry: the
- * getting-ready half is behind us the moment the meeting starts, and the
- * meeting is very much still ahead.
- */
-function editorFor(entry: TimelineEntry, now: Ms): EntryComposer | null {
-  switch (entry.kind) {
-    case 'planned-break':
-      return entry.endsAt > now ? { kind: 'break', editing: entry.id } : null
-    case 'commitment':
-    case 'commitment-margin':
-      return commitmentSpan(entry.commitment).end > now
-        ? { kind: 'commitment', editing: entry.commitment.id }
-        : null
-    default:
-      return null
-  }
-}
-
-type Placed = {
-  key: string
-  entry: TimelineEntry
-  /** Clipped to the visible day — see `layout`. The entry keeps the truth. */
-  top: number
-  height: number
-  /** The stretch of time `top` and `height` draw: the entry's, clipped the same way. */
-  shown: Interval
-  lane: number
-  lanes: number
-}
-
-function layout(timeline: Timeline, now: Ms) {
-  // Margins are dropped: on a time axis an empty gap already reads as empty,
-  // and drawing a box labelled "nothing" only adds noise.
-  const entries = timeline.entries.filter((e) => e.kind !== 'margin')
-
-  /**
-   * Where the axis starts, and the only judgement in this function.
-   *
-   * `now` and the entries hold it open; a work region does not. Open Mono at
-   * two o'clock against a nine-to-six day and the region alone used to drag the
-   * top of the grid back to nine, for five hours that hold nothing — you were
-   * not using Mono in them, so there is nothing to draw and nothing to read.
-   * Beside the stage that was merely dead scroll above the part you came to
-   * see, hidden by the column scrolling itself to `now` on mount. Stacked under
-   * the stage on a phone, where nothing scrolls itself, it was the entire first
-   * screenful of calendar: an empty grid, under a heading that says Today, for a
-   * day that is in fact full. The timeline looked broken.
-   *
-   * Only genuinely empty hours go. Anything that happened up there — a block
-   * banked this morning, a meeting already sat through, a break taken — is an
-   * entry, and entries still reach back as far as they need to. The region
-   * bands are clipped to what is left rather than positioned outside it, which
-   * is the job the region starts used to be doing here.
-   */
-  const ends = [...entries.map((e) => e.endsAt), ...timeline.regions.map((r) => r.end)]
-  const earliest = Math.min(now, ...entries.map((e) => e.startsAt))
-  const latest = Math.max(timeline.horizon, now, ...(ends.length ? ends : [now]))
-
-  /**
-   * Midnight is the wall, at both ends.
-   *
-   * The planner scopes the day by when a thing *starts*, which is the right
-   * question to ask of a commitment — and leaves the two ways a span can reach
-   * out of the day it started in. A one-minute-past-midnight meeting with half
-   * an hour of getting ready begins at twenty to twelve *yesterday*, and that
-   * one entry used to drag the whole axis back across the night; a late one
-   * with travel after it reaches the other way. Both are legitimate things to
-   * write down, so neither is refused — the day simply stops where the day
-   * stops, and what is left of the entry is drawn against the edge.
-   *
-   * The clipping is on the drawing, not on the entry. `startsAt` and `endsAt`
-   * keep saying what the commitment really is, which is what the block's own
-   * label reads back, so the axis can be honest about the part it can show
-   * without the timeline lying about the part it cannot.
-   */
-  const day = dayBounds(now)
-  const rangeStart = Math.max(floorToHour(earliest), day.start)
-  const hourCount = Math.max(
-    1,
-    Math.ceil((Math.min(latest, day.end) - rangeStart) / HOUR_MS),
-  )
-  const hours = Array.from({ length: hourCount }, (_, i) => rangeStart + i * HOUR_MS)
-  const rangeEnd = rangeStart + hourCount * HOUR_MS
-
-  const placed = assignLanes(entries)
-    .map(({ entry, lane, lanes }, index) => {
-      // Lanes are assigned on the real spans above, so two entries that overlap
-      // only outside the visible day still get columns of their own. That is
-      // the honest answer: they do overlap.
-      const startsAt = Math.max(entry.startsAt, rangeStart)
-      const endsAt = Math.min(entry.endsAt, rangeEnd)
-
-      return {
-        key: keyFor(entry, index),
-        entry,
-        top: TOP_PAD_PX + ((startsAt - rangeStart) / HOUR_MS) * HOUR_PX,
-        height: ((endsAt - startsAt) / HOUR_MS) * HOUR_PX,
-        shown: { start: startsAt, end: endsAt },
-        lane,
-        lanes,
-        visible: endsAt > startsAt,
-      }
-    })
-    // Nothing of it falls inside today. The entry is still in the timeline —
-    // this is the drawing declining to draw a box of no height.
-    .filter((item) => item.visible)
-
-  return { rangeStart, rangeEnd, hours, placed }
-}
-
-/**
- * Side-by-side columns for anything that overlaps.
- *
- * The planner guarantees blocks never collide with commitments, but a
- * commitment added *during* a running block legitimately does — that is the
- * case the user resolves by hand. Lanes are counted per overlapping cluster so
- * one collision late in the day does not narrow every block above it.
- */
-function assignLanes(entries: readonly TimelineEntry[]) {
-  const sorted = [...entries].sort((a, b) => a.startsAt - b.startsAt || a.endsAt - b.endsAt)
-  const result: { entry: TimelineEntry; lane: number; lanes: number }[] = []
-
-  let cluster: { entry: TimelineEntry; lane: number }[] = []
-  let clusterEnd = -Infinity
-
-  const flush = () => {
-    const lanes = cluster.reduce((max, c) => Math.max(max, c.lane + 1), 1)
-    for (const c of cluster) result.push({ ...c, lanes })
-    cluster = []
-    clusterEnd = -Infinity
-  }
-
-  for (const entry of sorted) {
-    if (entry.startsAt >= clusterEnd) flush()
-
-    const laneEnds: number[] = []
-    for (const c of cluster) {
-      laneEnds[c.lane] = Math.max(laneEnds[c.lane] ?? -Infinity, c.entry.endsAt)
-    }
-    let lane = laneEnds.findIndex((end) => end <= entry.startsAt)
-    if (lane === -1) lane = laneEnds.length
-
-    cluster.push({ entry, lane })
-    clusterEnd = Math.max(clusterEnd, entry.endsAt)
-  }
-  flush()
-
-  return result
-}
-
-const floorToHour = (at: Ms): Ms => {
-  const d = new Date(at)
-  d.setMinutes(0, 0, 0)
-  return d.getTime()
-}
-
-function keyFor(entry: TimelineEntry, index: number): string {
-  switch (entry.kind) {
-    // One key for a segment whether it is running or over: the block that
-    // ends is the block that ran, and drawing it as a new one at that moment
-    // threw away what its marks were holding, an edit under way included.
-    case 'past':
-    case 'active':
-      return `segment-${entry.segment.id}`
-    case 'commitment':
-      return `commit-${entry.commitment.id}`
-    case 'commitment-margin':
-      return `commit-${entry.commitment.id}-${entry.side}`
-    case 'planned-break':
-      return `break-${entry.id}`
-    case 'planned-block':
-      return entry.id
-    case 'margin':
-      return `margin-${index}`
-  }
 }

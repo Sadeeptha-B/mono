@@ -9,12 +9,14 @@
  * `reduce` is pure. Nothing here reads the clock; every event carries the `at`
  * it happened.
  *
- * It does read the local calendar, in one place: which day a series of
- * recurring commitments is being asked about is the local day containing an
- * event's `at` (`commitmentsFor`). That is what lets the pin rules below see
- * today's standup without a stored copy of it. The cost is that a log replayed
- * in another time zone could put an occurrence somewhere else; on the device
- * that wrote it, replay is exactly as deterministic as before.
+ * It does read the local calendar, and always the same way: the local day
+ * containing an event's `at`. That is the day a series of recurring
+ * commitments is asked about (`commitmentsFor`), which is what lets the pin
+ * rules below see today's standup without a stored copy of it, and the day a
+ * pin a commitment lands on may be moved within (`pinsOff`). The cost is that
+ * a log replayed in another time zone could put an occurrence or a moved pin
+ * somewhere else; on the device that wrote it, replay is exactly as
+ * deterministic as before.
  */
 
 import {
@@ -22,7 +24,6 @@ import {
   commitmentSpan,
   DEFAULT_SETTINGS,
   minutesToMs,
-  overlaps,
   type ActiveSegment,
   type BlockKind,
   type BlockLog,
@@ -40,6 +41,14 @@ import {
   type Settings,
   type WorkRegion,
 } from './types'
+import { overlaps } from './intervals'
+import {
+  breakClash,
+  pinLeft,
+  pinsMovedOff,
+  restTaken,
+  type BreakSurroundings,
+} from './breakRoom'
 import { occurrenceOn } from './recurrence'
 
 export type MonoEvent =
@@ -51,6 +60,8 @@ export type MonoEvent =
   | { type: 'break/planned'; at: Ms; plannedBreak: PlannedBreak }
   | { type: 'break/updated'; at: Ms; id: string; patch: PlannedBreakPatch }
   | { type: 'break/removed'; at: Ms; id: string }
+  /** A pinned break whose time has passed, said to have been taken. */
+  | { type: 'break/confirmed'; at: Ms; id: string }
   | {
       type: 'block/started'
       at: Ms
@@ -118,11 +129,17 @@ export type MonoEvent =
 export type SessionState = {
   settings: Settings
   commitments: Commitment[]
-  /** Immutable past, oldest first. */
+  /**
+   * The record, oldest first. Blocks and away stretches stand as they were
+   * written; a break taken can be put right afterwards (`withTakenBreak`).
+   */
   history: CompletedSegment[]
   /** The one running block or break, if any. */
   active: ActiveSegment | null
-  /** Breaks the user pinned onto the future timeline. */
+  /**
+   * Breaks the user pinned: the plan, and, once their time has passed, the
+   * ones waiting to be said taken or not (`break/confirmed`).
+   */
   overrides: PlannedBreak[]
   /**
    * This day's work regions, once the user has edited them. `null` means the
@@ -207,24 +224,19 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
     case 'settings/changed':
       return { ...state, settings: { ...state.settings, ...event.patch } }
 
-    case 'commitment/added':
-      return {
-        ...state,
-        commitments: [...state.commitments, event.commitment],
-        // Only the pins this commitment would swallow. See `pinsClearOf`.
-        overrides: pinsClearOf(
-          state.overrides,
-          commitmentSpan(event.commitment),
-          event.at,
-        ),
-      }
+    // Only the pins this commitment lands on move, and they move down past it.
+    // See `pinsOff`.
+    case 'commitment/added': {
+      const next = { ...state, commitments: [...state.commitments, event.commitment] }
+      return { ...next, overrides: pinsOff(next, event.commitment, event.at) }
+    }
 
     // Editing a commitment moves the same walls that adding one does — a
-    // meeting pushed an hour later takes the runway with it — so the pins go
-    // for exactly the reason they go above, and only the same ones. Measured
+    // meeting pushed an hour later takes the runway with it — so the pins move
+    // for exactly the reason they move above, and only the same ones. Measured
     // against where the meeting *ends up*, which is the shape the day now has.
     // The slot it vacated needs no thought, because nothing was ever allowed to
-    // pin a break inside it — see `clashesWithCommitment`.
+    // pin a break inside it — see `breakClash`.
     //
     // An edit to today's occurrence of a series gives the day its own copy,
     // under the occurrence's id and with the edit applied. From then on the
@@ -236,11 +248,11 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
       const existing = state.commitments.find((c) => c.id === event.id)
       if (existing) {
         const updated = { ...existing, ...event.patch }
-        return {
+        const next = {
           ...state,
           commitments: state.commitments.map((c) => (c.id === event.id ? updated : c)),
-          overrides: pinsClearOf(state.overrides, commitmentSpan(updated), event.at),
         }
+        return { ...next, overrides: pinsOff(next, updated, event.at) }
       }
 
       const occurrence = occurrencesFor(state, event.at).find((c) => c.id === event.id)
@@ -248,16 +260,14 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
       if (!occurrence) return state
       const updated = { ...occurrence, ...event.patch }
       // An edit that leaves it saying what it said is not an edit, and must
-      // not cost the day its link to the series: a form opened and closed
-      // with Done sends the whole draft back, and detaching on that would
-      // leave today at five after the series moved to four. Compared as the
+      // not cost the day its link to the series: the forms of older builds
+      // sent the whole draft back on Done, those logs still replay, and
+      // detaching on that would leave today at five after the series moved
+      // to four. Compared as the
       // day sees it, so a margin sent as zero matches one that was never set.
       if (sameCommitment(occurrence, updated)) return state
-      return {
-        ...state,
-        commitments: [...state.commitments, updated],
-        overrides: pinsClearOf(state.overrides, commitmentSpan(updated), event.at),
-      }
+      const next = { ...state, commitments: [...state.commitments, updated] }
+      return { ...next, overrides: pinsOff(next, updated, event.at) }
     }
 
     // Removing one day of a series skips that day, whether the day had its own
@@ -287,10 +297,19 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
           .sort((a, b) => a.startsAt - b.startsAt),
       }
 
-    // A pin laid across something already fixed is not recorded at all. See
-    // `clashesWithCommitment` for why that is a refusal rather than a cleanup.
+    // A pin laid across something already there is not recorded at all: a
+    // commitment, another pin, or what is already on the record (see
+    // `breakRoom` for why each). Refused rather than stored and tidied
+    // afterwards, because there is nothing to tidy it to. `BreakComposer` says
+    // no first, naming what it runs into, so in the app this is the belt to
+    // that pair of braces. It is not redundant: a log also arrives from an
+    // import, and from a version of Mono that had no such rule, and a replay
+    // has to land somewhere honest whichever order the events come in. It
+    // does, both ways round — pin first and a commitment moves it (`pinsOff`),
+    // commitment first and the pin is refused. A second event with the same
+    // pin runs into the first and is refused with it.
     case 'break/planned':
-      if (clashesWithCommitment(event.plannedBreak, commitmentsFor(state, event.at))) {
+      if (breakClash(breakSpan(event.plannedBreak), 'pin', surroundings(state, event.at))) {
         return state
       }
       return {
@@ -306,18 +325,36 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
     // break that moved rather than around a different break. Re-sorted because
     // `break/planned` maintains that order and moving one across its neighbour
     // is the ordinary edit.
+    //
+    // And like `commitment/updated` it reaches two homes by one id. A pin is
+    // edited where it is; a break already taken is edited on the record
+    // (`withTakenBreak`), because a taken break is a fact about the day the
+    // user can put right, like a meeting that ran at another time. The ids
+    // never collide — both come from `newId`, and a confirmed pin leaves the
+    // pins as it joins the record — and no log written before breaks could be
+    // corrected names a taken break here, so old logs replay as they did.
     case 'break/updated': {
-      const existing = state.overrides.find((b) => b.id === event.id)
-      // An id that is not there changes nothing, exactly as for a commitment.
-      if (!existing) return state
+      const pin = state.overrides.find((b) => b.id === event.id)
+      if (!pin) {
+        return withTakenBreak(state, event.id, event.at, (taken) => patchedBreak(taken, event.patch))
+      }
 
-      // Dragging a pin onto a meeting is refused for the reason pinning one
-      // there is. The move does not happen and the break stays where it was,
-      // which is the smaller lie of the two available: deleting a break because
-      // the user tried to put it somewhere it cannot go would be a surprise,
-      // and the composer has already said no before this can be reached.
-      const updated = { ...existing, ...event.patch }
-      if (clashesWithCommitment(updated, commitmentsFor(state, event.at))) return state
+      // Moving a pin onto something it may not share a minute with is refused
+      // for the reason pinning one there is. The move does not happen and the
+      // break stays where it was, which is the smaller lie of the two available:
+      // deleting a break because the user tried to put it somewhere it cannot
+      // go would be a surprise, and the composer has already said no before this
+      // can be reached. Only what the move *newly* runs into counts, so a pin a
+      // block has since run into can still be moved off it.
+      const updated = { ...pin, ...event.patch }
+      if (
+        breakClash(breakSpan(updated), 'pin', surroundings(state, event.at), {
+          except: pin.id,
+          previous: breakSpan(pin),
+        })
+      ) {
+        return state
+      }
 
       return {
         ...state,
@@ -327,8 +364,36 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
       }
     }
 
+    // A pin, or a break already taken: the same two homes as above.
     case 'break/removed':
-      return { ...state, overrides: state.overrides.filter((b) => b.id !== event.id) }
+      return state.overrides.some((b) => b.id === event.id)
+        ? { ...state, overrides: state.overrides.filter((b) => b.id !== event.id) }
+        : withTakenBreak(state, event.id, event.at, () => null)
+
+    // A pin whose time has passed, said to have been taken: it leaves the plan
+    // and joins the record, at the time it was planned for, so it counts as
+    // rest the day had — or the part of it left after a break cut short over
+    // it, which is the part the calendar draws and asks about (`pinLeft`).
+    // Refused while it is still ahead, or where the record already says
+    // something else happened then — a block run through it, say.
+    case 'break/confirmed': {
+      const pin = state.overrides.find((b) => b.id === event.id)
+      if (!pin) return state
+      const span = pinLeft(pin, restTaken(state.history, state.active, pin.startsAt))
+      if (span === null) return state
+      if (breakClash(span, 'record', surroundings(state, event.at))) return state
+      return {
+        ...state,
+        overrides: state.overrides.filter((b) => b.id !== pin.id),
+        history: inOrder(state.history, {
+          kind: 'break',
+          id: pin.id,
+          startedAt: span.start,
+          endedAt: span.end,
+          plannedEndsAt: span.end,
+        }),
+      }
+    }
 
     case 'block/started':
       return {
@@ -464,12 +529,12 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
           ...state.history,
           { kind: 'break', id, startedAt, endedAt: event.at, plannedEndsAt: endsAt },
         ],
-        // The pin this break was fulfilling is spent, so the plan does not
-        // schedule the same rest twice. Only the spent ones: this used to share
-        // the blunt filter above, which deleted every pin still to come — take
-        // an ad-hoc break at two and the walk you had pinned for four vanished,
-        // silently, having nothing to do with the rest you just had.
-        overrides: pinsStillAhead(state.overrides, event.at),
+        // The pin this break was fulfilling is spent, so the day does not hold
+        // the same rest twice. Only that one: this used to delete every pin
+        // still to come, and then every pin behind us too — take an ad-hoc
+        // break at two and the walk you had pinned for four vanished, and so
+        // did the record of the one you skipped at eleven.
+        overrides: pinsNotSpentBy(state.overrides, { start: startedAt, end: event.at }),
         active: null,
       }
     }
@@ -573,11 +638,11 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
     }
 
     // A new series reaches today at once if today is one of its days, so it
-    // clears the pins it lands on exactly as a commitment typed in would.
+    // moves the pins it lands on exactly as a commitment typed in would.
     case 'recurring/added':
       // A replayed or duplicated event, not a second series.
       if (state.recurring.some((r) => r.id === event.rule.id)) return state
-      return clearPinsUnder(
+      return movePinsUnder(
         { ...state, recurring: [...state.recurring, event.rule] },
         event.rule.id,
         event.at,
@@ -590,7 +655,7 @@ export function reduce(state: SessionState, event: MonoEvent): SessionState {
       if (!existing) return state
       const updated = applyRecurringPatch(existing, event.patch)
       const kept = keepBegun(state, event.id, event.at)
-      return clearPinsUnder(
+      return movePinsUnder(
         { ...kept, recurring: kept.recurring.map((r) => (r.id === event.id ? updated : r)) },
         event.id,
         event.at,
@@ -687,11 +752,11 @@ function keepBegun(state: SessionState, ruleId: string, at: Ms): SessionState {
   return { ...state, commitments: [...state.commitments, occurrence] }
 }
 
-/** The pins today's occurrence of a series lands on, cleared as `commitment/added` clears them. */
-function clearPinsUnder(state: SessionState, ruleId: string, at: Ms): SessionState {
+/** The pins today's occurrence of a series lands on, moved as `commitment/added` moves them. */
+function movePinsUnder(state: SessionState, ruleId: string, at: Ms): SessionState {
   const occurrence = occurrencesFor(state, at).find((c) => c.recurringId === ruleId)
   if (!occurrence) return state
-  return { ...state, overrides: pinsClearOf(state.overrides, commitmentSpan(occurrence), at) }
+  return { ...state, overrides: pinsOff(state, occurrence, at) }
 }
 
 /**
@@ -713,83 +778,133 @@ function applyRecurringPatch(
 }
 
 /**
- * The pins a commitment occupying `span` can still be honoured alongside.
- *
- * A pin overlapping the span cannot survive in any useful sense: the planner
- * merges the two into one busy interval, so it would be drawn as part of the
- * meeting and rest nobody gets. That is the whole of the reason to delete one,
- * and it says nothing about the pin at four o'clock when the meeting is at
- * nine.
- *
- * This used to clear *every* pin still to come, on the argument that a new
- * commitment reshapes the runway and every pin on it was an answer to a
- * question that had changed. True of the pins in its way and not of the rest —
- * and where the day's shape has changed under a pin that can still be kept,
- * moving it is the user's call to make, not ours to make for them by deletion.
- *
- * `end > at` is the same tidying every one of these filters does: pins already
- * spent are read by nothing and would otherwise sit in state until midnight.
+ * The pins once `commitment` is where `state` now has it, at `at`: those it
+ * lands on moved down past it, or cleared where they cannot be (`pinsMovedOff`,
+ * which holds the reasons), and the rest untouched. A pin overlapping a
+ * commitment cannot stay where it is, because the planner merges the two into
+ * one busy interval — rest drawn as part of the meeting and had by nobody.
  */
-const pinsClearOf = (
-  breaks: PlannedBreak[],
-  span: Interval,
+const pinsOff = (state: SessionState, commitment: Commitment, at: Ms): PlannedBreak[] =>
+  pinsMovedOff(
+    state.overrides,
+    commitment,
+    commitmentsFor(state, at).filter((c) => c.id !== commitment.id),
+    at,
+  )
+
+/** Everything a break has to keep clear of, as `state` has the day at `at`. */
+const surroundings = (state: SessionState, at: Ms): BreakSurroundings => ({
+  commitments: commitmentsFor(state, at),
+  pins: state.overrides,
+  history: state.history,
+  active: state.active,
+  at,
+})
+
+/** A taken break in history, as `withTakenBreak` works on it. */
+type TakenBreak = Extract<CompletedSegment, { kind: 'break' }>
+
+/**
+ * A taken break with a break's patch applied.
+ *
+ * The patch is the pin's shape — a start and a length in minutes — because the
+ * form and the drag are the same for both. A new start moves the whole break,
+ * its planned end with it, keeping the exact length it ran: a taken break is
+ * seldom a whole number of minutes, and a drag that rounded it would be
+ * rewriting how long the rest was, not when. A length, when one is given, is
+ * counted from the start.
+ */
+function patchedBreak(taken: TakenBreak, patch: PlannedBreakPatch): TakenBreak {
+  const startedAt = patch.startsAt ?? taken.startedAt
+  const shift = startedAt - taken.startedAt
+  return {
+    ...taken,
+    startedAt,
+    endedAt:
+      patch.durationMin === undefined
+        ? taken.endedAt + shift
+        : startedAt + minutesToMs(patch.durationMin),
+    plannedEndsAt: taken.plannedEndsAt + shift,
+  }
+}
+
+/**
+ * A correction to a break already taken: `change` returns it as it should now
+ * be, or null to take it off the record.
+ *
+ * The record keeps clear of the rest of the record (`breakClash`), so a break
+ * cannot be moved onto a block, an away stretch, another break, whatever is
+ * running, or into the future; only what the change *newly* runs into counts.
+ * An id that names no taken break, or a change that changes nothing, leaves
+ * the session as it was. History stays oldest first (`inOrder`), because what
+ * is read from it in order — the companion's trail, the streak, the remark
+ * after a rest — reads it as the order the day happened in.
+ */
+function withTakenBreak(
+  state: SessionState,
+  id: string,
   at: Ms,
-): PlannedBreak[] =>
+  change: (taken: TakenBreak) => TakenBreak | null,
+): SessionState {
+  const index = state.history.findIndex((s) => s.kind === 'break' && s.id === id)
+  const taken = state.history[index]
+  if (taken?.kind !== 'break') return state
+  const without = state.history.filter((_, i) => i !== index)
+
+  const next = change(taken)
+  if (next === null) return { ...state, history: without }
+  if (
+    next.startedAt === taken.startedAt &&
+    next.endedAt === taken.endedAt &&
+    next.plannedEndsAt === taken.plannedEndsAt
+  ) {
+    return state
+  }
+
+  const span = { start: next.startedAt, end: next.endedAt }
+  if (span.end <= span.start) return state
+  const clash = breakClash(span, 'record', surroundings(state, at), {
+    except: id,
+    previous: { start: taken.startedAt, end: taken.endedAt },
+  })
+  return clash ? state : { ...state, history: inOrder(without, next) }
+}
+
+/**
+ * History with `segment` put where its start says it belongs. Found from the
+ * end, since a correction is nearly always to today and the journal is kept
+ * forever.
+ */
+function inOrder(
+  history: readonly CompletedSegment[],
+  segment: CompletedSegment,
+): CompletedSegment[] {
+  let i = history.length
+  while (i > 0 && history[i - 1]!.startedAt > segment.startedAt) i -= 1
+  return [...history.slice(0, i), segment, ...history.slice(i)]
+}
+
+/**
+ * What survives taking a break over `taken`: every pin but those it spent.
+ *
+ * A pin is spent by a break that overlaps it and runs at least to its end —
+ * the rest it reserved was had, and the break is drawn where it was, so
+ * keeping the pin would draw that rest twice. Cut a break short inside a
+ * longer reservation and what is left of the reservation stays, which is the
+ * honest answer: the time was set aside, and stopping early does not un-set
+ * it. The planner draws only that part, after the break (`pinLeft`), so the
+ * rest that was had is not drawn twice. A walk pinned for four o'clock is
+ * untouched by a break taken at three, and so is one pinned for eleven and
+ * skipped: it stays on the day, asking whether it was taken, until midnight.
+ *
+ * Read `taken.end` as the moment the break ended, not as now — after a long
+ * sleep, `resolveAway` ends the break at its planned end.
+ */
+const pinsNotSpentBy = (breaks: PlannedBreak[], taken: Interval): PlannedBreak[] =>
   breaks.filter((b) => {
     const pin = breakSpan(b)
-    return pin.end > at && !overlaps(pin, span)
+    return pin.end > taken.end || !overlaps(pin, taken)
   })
-
-/**
- * Would this pin want minutes the day has already promised to a commitment?
- *
- * The other half of `pinsClearOf`, and what turns a pair of filters into a rule
- * that can be stated: **no pinned break ever overlaps a commitment.** That one
- * clears the pins a commitment lands on top of, which settles the case where
- * the meeting arrives second. This settles the case where the pin does. Pinning
- * a break across a meeting, or dragging an existing pin onto one, used to be
- * allowed — and produced precisely the state `pinsClearOf` exists to delete:
- * two intervals the planner merges into one, drawn as rest inside a meeting and
- * had by nobody. The invariant was being enforced from one side only.
- *
- * The event is refused rather than stored and tidied afterwards, because there
- * is nothing to tidy it to. `BreakComposer` says no first, naming the
- * commitment, so in the app this is the belt to that pair of braces. It is not
- * redundant: a log also arrives from an import, and from a version of Mono that
- * had no such rule, and a replay has to land somewhere honest whichever order
- * the events come in. It does, both ways round — pin first and the commitment
- * clears it, commitment first and the pin is refused.
- *
- * Every commitment counts, the ones behind us included. A pin overlapping a
- * finished meeting is drawn by nothing either way, so excluding them would buy
- * no behaviour and cost the rule its one-sentence form.
- */
-const clashesWithCommitment = (
-  pin: PlannedBreak,
-  commitments: readonly Commitment[],
-): boolean => commitments.some((c) => overlaps(breakSpan(pin), commitmentSpan(c)))
-
-/**
- * What survives taking a break: every pin with time left in it.
- *
- * A break taken against a pin runs to its end, which spends it, so it goes —
- * and so does anything else already behind us, which nothing reads but which
- * would otherwise pile up until midnight. Cut a break short and what is left of
- * that reservation stays, which is what it did before and is the honest answer:
- * the time was set aside, and stopping early does not un-set it. A walk pinned
- * for four o'clock is untouched by a break taken at three.
- *
- * Deliberately a *superset* of what `onlyBreakInProgress` kept: a pin still
- * running when the break ended survives here exactly as it did before, so
- * taking fifteen minutes inside a two-hour reservation leaves the rest of the
- * reservation standing. The only pins whose fate changed are the ones still to
- * come, which is the whole of the fix. Read `at` as the moment the break ended,
- * not as now — after a long sleep, `resolveAway` ends the break at its planned
- * end, so a pin that has since gone stale is left for the midnight reset to
- * clear rather than being caught here. The planner does not draw it either way.
- */
-const pinsStillAhead = (breaks: PlannedBreak[], at: Ms): PlannedBreak[] =>
-  breaks.filter((b) => b.startsAt + minutesToMs(b.durationMin) > at)
 
 /**
  * The history entry a running block turns into.

@@ -325,8 +325,9 @@ function sectionsFor(settings: Settings): Section[] {
           </P>
           <P>
             Use <Em>Hours</Em>, <Em>Commitment</Em> and <Em>Break</Em> above the
-            calendar to adjust your day. Future commitments and planned breaks have
-            edit and remove controls. Focus blocks adjust automatically as the day changes.
+            calendar to adjust your day. Commitments and breaks have edit and
+            remove controls, and you can drag either to a new time, even after
+            it has ended. Focus blocks adjust automatically as the day changes.
           </P>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             <Card title="Prefer deep blocks" tone="text-deep">
@@ -406,9 +407,9 @@ function sectionsFor(settings: Settings): Section[] {
           </P>
           <P>
             To reserve rest for later, use <Em>Break</Em> above the calendar. You can
-            edit or move a planned break. Choose a time clear of commitments and
-            their preparation or travel time; adding a commitment over a planned
-            break removes that break.
+            edit or move a planned break, but not onto a commitment. A commitment
+            placed over a planned break moves the break to just after it. Once its
+            time has passed, a planned break asks whether you took it.
           </P>
           <P>
             During a break, <Em>Back to work</Em> ends it early and returns you to

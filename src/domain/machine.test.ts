@@ -373,9 +373,10 @@ describe('the event log', () => {
     expect(replay(events)).toEqual(session)
   })
 
-  it('clears the pinned break a new commitment covers, and leaves the others', () => {
-    // This used to assert that *every* future pin went. A five o'clock meeting
-    // has nothing to say about a break pinned for half past three.
+  it('moves the pinned break a new commitment covers, and leaves the others', () => {
+    // This used to assert that *every* future pin went, then that the covered
+    // one went. A five o'clock meeting has nothing to say about a break pinned
+    // for half past three, and the one it lands on goes to just after it.
     let session = initialState
     const events: MonoEvent[] = [
       {
@@ -396,7 +397,10 @@ describe('the event log', () => {
     ]
     for (const e of events) session = reduce(session, e)
 
-    expect(session.overrides.map((b) => b.id)).toEqual(['clear'])
+    expect(session.overrides).toEqual([
+      { id: 'clear', startsAt: at(15, 30), durationMin: 15 },
+      { id: 'covered', startsAt: at(17, 30), durationMin: 15 },
+    ])
     expect(session.commitments).toHaveLength(1)
   })
 
@@ -416,10 +420,11 @@ describe('the event log', () => {
     expect(session.overrides).toHaveLength(1)
   })
 
-  it('does not spare a break under way that the commitment covers', () => {
+  it('clears a break under way that the commitment covers, rather than moving it', () => {
     // Being in progress used to be the one thing that saved a pin from the
-    // clearing. What saves it now is not clashing: rest the planner would merge
-    // into a meeting is rest nobody gets, whatever its clock says.
+    // clearing. It cannot stay — rest the planner would merge into a meeting is
+    // rest nobody gets — and moving it whole would hand back the minutes
+    // already rested, so the meeting ends it.
     let session = initialState
     session = reduce(session, {
       type: 'break/planned',
@@ -432,7 +437,7 @@ describe('the event log', () => {
       commitment: { id: 'c1', title: 'Standup', startsAt: at(14, 10), durationMin: 30 },
     })
 
-    expect(session.overrides).toHaveLength(0)
+    expect(session.overrides).toEqual([])
   })
 
   it('keeps history across the midnight reset and drops the plan', () => {

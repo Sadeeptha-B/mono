@@ -13,6 +13,14 @@
 export const COMMITMENT_MINUTES = { min: 5, max: 480, fallback: 30 } as const
 export const BREAK_MINUTES = { min: 5, max: 240, fallback: 15 } as const
 /**
+ * A break already taken, put right on the record. Its floor and its step are a
+ * minute rather than five: rest is planned in useful lengths, but a break cut
+ * short after two minutes is two minutes long, and a correction must be able
+ * to say so. The step matters as much as the floor — a number field whose
+ * value is off its step is one the browser refuses to submit.
+ */
+export const TAKEN_BREAK_MINUTES = { min: 1, max: 240, fallback: 15, step: 1 } as const
+/**
  * The time either side of a commitment. Zero is the common answer and a
  * perfectly good one, which is the whole difference from the two above — a
  * commitment of no length is a mistake, an hour that needs no travel is not.

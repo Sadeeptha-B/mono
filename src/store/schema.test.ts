@@ -89,6 +89,11 @@ const EVERY_EVENT = {
     at: 8,
     id: 'break-removed',
   },
+  'break/confirmed': {
+    type: 'break/confirmed',
+    at: 8,
+    id: 'break-confirmed',
+  },
   'block/started': {
     type: 'block/started',
     at: 9,
@@ -209,6 +214,9 @@ const isV7 = (e: MonoEvent): boolean => e.type.startsWith('recurring/')
 const isV9 = (e: MonoEvent): boolean =>
   e.type === 'block/taskAdded' || e.type === 'block/taskRemoved'
 
+/** What v10 added: a pinned break confirmed as taken. */
+const isV10 = (e: MonoEvent): boolean => e.type === 'break/confirmed'
+
 describe('persisted schema', () => {
   it('returns a well-formed current log unchanged', () => {
     const persisted = { events: EVERY, dayKey: '2026-09-07' }
@@ -328,8 +336,13 @@ describe('the v4 schema', () => {
   })
 
   it('reads a v8 log exactly as it was, rather than discarding it on upgrade', () => {
-    const v8 = { events: EVERY.filter((e) => !isV9(e)), dayKey: today }
+    const v8 = { events: EVERY.filter((e) => !isV9(e) && !isV10(e)), dayKey: today }
     expect(migratePersisted(v8, 8)).toEqual(v8)
+  })
+
+  it('reads a v9 log exactly as it was, rather than discarding it on upgrade', () => {
+    const v9 = { events: EVERY.filter((e) => !isV10(e)), dayKey: today }
+    expect(migratePersisted(v9, 9)).toEqual(v9)
   })
 
   it("reads a block's log under the names it had before v8, from storage and from a file", () => {

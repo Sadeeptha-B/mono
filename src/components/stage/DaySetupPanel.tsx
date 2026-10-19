@@ -75,12 +75,13 @@ import { format } from 'date-fns'
 import { AddFold, EditGlyph, GhostButton, PrimaryButton, revealOnHover, StagePrompt } from '../ui'
 import {
   CommitmentFields,
-  draftFromCommitment,
-  draftsMatch,
+  editsOf,
   emptyDraft,
   readCommitment,
-  readCommitmentEdit,
+  readCommitmentChanges,
+  shownDraft,
   type CommitmentDraft,
+  type CommitmentEdits,
 } from '../CommitmentFields'
 import { resolveHours, TodayHoursFields } from '../TodayHours'
 import { MoveIcon, RepeatIcon } from '../icons'
@@ -150,18 +151,22 @@ export function DaySetupPanel({
   onStartTodayTimer: () => void
   onDone: () => void
 }) {
-  // The commitment draft has nothing in the store to follow, so it is seeded
-  // once from a lazy initialiser. `now` ticks every second, and a seed that
-  // depends on it reads — while you are typing — as the field clearing itself
-  // on every keystroke.
+  // A new commitment's draft has nothing in the store to follow, so it is
+  // seeded once from a lazy initialiser. `now` ticks every second, and a seed
+  // that depends on it reads — while you are typing — as the field clearing
+  // itself on every keystroke.
   const [draft, setDraft] = useState<CommitmentDraft>(() =>
     emptyDraft(format(nextHalfHour(now), 'HH:mm')),
   )
   // The one below being changed, if the form is pointed at one at all. An id
   // rather than a copy, for the same reason the calendar's composer holds one:
   // the list re-renders from the store every second, and a snapshot taken when
-  // the ✎ was clicked would be a second, quietly diverging answer.
+  // the ✎ was clicked would be a second, quietly diverging answer. What is
+  // typed into it is held apart, as only the fields typed into
+  // (`CommitmentEdits`), so the calendar can drag it or edit it meanwhile and
+  // this form neither shows nor saves the old time back.
   const [editing, setEditing] = useState<string | null>(null)
+  const [edits, setEdits] = useState<CommitmentEdits>({})
   // Whether the user asked for the form, which is not the same question as
   // whether it is on screen — see `formOpen`. Derived rather than seeded, for
   // the reason `CommitmentFields` folds its margins that way: a form that is
@@ -180,6 +185,7 @@ export function DaySetupPanel({
 
   const clearForm = () => {
     setEditing(null)
+    setEdits({})
     // Cleared rather than kept: the commonest thing after adding one is adding
     // another, and the second is never the first again.
     setDraft(emptyDraft(format(nextHalfHour(now), 'HH:mm')))
@@ -187,7 +193,7 @@ export function DaySetupPanel({
 
   const startEditing = (commitment: Commitment) => {
     setEditing(commitment.id)
-    setDraft(draftFromCommitment(commitment))
+    setEdits({})
   }
 
   /**
@@ -222,8 +228,7 @@ export function DaySetupPanel({
     setSeenStage(stage)
     if (stage === 'commitments') {
       setExpanded(false)
-      const subject = editing === null ? null : commitments.find((c) => c.id === editing)
-      if (subject && draftsMatch(draft, draftFromCommitment(subject))) clearForm()
+      if (editing !== null && Object.keys(edits).length === 0) clearForm()
     }
   }
 
@@ -233,7 +238,8 @@ export function DaySetupPanel({
   // the same rule `DayCalendar` keeps for its own composers, and adjusted
   // during render rather than in an effect so the form never paints a Save
   // aimed at nothing.
-  if (editing !== null && !commitments.some((c) => c.id === editing)) clearForm()
+  const subject = editing === null ? null : (commitments.find((c) => c.id === editing) ?? null)
+  if (editing !== null && subject === null) clearForm()
 
   // In the order the day happens, whatever order they were named in. The list
   // is a reading of the day rather than a list of what you typed, and a 9am
@@ -251,12 +257,14 @@ export function DaySetupPanel({
   const canFold = inOrder.length > 0 || editing !== null
 
 
-  // Not the same read: an edit is merged onto what is already there, so it has
-  // to say a margin is zero rather than leave it out. See `readCommitmentEdit`.
-  const ready = editing ? readCommitmentEdit(now, draft) : readCommitment(now, draft)
+  // What the form shows, and what keeping it writes: a new commitment whole,
+  // or only the fields of an edit that were typed into.
+  const shown = subject ? shownDraft(subject, edits) : draft
+  const added = subject ? null : readCommitment(now, draft)
+  const changes = subject ? readCommitmentChanges(now, subject, edits) : null
+  const ready = added !== null || changes !== null
   // Editing one day of a series changes that day only, and the form says so.
-  const subjectRecurs =
-    editing !== null && commitments.find((c) => c.id === editing)?.recurringId !== undefined
+  const subjectRecurs = subject?.recurringId !== undefined
   // Mono plans inside working hours and nowhere else, so a day with none of
   // them is a day it can do nothing with. The button says no; the line under it
   // has to say why, and where to fix it.
@@ -274,9 +282,14 @@ export function DaySetupPanel({
 
   /** Keep what the form says. Enter stays open for the next; `Done` folds. */
   const save = (then: 'next' | 'done') => {
-    if (!ready) return
-    if (editing) onUpdateCommitment(editing, ready)
-    else onAddCommitment(ready)
+    if (subject) {
+      if (changes === null) return
+      // Nothing typed is nothing written, as on the calendar's form.
+      if (Object.keys(changes).length > 0) onUpdateCommitment(subject.id, changes)
+    } else {
+      if (added === null) return
+      onAddCommitment(added)
+    }
     clearForm()
     if (then === 'done') {
       setExpanded(false)
@@ -353,8 +366,8 @@ export function DaySetupPanel({
                 // it the fields are the only thing saying which of the two it is.
                 titleLabel={editing ? 'This commitment' : 'Next commitment'}
                 showTitleLabel={false}
-                draft={draft}
-                onDraft={setDraft}
+                draft={shown}
+                onDraft={(next) => (subject ? setEdits(editsOf(subject, next)) : setDraft(next))}
                 large
               />
               {subjectRecurs && <TodayOnlyNote />}
@@ -365,7 +378,7 @@ export function DaySetupPanel({
               <div className="mt-4">
                 <GhostButton
                   type="button"
-                  disabled={!ready && (!canFold || draft.title.trim() !== '')}
+                  disabled={!ready && (!canFold || shown.title.trim() !== '')}
                   onClick={() => (ready ? save('done') : fold())}
                 >
                   Done

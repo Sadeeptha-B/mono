@@ -174,8 +174,11 @@ type SessionStore = {
   /** End a series for good. Today's stays if it has already begun. */
   removeRecurring: (id: string) => void
   planBreak:(input: Omit<PlannedBreak, 'id'>) => void
+  /** A pin, or a break already taken: the log reaches either by its id. */
   updateBreak: (id: string, patch: PlannedBreakPatch) => void
   removeBreak: (id: string) => void
+  /** A pin whose time has passed, said to have been taken. */
+  markBreakTaken: (id: string) => void
   setRegions: (regions: WorkRegion[]) => void
   updateSettings: (patch: Partial<Settings>) => void
   /** The user answered the day's opening questions. Records only that. */
@@ -337,6 +340,8 @@ export const useSession = create<SessionStore>()(
         get().append({ type: 'break/updated', at: Date.now(), id, patch }),
 
       removeBreak: (id) => get().append({ type: 'break/removed', at: Date.now(), id }),
+
+      markBreakTaken: (id) => get().append({ type: 'break/confirmed', at: Date.now(), id }),
 
       setRegions: (regions) =>
         get().append({ type: 'region/set', at: Date.now(), regions }),
