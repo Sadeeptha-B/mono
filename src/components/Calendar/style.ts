@@ -87,8 +87,19 @@ export function styleFor(entry: TimelineEntry): RowStyle {
     case 'planned-block':
       return block(entry.blockKind, kindLabel(entry.blockKind))
 
+    // Its time passed with nothing saying it was taken: still the plan, and
+    // drawn as one — the rest tone at half weight and a dashed edge, like the
+    // time around a commitment — asking to become the record.
     case 'planned-break':
-      return { label: 'Break', detail: 'planned', ...rest }
+      return entry.unconfirmed
+        ? {
+            label: 'Break',
+            detail: 'planned · taken?',
+            ...rest,
+            bg: 'bg-rest/5',
+            border: 'border-rest/40 border-dashed',
+          }
+        : { label: 'Break', detail: 'planned', ...rest }
 
     case 'commitment':
       return {

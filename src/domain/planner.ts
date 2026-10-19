@@ -14,6 +14,7 @@ import { onSameDay } from './time'
 import {
   breakSpan,
   commitmentEvent,
+  commitmentMargins,
   commitmentSpan,
   minutesToMs,
   type ActiveSegment,
@@ -28,6 +29,8 @@ import {
   type TimelineEntry,
   type WorkRegion,
 } from './types'
+import { pinLeft, restTaken } from './breakRoom'
+import { mergeIntervals, subtractIntervals } from './intervals'
 
 /**
  * Leftover shorter than this is dropped rather than drawn. `now` lands on an
@@ -143,37 +146,52 @@ export function derivePlan(input: DerivePlanInput): Timeline {
       endsAt: event.end,
     })
 
-    const span = commitmentSpan(commitment)
-    if (span.start < event.start) {
+    const { before, after } = commitmentMargins(commitment)
+    if (before) {
       entries.push({
         kind: 'commitment-margin',
         commitment,
         side: 'before',
-        startsAt: span.start,
-        endsAt: event.start,
+        startsAt: before.start,
+        endsAt: before.end,
       })
     }
-    if (span.end > event.end) {
+    if (after) {
       entries.push({
         kind: 'commitment-margin',
         commitment,
         side: 'after',
-        startsAt: event.end,
-        endsAt: span.end,
+        startsAt: after.start,
+        endsAt: after.end,
       })
     }
   }
 
+  // Every pinned break is drawn, whole, for the reason every commitment is:
+  // the rest you planned is a fact about the day. Ahead of now it is the plan;
+  // once its time has passed with nothing saying it was taken, it is drawn
+  // `unconfirmed`, asking to become part of the record or come off it. It is
+  // drawn whole even while under way or across the running block, rather than
+  // clipped at now as it used to be: clipped, it shrank to nothing as it ran
+  // and then sprang back to its full length the moment it was over.
+  //
+  // The one exception is rest already taken over it, running or ended. That
+  // break is the rest such a pin planned, drawn where it was had; drawing the
+  // pin under it as well would draw the same rest twice. So the pin is drawn
+  // only after it, or not at all where nothing of it is left (`pinLeft`).
   const upcomingBreaks = overrides.filter(
     (b) => breakSpan(b).end > planFrom,
   )
-  for (const plannedBreak of upcomingBreaks) {
-    const { start, end } = breakSpan(plannedBreak)
+  const rests = restTaken(history, active, now)
+  for (const plannedBreak of overrides) {
+    const left = pinLeft(plannedBreak, rests)
+    if (left === null) continue
     entries.push({
       kind: 'planned-break',
       id: plannedBreak.id,
-      startsAt: Math.max(start, planFrom),
-      endsAt: end,
+      startsAt: left.start,
+      endsAt: left.end,
+      unconfirmed: left.end <= now,
     })
   }
 
@@ -320,42 +338,6 @@ function isBetterFill(a: Fill, b: Fill, policy: Settings['plannerPolicy']): bool
   return a.deepCount > b.deepCount
 }
 
-/** Sort, then coalesce anything that touches or overlaps. */
-export function mergeIntervals(intervals: readonly Interval[]): Interval[] {
-  const sorted = [...intervals]
-    .filter((i) => i.end > i.start)
-    .sort((a, b) => a.start - b.start)
-
-  const merged: Interval[] = []
-  for (const interval of sorted) {
-    const last = merged[merged.length - 1]
-    if (last && interval.start <= last.end) {
-      last.end = Math.max(last.end, interval.end)
-    } else {
-      merged.push({ ...interval })
-    }
-  }
-  return merged
-}
-
-/** `span` minus every interval in `busy`. Assumes `busy` is already merged. */
-export function subtractIntervals(span: Interval, busy: readonly Interval[]): Interval[] {
-  const free: Interval[] = []
-  let cursor = span.start
-
-  for (const interval of busy) {
-    if (interval.end <= cursor) continue
-    if (interval.start >= span.end) break
-    if (interval.start > cursor) {
-      free.push({ start: cursor, end: Math.min(interval.start, span.end) })
-    }
-    cursor = Math.max(cursor, interval.end)
-    if (cursor >= span.end) break
-  }
-
-  if (cursor < span.end) free.push({ start: cursor, end: span.end })
-  return free.filter((i) => i.end > i.start)
-}
 
 /**
  * What taking a break right now would cost, in blocks and focus minutes.

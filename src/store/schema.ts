@@ -106,8 +106,15 @@ export type ExportedShape = PersistedShape & { version: number; tasks?: Exported
  * tasks can now change while it runs, from All Tasks. A v8 build would drop
  * them and record the block as for what it started with, so it is a bump for
  * the same reason as the others. No existing event changed shape.
+ *
+ * v10 put taken breaks on the record as things the user can correct, like a
+ * commitment: `break/updated` and `break/removed` now reach a break in history
+ * by its id as well as a pin, and `break/confirmed` says a pin whose time has
+ * passed was taken. A v9 build would ignore the corrections and drop the
+ * confirmations, reading the day's rest as it was before the user put it
+ * right, so it is a bump. No existing event changed shape.
  */
-export const SCHEMA_VERSION = 9
+export const SCHEMA_VERSION = 10
 
 /**
  * Read an export. Throws only when the file is not a Mono export, or comes
@@ -171,6 +178,7 @@ export function migratePersisted(persisted: unknown, from: number): PersistedSha
   // upgrade.
   if (
     (from === SCHEMA_VERSION ||
+      from === 9 ||
       from === 8 ||
       from === 7 ||
       from === 6 ||
@@ -339,7 +347,8 @@ function sanitiseImportedEvent(input: MonoEvent): MonoEvent | null {
       return id === null || patch === null ? null : { type: event.type, at: event.at, id, patch }
     }
 
-    case 'break/removed': {
+    case 'break/removed':
+    case 'break/confirmed': {
       const id = sanitiseString(raw.id)
       return id === null ? null : { type: event.type, at: event.at, id }
     }

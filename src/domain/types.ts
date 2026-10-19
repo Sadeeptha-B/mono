@@ -403,7 +403,17 @@ export type TimelineEntry =
       startsAt: Ms
       endsAt: Ms
     }
-  | { kind: 'planned-break'; id: string; startsAt: Ms; endsAt: Ms }
+  | {
+      kind: 'planned-break'
+      id: string
+      startsAt: Ms
+      endsAt: Ms
+      /**
+       * Its time has passed and nothing says whether it was taken: the plan
+       * has not become a record yet, and asks to (`break/confirmed`).
+       */
+      unconfirmed: boolean
+    }
   | { kind: 'commitment'; commitment: Commitment; startsAt: Ms; endsAt: Ms }
   /**
    * The getting-ready or getting-back time around a commitment. Its own entry
@@ -460,19 +470,26 @@ export const commitmentSpan = (c: Commitment): Interval => ({
   end: c.startsAt + minutesToMs(c.durationMin + (c.recoverMin ?? 0)),
 })
 
+/**
+ * The time a commitment costs either side of itself, as the calendar draws it:
+ * getting ready before, getting back after, or null where it has none. The
+ * planner draws these as entries of their own and the calendar's drag draws a
+ * commitment in the air the same way, so both ask this.
+ */
+export function commitmentMargins(c: Commitment): {
+  before: Interval | null
+  after: Interval | null
+} {
+  const event = commitmentEvent(c)
+  const span = commitmentSpan(c)
+  return {
+    before: span.start < event.start ? { start: span.start, end: event.start } : null,
+    after: span.end > event.end ? { start: event.end, end: span.end } : null,
+  }
+}
+
 /** The stretch of the day a pinned break reserves. */
 export const breakSpan = (b: PlannedBreak): Interval => ({
   start: b.startsAt,
   end: b.startsAt + minutesToMs(b.durationMin),
 })
-
-/**
- * Do these two stretches want any of the same minutes?
- *
- * Half-open, like `Interval` says: a thing ending at ten and a thing starting
- * at ten are clear of each other, not touching. That is what makes a break
- * pinned to the minute a meeting ends legal, and it should be — the whole
- * reason to care about an overlap is time that cannot be spent twice.
- */
-export const overlaps = (a: Interval, b: Interval): boolean =>
-  a.start < b.end && b.start < a.end

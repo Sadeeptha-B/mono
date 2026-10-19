@@ -6,8 +6,6 @@ import {
   breakCost,
   countPlannedFocus,
   derivePlan,
-  mergeIntervals,
-  subtractIntervals,
   type DerivePlanInput,
 } from './planner'
 import {
@@ -22,6 +20,7 @@ import {
   type TimelineEntry,
   type WorkRegion,
 } from './types'
+import { mergeIntervals, subtractIntervals } from './intervals'
 
 /**
  * A fixed local day well clear of any DST transition, so these tests describe
@@ -69,6 +68,8 @@ const commitmentMargins = (t: Timeline) =>
 
 const plannedBlocks = (t: Timeline) =>
   t.entries.filter((e) => e.kind === 'planned-block')
+
+const pinnedBreaks = (t: Timeline) => t.entries.filter((e) => e.kind === 'planned-break')
 
 const margins = (t: Timeline) => t.entries.filter((e) => e.kind === 'margin')
 
@@ -389,6 +390,104 @@ describe('derivePlan', () => {
     for (const block of plannedBlocks(plan)) {
       expect(block.startsAt >= at(15, 45) || block.endsAt <= at(15, 30)).toBe(true)
     }
+  })
+
+  it('draws a pinned break once it is over, whole and unconfirmed, and plans nothing around it', () => {
+    const skipped: PlannedBreak = { id: 'skipped', startsAt: at(11), durationMin: 15 }
+    const plan = derivePlan(input({ now: at(14), overrides: [skipped] }))
+
+    expect(plan.entries.filter((e) => e.kind === 'planned-break')).toEqual([
+      {
+        kind: 'planned-break',
+        id: 'skipped',
+        startsAt: at(11),
+        endsAt: at(11, 15),
+        unconfirmed: true,
+      },
+    ])
+    expect(countPlannedFocus(plan)).toEqual(
+      countPlannedFocus(derivePlan(input({ now: at(14) }))),
+    )
+  })
+
+  it('draws a pinned break under way whole, so it does not spring back once over', () => {
+    const tea: PlannedBreak = { id: 'tea', startsAt: at(13, 50), durationMin: 30 }
+    const whole = { kind: 'planned-break', id: 'tea', startsAt: at(13, 50), endsAt: at(14, 20) }
+
+    expect(pinnedBreaks(derivePlan(input({ now: at(14), overrides: [tea] })))).toEqual([
+      { ...whole, unconfirmed: false },
+    ])
+    expect(pinnedBreaks(derivePlan(input({ now: at(14, 30), overrides: [tea] })))).toEqual([
+      { ...whole, unconfirmed: true },
+    ])
+    // And across the block running through it: rest planned for after the
+    // block is drawn where it was planned, beside the block.
+    const working = derivePlan(
+      input({
+        now: at(14),
+        overrides: [tea],
+        active: {
+          kind: 'block',
+          id: 'working',
+          blockKind: 'deep',
+          purpose: 'Write',
+          startedAt: at(13, 30),
+          endsAt: at(14, 15),
+          taskIds: [],
+          logs: [],
+          urges: [],
+        },
+      }),
+    )
+    expect(pinnedBreaks(working)).toEqual([{ ...whole, unconfirmed: false }])
+    expect(plannedBlocks(working)[0]?.startsAt).toBeGreaterThanOrEqual(at(14, 20))
+  })
+
+  it('draws a pinned break only past the break running over it, so rest is drawn once', () => {
+    const tea: PlannedBreak = { id: 'tea', startsAt: at(13, 50), durationMin: 30 }
+    const resting = (endsAt: Ms) =>
+      derivePlan(
+        input({
+          now: at(14),
+          overrides: [tea],
+          active: { kind: 'break', id: 'taking', startedAt: at(13, 50), endsAt },
+        }),
+      )
+
+    expect(pinnedBreaks(resting(at(14, 20)))).toEqual([])
+    expect(pinnedBreaks(resting(at(14, 5)))).toEqual([
+      { kind: 'planned-break', id: 'tea', startsAt: at(14, 5), endsAt: at(14, 20), unconfirmed: false },
+    ])
+  })
+
+  it('draws a pinned break only past a break ended early over it, not beside it', () => {
+    // The regression: a pin drawn whole once its break had ended early was
+    // drawn from where it began, beside the break that had been had there.
+    const tea: PlannedBreak = { id: 'tea', startsAt: at(13, 50), durationMin: 30 }
+    const ended = derivePlan(
+      input({
+        now: at(14, 6),
+        overrides: [tea],
+        history: [
+          {
+            kind: 'break',
+            id: 'taken',
+            startedAt: at(13, 50),
+            endedAt: at(14, 5),
+            plannedEndsAt: at(14, 20),
+          },
+        ],
+      }),
+    )
+    expect(pinnedBreaks(ended)).toEqual([
+      {
+        kind: 'planned-break',
+        id: 'tea',
+        startsAt: at(14, 5),
+        endsAt: at(14, 20),
+        unconfirmed: false,
+      },
+    ])
   })
 
   it('costs focus minutes even when the block count survives', () => {

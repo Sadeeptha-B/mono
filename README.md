@@ -102,8 +102,10 @@ minimise the tab, and does not pretend to.
 Both panels edit themselves in place. The calendar's `Hours`, `Break` and
 `Commitment` expand under its own heading rather than opening a window over
 the page — every one of them asks a question about the day, and the day is
-drawn directly below the answer. **Settings is the only dialog left**, because
-it is the only genuine aside. It is sized to the viewport rather than to its
+drawn directly below the answer. A commitment or a break can also be dragged
+along the axis with a mouse, for the lunch that runs late, and the day grows
+under a drag held at its end. **Settings is the only dialog left**, because it
+is the only genuine aside. It is sized to the viewport rather than to its
 content — the title stays put and the body scrolls — and it closes three ways:
 the ×, escape, or a click on the backdrop.
 
@@ -195,9 +197,15 @@ shaped around:
   day can hold, so taking a break is a visible trade — the duration prompt tells
   you what it costs before you commit.
 - **A pinned break and a commitment never share a minute**, and the rule is kept
-  from both ends: adding a commitment clears the breaks it swallows, and a break
-  cannot be dragged across one. A log therefore replays to the same day whichever
-  order it was written in.
+  from both ends: adding or moving a commitment moves the breaks it lands on to
+  just after it, and a break cannot be placed or dragged onto one, or onto
+  another break, or onto what has already happened. However a log is replayed,
+  no rest ends up inside a meeting.
+- **Ahead of now the calendar is the plan; behind it, the record.** A
+  commitment, and a break taken, can be moved, edited or removed afterwards to
+  say what really happened; a block stays as it ran, and whatever is running
+  belongs to the stage until it ends. A planned break whose time passes asks
+  whether it was taken, and joins the record only when told so.
 - **Blocks can be abandoned but not paused.** A paused timer means `endsAt` is
   no longer a fixed instant, which is where timer bugs come from.
 - **Coming back after being away never auto-completes a block.** If the app was
@@ -304,7 +312,8 @@ same animal.
 The room around it grows at one, three and six completed focus blocks, while a
 small trail keeps the sequence of focus, reflection, rest and honest gaps. Both
 are derived from today's history and reset at midnight; neither adds stored
-game state or takes anything away after an abandoned block. After the final
+game state or takes anything away after an abandoned block. A break taken off
+the record takes its own mark with it. After the final
 working region, the same facts become the `Day done` postcard.
 
 The rule it keeps: lively at the seams of a block, dull in the middle of one. It

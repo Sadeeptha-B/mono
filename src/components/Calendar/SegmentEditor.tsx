@@ -32,25 +32,29 @@ import { format } from 'date-fns'
 
 import {
   CommitmentFields,
-  draftFromCommitment,
+  editsOf,
   emptyDraft,
   readCommitment,
-  readCommitmentEdit,
+  readCommitmentChanges,
+  shownDraft,
   type CommitmentDraft,
+  type CommitmentEdits,
 } from '../CommitmentFields'
 import { hoursToSave, TodayHoursFields, useHoursDraft } from '../TodayHours'
 import { GhostButton, labelClass, MinutesInput, PrimaryButton, TimeInput } from '../ui'
-import { BREAK_MINUTES, parseBoundedMinutes } from '../minutes'
+import { BREAK_MINUTES, parseBoundedMinutes, TAKEN_BREAK_MINUTES } from '../minutes'
 import { RoutineLink } from '../RoutineLink'
-import { nextHalfHour, wallClockOn } from '@/domain/time'
+import type { BreakKind, Clash } from '@/domain/breakRoom'
+import { formatClock, nextHalfHour, wallClockOn } from '@/domain/time'
 import {
-  commitmentSpan,
   minutesToMs,
-  overlaps,
+  MINUTE_MS,
   type Commitment,
+  type CommitmentPatch,
   type Interval,
   type Ms,
   type PlannedBreak,
+  type PlannedBreakPatch,
   type WorkRegion,
 } from '@/domain/types'
 
@@ -117,38 +121,46 @@ export function CommitmentComposer({
    * this on a change of identity, which is what lets the seed below be lazy.
    */
   editing: Commitment | null
-  onSubmit: (input: Omit<Commitment, 'id'>) => void
+  /**
+   * The commitment as drafted, and only what the draft changed. A new one is
+   * added from the first; an edit sends the second, as a break's form does,
+   * so what nobody typed is never written back (`CommitmentEdits`).
+   */
+  onSubmit: (input: Omit<Commitment, 'id'>, changed: CommitmentPatch) => void
   onCancel: () => void
 }) {
-  // Seeded from the commitment when there is one, and otherwise defaulted to
-  // the next round half hour — the most likely answer.
+  // A new one is a whole draft, defaulted to the next round half hour — the
+  // most likely answer. An edit is only what has been typed over the
+  // commitment as it is now, which can move while the form is open.
   const [draft, setDraft] = useState<CommitmentDraft>(() =>
-    editing ? draftFromCommitment(editing) : emptyDraft(format(nextHalfHour(now), 'HH:mm')),
+    emptyDraft(format(nextHalfHour(now), 'HH:mm')),
   )
-  // Not the same read: an edit is merged onto what is already there, so it has
-  // to say a margin is zero rather than leave it out. See `readCommitmentEdit`.
-  const ready = editing ? readCommitmentEdit(now, draft) : readCommitment(now, draft)
+  const [edits, setEdits] = useState<CommitmentEdits>({})
+  const shown = editing ? shownDraft(editing, edits) : draft
+  const input = readCommitment(now, shown)
+  const changed = editing ? readCommitmentChanges(now, editing, edits) : {}
+  const ready = input !== null && changed !== null
 
   return (
     <ComposerShell title={editing ? 'Edit commitment' : 'Next commitment'}>
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          if (ready) onSubmit(ready)
+          if (input && changed) onSubmit(input, changed)
         }}
       >
         <CommitmentFields
           idPrefix="commitment"
           titleLabel="What"
-          draft={draft}
-          onDraft={setDraft}
+          draft={shown}
+          onDraft={(next) => (editing ? setEdits(editsOf(editing, next)) : setDraft(next))}
         />
 
         {editing?.recurringId !== undefined && <TodayOnlyNote />}
 
         <p className="mt-3 text-xs leading-relaxed text-muted">
           {editing ? 'Changing' : 'Adding'} this re-derives the plan. Any break you
-          pinned inside it — the time either side included — is cleared.
+          pinned inside it — the time either side included — moves to just after it.
         </p>
 
         <Actions>
@@ -178,65 +190,96 @@ export function TodayOnlyNote() {
   )
 }
 
+/**
+ * A break as its form edits it: a pin from the plan, or a break already taken
+ * from the record. The same form for both, as for a commitment — "when, and
+ * for how long" is the one question either asks — with the store's exact
+ * instants, since a taken break is seldom a whole number of minutes.
+ */
+export type EditedBreak = { id: string; startsAt: Ms; endsAt: Ms; kind: BreakKind }
+
+/** What a break laid over `span` would run into, as `breakClash` says. */
+export type BreakClashCheck = (
+  span: Interval,
+  kind: BreakKind,
+  edited: EditedBreak | null,
+) => Clash | null
+
 export function BreakComposer({
   now,
   editing,
-  commitments,
+  clash: clashOf,
   onSubmit,
   onCancel,
 }: {
   now: Ms
-  /** The pinned break being changed, or null for a new one. */
-  editing: PlannedBreak | null
+  /** The break being changed, or null for a new pin. */
+  editing: EditedBreak | null
   /**
-   * Today's commitments, so this form can say no before the reducer has to.
+   * What a time would run into, so this form can say no before the reducer
+   * has to.
    *
-   * A break pinned across a commitment is refused there — see
-   * `clashesWithCommitment` — and a refusal the user cannot see is a form that
-   * closes having silently done nothing. The rule belongs in the reducer, where
-   * an imported log meets it too; the *explanation* belongs here, where the
-   * person choosing a time is.
+   * A break laid where it may not go is refused there — see `breakClash` —
+   * and a refusal the user cannot see is a form that closes having silently
+   * done nothing. The rule belongs in the reducer, where an imported log meets
+   * it too; the *explanation* belongs here, where the person choosing a time
+   * is. Asked of the same function, so the two cannot disagree.
    */
-  commitments: readonly Commitment[]
-  onSubmit: (input: Omit<PlannedBreak, 'id'>) => void
+  clash: BreakClashCheck
+  /**
+   * The break as drafted, and only what the draft changed. A new pin is added
+   * from the first; an edit sends the second, so a form opened and saved
+   * untouched writes nothing, and never rounds a break taken at 2:00:37 to
+   * 2:00 for having been looked at.
+   */
+  onSubmit: (input: Omit<PlannedBreak, 'id'>, changed: PlannedBreakPatch) => void
   onCancel: () => void
 }) {
-  const [time, setTime] = useState(() =>
+  const taken = editing?.kind === 'record'
+  const bounds = taken ? TAKEN_BREAK_MINUTES : BREAK_MINUTES
+  const seededMinutes = editing
+    ? Math.max(bounds.min, Math.round((editing.endsAt - editing.startsAt) / MINUTE_MS))
+    : BREAK_MINUTES.fallback
+  const [seededTime] = useState(() =>
     format(editing ? editing.startsAt : nextHalfHour(now), 'HH:mm'),
   )
-  const [durationText, setDurationText] = useState(
-    String(editing ? editing.durationMin : BREAK_MINUTES.fallback),
-  )
+  const [time, setTime] = useState(seededTime)
+  const [durationText, setDurationText] = useState(String(seededMinutes))
 
-  const startsAt = wallClockOn(now, time)
-  const durationMin = parseBoundedMinutes(
-    durationText,
-    BREAK_MINUTES.min,
-    BREAK_MINUTES.max,
-  )
+  const timeChanged = editing === null || time !== seededTime
+  const lengthChanged = editing === null || durationText !== String(seededMinutes)
+  const startsAt = timeChanged ? wallClockOn(now, time) : editing.startsAt
+  const durationMin = parseBoundedMinutes(durationText, bounds.min, bounds.max)
   const span: Interval | null =
     startsAt === null || durationMin === null
       ? null
-      : { start: startsAt, end: startsAt + minutesToMs(durationMin) }
+      : {
+          start: startsAt,
+          end:
+            lengthChanged || editing === null
+              ? startsAt + minutesToMs(durationMin)
+              : startsAt + (editing.endsAt - editing.startsAt),
+        }
 
-  // The commitment this break would be laid across, if there is one. The
-  // commitment rather than a boolean, because "that clashes with something" is
-  // a worse answer than "that runs into the swim" when the thing to do next is
-  // pick a different time.
-  const clash =
-    span === null
-      ? null
-      : (commitments.find((c) => overlaps(span, commitmentSpan(c))) ?? null)
-
+  // What this break would be laid across, if anything. The thing rather than
+  // a boolean, because "that clashes with something" is a worse answer than
+  // "that runs into the swim" when the thing to do next is pick another time.
+  const clash = span === null ? null : clashOf(span, editing?.kind ?? 'pin', editing)
   const valid = startsAt !== null && durationMin !== null && clash === null
 
   return (
-    <ComposerShell title={editing ? 'Edit break' : 'Plan a break'}>
+    <ComposerShell title={taken ? 'Edit break taken' : editing ? 'Edit break' : 'Plan a break'}>
       <form
         onSubmit={(e) => {
           e.preventDefault()
           if (startsAt === null || durationMin === null || clash !== null) return
-          onSubmit({ startsAt, durationMin })
+          onSubmit(
+            { startsAt, durationMin },
+            {
+              ...(timeChanged ? { startsAt } : {}),
+              ...(lengthChanged ? { durationMin } : {}),
+            },
+          )
         }}
       >
         {/* Match the shared commitment pair: the native time control gets a
@@ -258,14 +301,13 @@ export function BreakComposer({
             label="For (minutes)"
             text={durationText}
             onText={setDurationText}
-            {...BREAK_MINUTES}
+            {...bounds}
           />
         </div>
 
         {clash && (
           <p className="mt-3 text-xs leading-relaxed text-muted">
-            That runs into <span className="text-bright">{clash.title}</span>, counting
-            the time either side of it.
+            <ClashReason clash={clash} />
           </p>
         )}
 
@@ -280,6 +322,39 @@ export function BreakComposer({
       </form>
     </ComposerShell>
   )
+}
+
+/** Why a break cannot go there, in the words of the thing in its way. */
+function ClashReason({ clash }: { clash: Clash }) {
+  switch (clash.kind) {
+    case 'commitment':
+      return (
+        <>
+          That runs into <span className="text-bright">{clash.commitment.title}</span>, counting
+          the time either side of it.
+        </>
+      )
+    case 'pin':
+      return <>That runs into the break planned for {formatClock(clash.startsAt)}.</>
+    case 'break':
+      return clash.running ? (
+        <>That runs into the break you are on.</>
+      ) : (
+        <>That runs into the break taken at {formatClock(clash.startsAt)}.</>
+      )
+    case 'block':
+      return clash.running ? (
+        <>That runs into the block under way.</>
+      ) : (
+        <>That runs into the block at {formatClock(clash.startsAt)}.</>
+      )
+    case 'away':
+      return <>That runs into time you were away, from {formatClock(clash.startsAt)}.</>
+    case 'ahead':
+      return <>A break you took has to have ended by now.</>
+    case 'elsewhere':
+      return <>A break you took stays on the day you took it.</>
+  }
 }
 
 /**
