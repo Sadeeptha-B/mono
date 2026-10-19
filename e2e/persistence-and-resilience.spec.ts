@@ -2,6 +2,7 @@
 
 import { expect, test, type Page } from '@playwright/test'
 import {
+  openGuide,
   openMono,
   stage,
   calendar,
@@ -291,7 +292,7 @@ test.describe('a guide that never arrives', () => {
     await blockTheChunk(page)
     await openMono(page)
 
-    await page.getByRole('link', { name: 'Guide' }).click()
+    await openGuide(page)
     const card = page.getByRole('alert')
     await expect(card).toContainText('The guide did not load')
     await expect(card).toContainText('is saved')
@@ -308,7 +309,7 @@ test.describe('a guide that never arrives', () => {
     await openMono(page)
     await expect(page.getByRole('button', { name: 'Not saving' })).toBeVisible()
 
-    await page.getByRole('link', { name: 'Guide' }).click()
+    await openGuide(page)
     const card = page.getByRole('alert')
     await expect(card).toContainText('only in this tab')
 

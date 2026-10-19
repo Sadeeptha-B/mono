@@ -317,7 +317,7 @@ export function DaySetupPanel({
               not be answered here again. Quiet, and under the question rather
               than in it: most mornings it is not what is being asked. */}
           <p className="-mt-2 mb-4 text-xs text-muted">
-            Set recurring commitments on <RoutineLink />.
+            Add commitments that repeat on <RoutineLink />.
           </p>
 
           {/* Named, because the stage strip below is a list too, and "the
@@ -397,7 +397,7 @@ export function DaySetupPanel({
           <TodayHoursFields draft={hours} onDraft={onHours} />
           {/* The other half of this answer: what every day starts from. */}
           <p className="mt-3 text-xs text-muted">
-            Every day starts from your usual hours, kept on <RoutineLink />.
+            Set your usual hours on <RoutineLink />.
           </p>
         </>
       ) : (

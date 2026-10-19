@@ -3,10 +3,11 @@
  * on every day: the opening questions about hours and commitments, the
  * calendar's editors for them, and Settings.
  *
- * The routine has no place in the header (see `AppHeader`): it is set up once
- * and changed rarely, and the moment someone wants it is the moment they are
- * answering one of these questions and find the answer is the same every day.
- * So it is offered there, in the same words each time.
+ * The header carries the routine too (see `AppHeader`), but these stay: the
+ * moment someone most often wants it is the moment they are answering one of
+ * these questions and find the answer is the same every day, and the link
+ * beside the question is shorter than the way round through the header. So it
+ * is offered there, in the same words each time.
  */
 
 import { ROUTINE_HASH } from '@/hooks/useRoute'

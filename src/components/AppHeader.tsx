@@ -7,16 +7,21 @@
  * what made it small again:
  *
  *  - **Places** are the views work moves between — Today, Tasks and
- *    Timeline — as a switch beside the mark. Only those. The routine is set
- *    up once and revisited rarely, so it is reached from where it is
- *    relevant — Settings, and the opening questions about hours and
- *    commitments — rather than from a permanent tab. The guide is read rather
- *    than worked in, so it is a tool.
+ *    Timeline — as a switch beside the mark. Only those. The routine is a
+ *    page, but one you set up and come back from rather than work in, so it
+ *    is a tool, drawn as the repeat mark every day's series carries.
  *  - **Tools** are icons: Later, the room (its own swatch), the pop-out, the
- *    guide and settings. Each keeps its name as its accessible name and shows
+ *    routine and settings. Each keeps its name as its accessible name and shows
  *    it on hover, so nothing has become harder to find by name, only smaller.
  *    Later comes first, nearest what you are doing, because it is the one
  *    reached for in the middle of something else.
+ *
+ * The guide is not here. It is read once while learning Mono and rarely
+ * after, so a permanent place on every page was more than it earned; Settings
+ * links to it, as the place someone looking for help already opens.
+ * The routine took its place: the usual hours and the recurring commitments
+ * are a thing you go looking for when your week changes, and the links beside
+ * the day's questions (`RoutineLink`) only appear while one of them is open.
  *
  * Two things stay as words because they are rare and matter when they appear:
  * `Not saving`, and the running timer a page other than the day carries
@@ -31,12 +36,12 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react'
 import { HeaderMark } from './HeaderMark'
 import { LaterMenu } from './LaterMenu'
 import { StorageWarning } from './StorageWarning'
-import { GuideIcon, SettingsIcon } from './icons'
+import { RepeatIcon, SettingsIcon } from './icons'
 import { headerIconClass } from './ui'
 import { RoomMenu } from '@/ambient/RoomMenu'
 import { PopOutButton } from '@/pip/PopOutButton'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
-import { DAY_HASH, GUIDE_HASH, TASKS_HASH, TIMELINE_HASH, type Route } from '@/hooks/useRoute'
+import { DAY_HASH, ROUTINE_HASH, TASKS_HASH, TIMELINE_HASH, type Route } from '@/hooks/useRoute'
 import type { Phase } from '@/domain/machine'
 
 /**
@@ -171,13 +176,13 @@ export function AppHeader({
         <RoomMenu idPrefix={`${current}-header`} />
         <PopOutButton mini={mini} />
         <a
-          href={GUIDE_HASH}
-          aria-label="Guide"
-          title="Guide"
-          {...(current === 'guide' ? { 'aria-current': 'page' as const } : {})}
-          className={`${headerIconClass} ${current === 'guide' ? 'bg-surface-raised text-bright' : ''}`}
+          href={ROUTINE_HASH}
+          aria-label="Routine"
+          title="Routine"
+          {...(current === 'routine' ? { 'aria-current': 'page' as const } : {})}
+          className={`${headerIconClass} ${current === 'routine' ? 'bg-surface-raised text-bright' : ''}`}
         >
-          <GuideIcon className="size-4" />
+          <RepeatIcon className="size-4" />
         </a>
         <button
           type="button"

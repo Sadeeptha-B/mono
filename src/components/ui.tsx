@@ -34,7 +34,7 @@ export const labelClass =
 
 /**
  * A tool in the header, drawn as an icon: Later, the room, the pop-out, the
- * guide and settings. Borderless and quiet at rest, so five of them read as a
+ * routine and settings. Borderless and quiet at rest, so five of them read as a
  * cluster rather than a row of buttons, with the name each one cannot show
  * carried by its `aria-label` and shown on hover by its `title`. Shared because
  * every view draws the same header (`AppHeader`), and Later, the room and the

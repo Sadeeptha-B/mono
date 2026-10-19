@@ -252,13 +252,19 @@ export async function startBlock(page: Page, purpose: string) {
 
 /**
  * Go to the routine page, where the usual hours and the recurring commitments
- * live, the way someone who remembers the hours in Settings would: Settings
- * says where they went and takes you there.
+ * live, by its tool in the header. Scoped to the header because the day's
+ * questions carry a link of the same name.
  */
 export async function openRoutine(page: Page) {
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByRole('dialog', { name: 'Settings' }).getByRole('link', { name: 'Routine' }).click()
+  await page.getByRole('banner').getByRole('link', { name: 'Routine', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Routine', exact: true })).toBeVisible()
+}
+
+/** Go to the guide, which is linked from the top of Settings and nowhere else. */
+export async function openGuide(page: Page) {
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Settings' }).getByRole('link', { name: 'Guide' }).click()
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toHaveCount(0)
 }
 
 /** Back to the day from any page, by its place in the header. */
