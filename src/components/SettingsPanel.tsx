@@ -5,6 +5,7 @@ import { RoutineLink } from './RoutineLink'
 import { GhostButton, labelClass, MinutesInput } from './ui'
 import { parseBoundedMinutes } from './minutes'
 import { dayKey, formatClock } from '@/domain/time'
+import { GUIDE_HASH } from '@/hooks/useRoute'
 import { supportsMiniWindow } from '@/pip/useMiniWindow'
 import { useSession, useStorageHealth } from '@/store/session'
 import { exportBackup, importBackup } from '@/store/backup'
@@ -30,6 +31,24 @@ export function SettingsPanel({ open, onClose }: { open: boolean; onClose: () =>
 
   return (
     <Dialog open={open} title="Settings" onDismiss={onClose}>
+      {/* The guide's only way in from the app. It used to be a tool in the
+          header, which is a permanent place on every page for something read
+          while learning Mono and rarely after (see `AppHeader`); Settings is
+          where someone looking for help already goes. First, so it is the
+          first thing they read here. It closes the dialog on the way, as the
+          routine's link below does. */}
+      <p className="mb-5 text-xs leading-relaxed text-muted">
+        New to Mono? The{' '}
+        <a
+          href={GUIDE_HASH}
+          onClick={onClose}
+          className="underline underline-offset-4 hover:text-bright"
+        >
+          Guide
+        </a>{' '}
+        walks you through a day.
+      </p>
+
       <div className="grid grid-cols-2 gap-3">
         <MinutesField
           id="deep-minutes"

@@ -176,7 +176,8 @@ export const TodayIcon = ({ chosen, className = '' }: { chosen: boolean; classNa
 /**
  * Two arrows chasing round: comes round again. Marks a commitment that is one
  * day of a series, wherever the day lists it, so a standup that repeats reads
- * differently from one typed in this morning.
+ * differently from one typed in this morning; and in the header, the routine
+ * page where those series are written.
  */
 export const RepeatIcon = ({ className = '' }: { className?: string }) => (
     <Icon className={className}>
@@ -214,14 +215,5 @@ export const PopOutIcon = ({ className = '' }: { className?: string }) => (
     <Icon className={className}>
         <path d="M7 3H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h8a1 1 0 0 0 1-1V9" />
         <path d="M9.5 2.5h4v4M13.5 2.5 8 8" />
-    </Icon>
-)
-
-/** A question mark in a ring: how Mono works. */
-export const GuideIcon = ({ className = '' }: { className?: string }) => (
-    <Icon className={className}>
-        <circle cx="8" cy="8" r="5.75" />
-        <path d="M6.4 6.4a1.65 1.65 0 1 1 2.3 1.5c-.45.2-.7.55-.7 1.05v.3" />
-        <circle cx="8" cy="11.1" r="0.35" fill="currentColor" />
     </Icon>
 )

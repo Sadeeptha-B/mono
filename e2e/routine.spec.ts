@@ -1,5 +1,5 @@
 /**
- * The routine page, and the header that no longer carries it.
+ * The routine page, and the header that carries it as a tool.
  *
  * Commitments that come round on a schedule are written once on the routine
  * page, derived onto each day they fall on, and changed one day at a time from
@@ -63,9 +63,11 @@ test('the header is three places and its tools; on a phone the places take a row
   const tools = [
     page.getByRole('button', { name: 'Later', exact: true }),
     page.getByRole('button', { name: /^Room/ }),
-    page.getByRole('link', { name: 'Guide', exact: true }),
+    page.getByRole('banner').getByRole('link', { name: 'Routine', exact: true }),
     page.getByRole('button', { name: 'Settings', exact: true }),
   ]
+  // The guide is not one of them; Settings links to it.
+  await expect(page.getByRole('banner').getByRole('link', { name: 'Guide' })).toHaveCount(0)
   const boxes = await Promise.all(tools.map(async (tool) => (await tool.boundingBox())!))
   const middle = (box: { y: number; height: number }) => box.y + box.height / 2
   for (const box of boxes) expect(Math.abs(middle(box) - middle(boxes[0]!))).toBeLessThan(8)
@@ -86,13 +88,21 @@ test('the header is three places and its tools; on a phone the places take a row
   await expect(places.getByRole('link', { name: 'Today' })).not.toHaveAttribute('aria-current')
 })
 
-test('Settings says where the usual hours went, and the routine page keeps them', async ({
+test('the header opens the routine, which keeps the usual hours; Settings says where they went', async ({
   page,
 }) => {
   await openMono(page)
   await openRoutine(page)
-  await expect(page.getByRole('dialog', { name: 'Settings' })).toHaveCount(0)
+  const tool = page.getByRole('banner').getByRole('link', { name: 'Routine', exact: true })
+  await expect(tool).toHaveAttribute('aria-current', 'page')
   await expect(page.getByLabel('Working hours 1 end', { exact: true })).toHaveValue('18:00')
+
+  await backToToday(page)
+  await expect(tool).not.toHaveAttribute('aria-current')
+  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Settings' }).getByRole('link', { name: 'Routine' }).click()
+  await expect(page.getByRole('dialog', { name: 'Settings' })).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Routine', exact: true })).toBeVisible()
 })
 
 test('a series written once comes round on the days it names, and only those', async ({
@@ -139,7 +149,7 @@ test("moving today's moves today only", async ({ page }) => {
   await backToToday(page)
 
   await fixedList(page).getByRole('button', { name: 'Edit Standup', exact: true }).click()
-  await expect(stage(page).getByText("This changes today's only.")).toBeVisible()
+  await expect(stage(page).getByText('Changes here apply to today only.')).toBeVisible()
   await stage(page).getByLabel('At', { exact: true }).fill('17:30')
   await stage(page).getByRole('button', { name: 'Done', exact: true }).click()
 

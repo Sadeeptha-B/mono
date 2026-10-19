@@ -2,6 +2,7 @@
 
 import { expect, test } from '@playwright/test'
 import {
+  openGuide,
   openMono,
   stage,
   calendar,
@@ -144,7 +145,7 @@ test('the guide is a page of its own, and keeps a running block in sight', async
   await addStandup(page)
   await startBlock(page, 'Write the planner tests')
 
-  await page.getByRole('link', { name: 'Guide', exact: true }).click()
+  await openGuide(page)
 
   await expect(page.getByRole('heading', { name: 'How Mono works' })).toBeVisible()
   await expect(
@@ -163,7 +164,7 @@ test('the guide is a page of its own, and keeps a running block in sight', async
   await expect(stage(page).getByRole('button', { name: /Show elapsed time$/ })).toHaveText('35:00')
 
   await stage(page).getByRole('button', { name: /Show elapsed time$/ }).click()
-  await page.getByRole('link', { name: 'Guide', exact: true }).click()
+  await openGuide(page)
   await expect(page.getByTitle('Back to the timer')).toContainText('10:00')
   await expect(page.getByTitle('Back to the timer').getByText('focused')).toBeVisible()
   await page.clock.fastForward('05:00')
@@ -183,7 +184,7 @@ test("a guide section jumped to on a phone comes to rest below the bar, timer an
   await openMono(page)
   await addStandup(page)
   await startBlock(page, 'Write the planner tests')
-  await page.getByRole('link', { name: 'Guide', exact: true }).click()
+  await openGuide(page)
   await expect(page.getByTitle('Back to the timer')).toBeVisible()
 
   const bar = page.getByRole('banner')
@@ -206,7 +207,7 @@ test('settings open from the guide, which quotes them', async ({ page }) => {
   await openMono(page)
   await shapeDay(page)
 
-  await page.getByRole('link', { name: 'Guide', exact: true }).click()
+  await openGuide(page)
   await expect(page.getByRole('heading', { name: 'How Mono works' })).toBeVisible()
   await expect(
     page.getByText(/The two block lengths, currently 45 and 20 minutes/),

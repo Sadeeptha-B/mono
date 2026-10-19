@@ -185,7 +185,7 @@ export function CommitmentComposer({
 export function TodayOnlyNote() {
   return (
     <p className="mt-3 text-xs leading-relaxed text-muted">
-      This changes today's only. The series it comes from is on <RoutineLink />.
+      Changes here apply to today only. To change every day, edit it on <RoutineLink />.
     </p>
   )
 }
@@ -383,7 +383,7 @@ export function HoursComposer({
   return (
     <ComposerShell title="Hours">
       <p className="-mt-1 mb-3 text-xs leading-relaxed text-muted">
-        Edits apply for today only. Your usual hours are on <RoutineLink />.
+        Changes here apply to today only. Set your usual hours on <RoutineLink />.
       </p>
 
       <TodayHoursFields draft={draft} onDraft={onDraft} hideLegend />

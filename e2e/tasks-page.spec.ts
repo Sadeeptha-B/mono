@@ -2,6 +2,7 @@
 
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import {
+  openGuide,
   addOnTasksPage,
   addTodayTask,
   goToStage,
@@ -47,16 +48,13 @@ test('a new backlog starts with Work and Personal, and an inbox is just tasks', 
   await expect(main(page).getByRole('heading', { name: 'Work' })).toBeVisible()
   await expect(main(page).getByRole('heading', { name: 'Personal' })).toBeVisible()
 
-  // Every header carries both pages, the one you are on marked rather than
-  // dropped, so the guide is one click away from here and back.
+  // Every header carries the places, the one you are on marked rather than
+  // dropped, so the tasks page is one click back from the guide.
   const tasksLink = page.getByRole('link', { name: 'Tasks', exact: true })
   await expect(tasksLink).toHaveAttribute('aria-current', 'page')
-  await page.getByRole('link', { name: 'Guide', exact: true }).click()
+  await openGuide(page)
   await expect(page.getByRole('heading', { name: 'How Mono works' })).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Guide', exact: true })).toHaveAttribute(
-    'aria-current',
-    'page',
-  )
+  await expect(tasksLink).not.toHaveAttribute('aria-current')
   await tasksLink.click()
   await expect(tasksLink).toHaveAttribute('aria-current', 'page')
 

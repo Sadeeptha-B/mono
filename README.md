@@ -149,9 +149,8 @@ The **routine page** at `#/routine` is what an ordinary day looks like: the usua
 working hours, and the commitments that come round on a schedule — every
 weekday, Tuesdays and Thursdays, the first of the month — written once. Each day
 derives its own hours and occurrences from it rather than having them copied
-in, and can change its own without touching the routine. It is reached from
-Settings and from the day's questions about hours and commitments rather than
-from the header.
+in, and can change its own without touching the routine. It is a tool in the
+header, and the day's questions about hours and commitments link to it too.
 
 The **timeline page** at `#/timeline` is where epics will be laid out over
 time. For now it holds **Later**, what was put down to come back to, waiting to
@@ -165,8 +164,9 @@ the device as it is typed.
 
 The header itself is places on the left — **Today**, **Tasks** and
 **Timeline** — and tools as icons on the right: Later, the room's swatch, the
-pop-out, the guide and Settings, each named on hover. On a phone the places
-take a row of their own under the tools.
+pop-out, the routine and Settings, each named on hover. On a phone the places
+take a row of their own under the tools. The guide is linked from the top of
+Settings.
 
 Session state is a fold over an append-only event log
 ([src/domain/events.ts](src/domain/events.ts)). The log is persisted and the

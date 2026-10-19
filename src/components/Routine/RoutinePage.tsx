@@ -11,9 +11,10 @@
  * A page for the tasks page's reason: this is set up once and then left, away
  * from the timer, and the stage is for one question about today at a time.
  * `App` swaps the view while its own hooks stay mounted, so a block keeps
- * running while you are here. It has no tab in the header (see `AppHeader`); it is
- * reached from Settings and from the day's questions about hours and
- * commitments, where wanting it happens (`RoutineLink`).
+ * running while you are here. It is a tool in the header rather than a place
+ * (see `AppHeader`), and is also linked from Settings and from the day's
+ * questions about hours and commitments, where wanting it happens
+ * (`RoutineLink`).
  *
  * The usual hours write through as they are typed, as they did in Settings:
  * there is one copy of them and nothing to save, and today's hours, while
@@ -188,9 +189,8 @@ export function RoutinePage({
           <div className="max-w-3xl">
             <h1 className="text-3xl font-light text-bright sm:text-4xl">Routine</h1>
             <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
-              What an ordinary day looks like: the hours you work and the commitments that
-              come round. Every day starts from these. Changing one day's hours, or moving or
-              skipping one day of a commitment, happens on that day and leaves this alone.
+              Your usual working hours and the commitments that repeat. Each new day starts
+              from these. Changes you make on Today apply to that day only.
             </p>
 
             <section aria-labelledby="routine-hours" className="mt-8 border-t border-line pt-6">
@@ -198,8 +198,7 @@ export function RoutinePage({
                 Working hours
               </h2>
               <p className="mt-1 mb-4 max-w-2xl text-sm leading-relaxed text-muted">
-                The only time Mono plans in. Every day starts from this shape, and changes
-                with it until you change that day's own hours.
+                Mono plans focus blocks only within these hours.
               </p>
               <div className="max-w-md">
                 <RegionShapeEditor
@@ -215,13 +214,12 @@ export function RoutinePage({
                 Recurring commitments
               </h2>
               <p className="mt-1 mb-4 max-w-2xl text-sm leading-relaxed text-muted">
-                Each one is put into every day it falls on, so you never type the standup in
-                again.
+                Each one is added to every day it falls on.
               </p>
               {inOrder.length === 0 ? (
                 <p className="text-sm text-muted">
-                  Nothing repeats yet. A standup every weekday, a swim on Tuesdays and
-                  Thursdays, a review on the first of the month.
+                  None yet. Add one for a weekday standup, a class on Tuesdays and Thursdays,
+                  or a review on the first of the month.
                 </p>
               ) : (
                 <ul aria-label="Recurring commitments" className="flex flex-col gap-2">
@@ -274,8 +272,8 @@ export function RoutinePage({
                     />
                     {subject && (
                       <p className="mt-3 text-xs leading-relaxed text-muted">
-                        Every day still following it changes, today included unless today's
-                        has already begun. A day you changed by hand keeps its own.
+                        Saving changes every day it falls on, including today unless it has
+                        already started. Days you changed on Today keep your changes.
                       </p>
                     )}
                     <div className="mt-4 flex gap-2">
@@ -347,8 +345,8 @@ function SeriesCard({
               ? `Ended ${formatOccurrenceDay(new Date(`${rule.endsOn}T12:00:00`).getTime(), now)}`
               : next.length === 0
                 ? ended
-                  ? 'Not again'
-                  : 'Not in the next two years'
+                  ? 'No more dates'
+                  : 'No dates in the next two years'
                 : `Next: ${next.map((c) => formatOccurrenceDay(c.startsAt, now)).join(', ')}`}
           </div>
         </div>
@@ -373,7 +371,7 @@ function SeriesCard({
           className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-line pt-2"
         >
           <span className="text-xs text-commit">
-            Stop it for good? Anything of it already begun today stays.
+            Delete this commitment from every day? If today's has started, it stays.
           </span>
           <button
             type="button"

@@ -289,7 +289,7 @@ function sectionsFor(settings: Settings): Section[] {
               name="2. Check your hours"
               asks="Choose when you want to work today, in one stretch or several, such as a morning and an afternoon."
               choices={[
-                ['Hours', 'Changes here apply to today. Set your usual hours on Routine, linked from this question and Settings.'],
+                ['Hours', 'Changes here apply to today. Set your usual hours on Routine.'],
               ]}
             />
             <Step
@@ -455,8 +455,8 @@ function sectionsFor(settings: Settings): Section[] {
       body: (
         <>
           <P>
-            Open <Em>Routine</Em> from Settings or the day's hours and commitments
-            questions. Set your usual working hours and add commitments that repeat,
+            Open <Em>Routine</Em> from the circling arrows in the header. Set your
+            usual working hours and add commitments that repeat,
             such as a weekday standup or a weekly class. Your usual hours are
             currently {usualHours}.
           </P>

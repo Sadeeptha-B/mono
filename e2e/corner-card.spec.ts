@@ -2,6 +2,7 @@
 
 import { expect, test, type Page } from '@playwright/test'
 import {
+  openGuide,
   addIntention,
   addTodayTask,
   calendar,
@@ -62,7 +63,7 @@ test('today and the draft open from the corner of every page, and the draft is k
   await expect(draft(page)).toBeFocused()
 
   // The guide and the routine have it too.
-  await page.getByRole('link', { name: 'Guide', exact: true }).click()
+  await openGuide(page)
   await expect(page.getByRole('heading', { name: 'How Mono works' })).toBeVisible()
   await expect(draft(page)).toHaveValue('Ask about the API keys\nSplit the planner work')
   await page.goto('/#/routine')
