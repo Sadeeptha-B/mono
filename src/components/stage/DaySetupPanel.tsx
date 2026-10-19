@@ -84,7 +84,7 @@ import {
 } from '../CommitmentFields'
 import { resolveHours, TodayHoursFields } from '../TodayHours'
 import { MoveIcon, RepeatIcon } from '../icons'
-import { TodayOnlyNote } from '../Timeline/SegmentEditor'
+import { TodayOnlyNote } from '../Calendar/SegmentEditor'
 import { RoutineLink } from '../RoutineLink'
 import { TodayPanel, type TodayTimer } from './TodayPanel'
 import { useIntentionRename } from '../TodayList'

@@ -36,14 +36,14 @@ import {
   stageFor,
   type SetupStageId,
 } from '@/components/stage/stages'
-import { DayCalendar } from '@/components/Timeline/DayCalendar'
+import { DayCalendar } from '@/components/Calendar/DayCalendar'
 import { AllTasksPane, ColumnSwitch, type ColumnView } from '@/components/AllTasksPane'
 import { pickedInPlay } from '@/components/blockPick'
 import { TodayCarry } from '@/components/TodayList'
 import { useTodayBacklog } from '@/components/useTodayBacklog'
 import { hoursToSave, resolveHours, toWallClock, withIds } from '@/components/TodayHours'
 import { GhostButton, PrimaryButton } from '@/components/ui'
-import type { Composer } from '@/components/Timeline/SegmentEditor'
+import type { Composer } from '@/components/Calendar/SegmentEditor'
 
 import { MiniWindow } from '@/pip/MiniWindow'
 import { useMiniWindow } from '@/pip/useMiniWindow'
