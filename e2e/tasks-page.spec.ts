@@ -590,8 +590,8 @@ test("today's list opens from the corner, stays open while the board is used, an
   await openMono(page)
   await openTasks(page)
   await addTo(page, 'Work', 'Login form')
-  const button = main(page).getByRole('button', { name: 'Today', exact: true })
-  const panel = main(page).getByRole('dialog', { name: 'Today' })
+  const button = main(page).getByRole('button', { name: 'Today and draft', exact: true })
+  const panel = main(page).getByRole('dialog', { name: 'Today and draft' })
 
   // Not on the page until asked for; the board is the page.
   await expect(panel).toHaveCount(0)
@@ -612,7 +612,7 @@ test("today's list opens from the corner, stays open while the board is used, an
 
   // As does its ×.
   await button.click()
-  await panel.getByRole('button', { name: 'Close today', exact: true }).click()
+  await panel.getByRole('button', { name: 'Close today and draft', exact: true }).click()
   await expect(panel).toHaveCount(0)
   await expect(button).toBeFocused()
 })
@@ -624,7 +624,7 @@ test("closing today's list keeps what is being written in it", async ({ page }) 
   await openTasks(page)
   await addTo(page, 'Work', 'Login form')
   await main(page).getByRole('button', { name: 'Login form for today', exact: true }).click()
-  const button = main(page).getByRole('button', { name: 'Today', exact: true })
+  const button = main(page).getByRole('button', { name: 'Today and draft', exact: true })
   const panel = await todayOnTasksPage(page)
   const newIntention = panel.getByLabel('New intention', { exact: true })
   const rename = panel.getByRole('textbox', { name: 'Rename intention Ship it', exact: true })
@@ -639,6 +639,13 @@ test("closing today's list keeps what is being written in it", async ({ page }) 
   await button.click()
   await expect(panel).toHaveCount(0)
   await button.click()
+  await expect(newIntention).toHaveValue('Tidy up')
+  await expect(rename).toHaveValue('Ship the login form')
+
+  // Nor does a look at the draft beside it.
+  await panel.getByRole('tab', { name: 'Draft', exact: true }).click()
+  await expect(newIntention).toHaveCount(0)
+  await panel.getByRole('tab', { name: 'Today', exact: true }).click()
   await expect(newIntention).toHaveValue('Tidy up')
   await expect(rename).toHaveValue('Ship the login form')
   await rename.press('Enter')
@@ -901,6 +908,8 @@ test('an epic or outcome folds by its caret, stays folded, and still takes a tas
     .click()
   await expect(outcome(page, 'Login pages')).toContainText('2 open tasks')
   await expect(inbox(page, 'Work')).toHaveCount(0)
+  // Its row is folded away, so the focus rests on the fold that holds it.
+  await expect(fold('Login pages')).toBeFocused()
 
   // A folded epic is its card and one line.
   await fold('Mono auth').click()
@@ -1020,7 +1029,12 @@ test('the tasks straight under an epic are headed as its own tasks', async ({ pa
   await buildAuthEpic(page)
 
   const loose = epic(page, 'Mono auth').getByRole('list', { name: 'Mono auth tasks' })
-  const heading = epic(page, 'Mono auth').getByRole('heading', { name: 'Tasks', exact: true })
+  // Its heading is also what folds it, so it reads as whose tasks they are.
+  const heading = epic(page, 'Mono auth').getByRole('heading', {
+    name: 'Tasks straight under Mono auth',
+    exact: true,
+  })
+  await expect(heading).toHaveText('Tasks')
   const [h, l] = await Promise.all([heading, loose].map((x) => x.boundingBox()))
   expect(Math.abs(h!.x - l!.x)).toBeLessThan(8)
   expect(h!.y).toBeLessThan(l!.y)
@@ -1232,4 +1246,117 @@ test("an epic's or outcome's sun chooses everything open in it for today at once
   await sun('Mono auth').click()
   await expect(today).not.toContainText('Login form')
   await expect(outcome(page, 'Login pages')).toContainText('Login form')
+})
+
+test('an area folds to its name, and every epic in it folds at once', async ({ page }) => {
+  await openMono(page)
+  await openTasks(page)
+  await buildAuthEpic(page)
+  await addOnTasksPage(page, 'epic', 'Work', 'Rate limits')
+  await addTo(page, 'Work', 'Buy a cable')
+  const caret = (title: string) =>
+    main(page).getByRole('button', { name: `What ${title} holds`, exact: true })
+
+  // Every epic in the area at once, and back again.
+  await main(page).getByRole('button', { name: 'Fold every epic in Work', exact: true }).click()
+  await expect(caret('Mono auth')).toHaveAttribute('aria-expanded', 'false')
+  await expect(caret('Rate limits')).toHaveAttribute('aria-expanded', 'false')
+  await expect(epic(page, 'Mono auth')).toContainText('1 outcome · 2 open tasks')
+  await main(page).getByRole('button', { name: 'Unfold every epic in Work', exact: true }).click()
+  await expect(caret('Mono auth')).toHaveAttribute('aria-expanded', 'true')
+  await expect(caret('Rate limits')).toHaveAttribute('aria-expanded', 'true')
+
+  // The area folds to its name, saying what it holds.
+  await caret('Work').click()
+  await expect(caret('Work')).toHaveAttribute('aria-expanded', 'false')
+  await expect(epic(page, 'Mono auth')).toHaveCount(0)
+  await expect(inbox(page, 'Work')).toHaveCount(0)
+  await expect(main(page).getByText('2 epics · 1 in the inbox', { exact: true })).toBeVisible()
+
+  // Folded, it still takes a task, into its inbox.
+  await addTo(page, 'Personal', 'Water the plants')
+  await main(page).getByRole('button', { name: 'Move Water the plants', exact: true }).click()
+  await main(page)
+    .getByRole('button', { name: 'Move Water the plants to Work', exact: true })
+    .click()
+  await expect(main(page).getByText('2 epics · 2 in the inbox', { exact: true })).toBeVisible()
+  // The focus rests on the area's fold, and stays there when it opens.
+  await expect(caret('Work')).toBeFocused()
+  await caret('Work').click()
+  await expect(inbox(page, 'Work')).toContainText('Water the plants')
+  await expect(caret('Work')).toBeFocused()
+
+  // Kept across a reload, as the board's other folds are.
+  await caret('Work').click()
+  await page.reload()
+  await expect(caret('Work')).toHaveAttribute('aria-expanded', 'false')
+  await expect(caret('Personal')).toHaveAttribute('aria-expanded', 'true')
+})
+
+test("an epic's own tasks fold under their heading, and still take a task", async ({ page }) => {
+  await openMono(page)
+  await openTasks(page)
+  await buildAuthEpic(page)
+  const heading = main(page).getByRole('button', {
+    name: 'Tasks straight under Mono auth',
+    exact: true,
+  })
+  const ownTasks = epic(page, 'Mono auth').getByRole('list', { name: 'Mono auth tasks' })
+
+  await expect(heading).toHaveAttribute('aria-expanded', 'true')
+  await heading.click()
+  await expect(heading).toHaveAttribute('aria-expanded', 'false')
+  await expect(ownTasks).toHaveCount(0)
+  await expect(epic(page, 'Mono auth').getByText('1 open task', { exact: true })).toBeVisible()
+  // The epic and its outcome are as they were.
+  await expect(
+    main(page).getByRole('button', { name: 'What Mono auth holds', exact: true }),
+  ).toHaveAttribute('aria-expanded', 'true')
+  await expect(outcome(page, 'Login pages')).toContainText('Login form')
+
+  await main(page).getByRole('button', { name: 'Move Login form', exact: true }).click()
+  await main(page)
+    .getByRole('button', { name: 'Move Login form to Mono auth', exact: true })
+    .click()
+  await expect(epic(page, 'Mono auth').getByText('2 open tasks', { exact: true })).toBeVisible()
+  await expect(heading).toBeFocused()
+  await heading.click()
+  await expect(ownTasks).toContainText('Login form')
+  await expect(heading).toBeFocused()
+  await expect(ownTasks).toContainText('CSRF token')
+})
+
+test('a small + adds an outcome, and takes no column of its own', async ({ page }) => {
+  await openMono(page)
+  await openTasks(page)
+  await addOnTasksPage(page, 'epic', 'Work', 'Mono auth')
+  await addOnTasksPage(page, 'outcome', 'Mono auth', 'Login pages')
+  const plus = main(page).getByRole('button', { name: 'Add an outcome to Mono auth', exact: true })
+  const field = main(page).getByLabel('New outcome in Mono auth', { exact: true })
+  const ownTasks = main(page).getByRole('button', {
+    name: 'Tasks straight under Mono auth',
+    exact: true,
+  })
+
+  // Folded, it is a small + and the epic's own tasks stand straight after the
+  // outcome, with no column between them.
+  await field.press('Escape')
+  await expect(plus).toBeFocused()
+  expect((await plus.boundingBox())!.width).toBeLessThan(40)
+  const column = (await outcome(page, 'Login pages').boundingBox())!
+  const right = column.x + column.width
+  const tasksAt = (await ownTasks.boundingBox())!.x
+  expect(tasksAt).toBeGreaterThan(right)
+  expect(tasksAt).toBeLessThan(right + 32)
+
+  // Opened, the new outcome's card stands after the last outcome, and the ×
+  // or Escape hands the focus back to the +.
+  await plus.click()
+  await expect(field).toBeFocused()
+  const card = (await field.boundingBox())!
+  expect(card.x).toBeGreaterThan(right)
+  expect(card.x).toBeLessThan((await ownTasks.boundingBox())!.x)
+  await field.press('Escape')
+  await expect(field).toHaveCount(0)
+  await expect(plus).toBeFocused()
 })

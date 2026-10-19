@@ -38,6 +38,7 @@ import {
 } from '@/components/stage/stages'
 import { DayCalendar } from '@/components/Calendar/DayCalendar'
 import { AllTasksPane, ColumnSwitch, type ColumnView } from '@/components/AllTasksPane'
+import { CornerCard } from '@/components/CornerCard'
 import { pickedInPlay } from '@/components/blockPick'
 import { TodayCarry } from '@/components/TodayList'
 import { useTodayBacklog } from '@/components/useTodayBacklog'
@@ -705,9 +706,12 @@ export function App() {
         a page that does not move, and a phone would be showing about a third
         of each. Below `lg` nothing is pinned: both panels are as tall as what
         they hold and the document scrolls, which is the one scroll a phone
-        does well.
+        does well. Stacked, the foot leaves room for the corner's button
+        (`CornerCard`), so the end of the calendar scrolls out from under it.
       */}
-      <div className={`mx-auto flex w-full ${APP_WIDTH} flex-col p-4 sm:p-6 lg:min-h-0 lg:flex-1`}>
+      <div
+        className={`mx-auto flex w-full ${APP_WIDTH} flex-col p-4 pb-24 sm:p-6 sm:pb-24 lg:min-h-0 lg:flex-1 lg:pb-6`}
+      >
 
         {/* One hand for carrying tasks around both columns, so a task can be
             dragged from All Tasks onto one of today's intentions on the stage,
@@ -877,6 +881,12 @@ export function App() {
               />
             </div>
           </div>
+
+          {/* The corner card every page has, outside both columns so neither
+              claims it. Its list joins this carry rather than holding its
+              own, so a task dragged from All Tasks lands on one of its
+              intentions as it would on the question's. */}
+          <CornerCard shared empty="Nothing chosen for today yet. Choose tasks on today's question." />
         </TodayCarry>
       </div>
 

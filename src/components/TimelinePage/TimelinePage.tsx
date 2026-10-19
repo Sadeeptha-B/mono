@@ -15,11 +15,15 @@
  * rest of Later — a rename half typed, a line being filed — is keyed by the
  * backlog's replacements (`replaced`), since it names records by id, and an
  * import may bring the same id back saying something else.
+ *
+ * Today's list and the draft open from the corner here as on every page
+ * (`CornerCard`): a line in Later is often filed straight into today's work.
  */
 
 import { useMemo } from 'react'
 
 import { APP_WIDTH, AppBar } from '../AppHeader'
+import { CornerCard } from '../CornerCard'
 import { HeaderStatus } from '../HeaderStatus'
 import { AddFields, useAddFieldsValue } from '../Tasks/addFields'
 import type { MiniWindowControls } from '@/pip/useMiniWindow'
@@ -61,7 +65,9 @@ export function TimelinePage({
       />
 
       <div className="mono-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
-        <main className={`mx-auto ${APP_WIDTH} px-4 py-8 sm:px-6 sm:py-10`}>
+        {/* Room at the foot for the corner's button (`CornerCard`), so the
+            last of Later can be scrolled out from under it. */}
+        <main className={`mx-auto ${APP_WIDTH} px-4 pt-8 pb-32 sm:px-6 sm:pt-10`}>
           <h1 className="text-3xl font-light text-bright sm:text-4xl">Timeline</h1>
           <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
             What you put down for later waits here until you decide what it is: a task
@@ -77,6 +83,7 @@ export function TimelinePage({
           )}
         </main>
       </div>
+      <CornerCard />
     </div>
   )
 }

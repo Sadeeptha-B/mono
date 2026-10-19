@@ -9,17 +9,17 @@
  * timers and reconciliation — stay mounted, so a block keeps running while
  * you are here, and the header says what the timer would be saying. The page
  * itself is mounted afresh on each visit, and its own state goes when you
- * leave: the view chosen, today's list open or not and its drafts. A board
+ * leave: the view chosen and today's list's drafts. A board
  * field being written is kept by the click that took you away, as any click
  * elsewhere keeps it (`useLeave`); beyond that, only what is saved — the
  * board's folds — or held above the routes outlasts a trip to the day.
  *
  * The page is the board. Today's list — the tasks chosen for the day,
  * gathered under the intentions some of them are carried into, the same list
- * as on the opening question — waits behind a button in the corner
- * (`TodayPopup`), and what was put down for later is on the timeline page,
- * filed from there. Both were sections above the board, and pushed the areas
- * down the page they are the subject of.
+ * as on the opening question — waits behind the button in the corner that
+ * every page has (`CornerCard`), beside the draft, and what was put down for
+ * later is on the timeline page, filed from there. Both were sections above
+ * the board, and pushed the areas down the page they are the subject of.
  *
  * **Areas** are the backlog itself, one band
  * each, drawn as a board rather than as a general-purpose tree, because three
@@ -102,6 +102,7 @@
 import { useCallback, useMemo, useState } from 'react'
 
 import { APP_WIDTH, AppBar } from '../AppHeader'
+import { CornerCard } from '../CornerCard'
 import { HeaderStatus } from '../HeaderStatus'
 import {
   Carry,
@@ -131,7 +132,6 @@ import type { TimerMode } from '@/domain/time'
 import type { ActiveSegment, Ms } from '@/domain/types'
 import { AreaList } from './Board'
 import { PutAwayView, putAwayCount } from './PutAway'
-import { TodayPopup } from './TodayPopup'
 import { AddFields, AddForm, useAddFieldsValue } from './addFields'
 
 /** How wide the page is: every view's width (`APP_WIDTH`), so the board keeps the bar's edges. */
@@ -173,8 +173,8 @@ export function TasksPage({
       <div className="mono-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {/* As wide as the header, not the guide's reading measure: a band
             sets columns side by side, and the prose here is capped on its own.
-            Room at the foot for the corner's Today button, so the last of the
-            board can be scrolled out from under it. */}
+            Room at the foot for the corner's button (`CornerCard`), so the
+            last of the board can be scrolled out from under it. */}
         <main className={`mx-auto ${PAGE_WIDTH} px-4 pt-8 pb-32 sm:px-6 sm:pt-10`}>
           {!hydrated ? (
             <>
@@ -185,9 +185,12 @@ export function TasksPage({
             <AddFields.Provider value={addFields}>
               {/* Keyed by the backlog's own replacements (`Backlog`): it
                   outlives the day, so a midnight reset keeps what is typed in
-                  it. Today's list is keyed by the day instead (`TodayPopup`). */}
+                  it. Today's list is keyed by the day instead (`CornerCard`). */}
               <Backlog key={replaced} hand={hand} />
-              <TodayPopup hand={hand} />
+              <CornerCard
+                hand={hand}
+                empty="Nothing chosen for today yet. Choose a task with the sun on its row on the board."
+              />
             </AddFields.Provider>
           )}
         </main>
@@ -319,7 +322,7 @@ function Backlog({ hand }: { hand: CarryHand }) {
       <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
         Everything you mean to do, by area of life. A task sitting straight under an
         area is that area's inbox — file it deeper later, or never. Today's tasks and
-        intentions open from the sun in the corner.
+        intentions, and a draft, open from the sun in the corner.
       </p>
 
       <section aria-label="Backlog">

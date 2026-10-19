@@ -100,13 +100,18 @@ export async function goToStage(page: Page, name: string) {
 }
 
 /**
- * Today's list on the tasks page, behind the sun in its corner: opened if it
- * is not, and the panel returned. The page draws it nowhere else.
+ * Today's list on the tasks page, behind the sun in its corner: the card
+ * opened if it is not, turned to its `Today` tab, and returned. The page draws
+ * the list nowhere else.
  */
 export async function todayOnTasksPage(page: Page) {
-  const button = page.getByRole('main').getByRole('button', { name: 'Today', exact: true })
+  const button = page
+    .getByRole('main')
+    .getByRole('button', { name: 'Today and draft', exact: true })
   if ((await button.getAttribute('aria-expanded')) !== 'true') await button.click()
-  return page.getByRole('main').getByRole('dialog', { name: 'Today' })
+  const card = page.getByRole('main').getByRole('dialog', { name: 'Today and draft' })
+  await card.getByRole('tab', { name: 'Today', exact: true }).click()
+  return card
 }
 
 /** Today's list on the third opening question: the tasks chosen, under their intentions. */

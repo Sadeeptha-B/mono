@@ -47,6 +47,25 @@
  * leaves a cancelled event alone. So a task over a task list lands among its
  * tasks, and an outcome dragged over the same list falls through to the row
  * of outcomes around it.
+ *
+ * One carry can serve two drawings of the same list. On the day the corner
+ * card's list of today joins the carry `App` holds, beside the question's own
+ * list or the one under All Tasks, so the same task has a grip in each. Which
+ * drawing a pick-up, a `Move here` or a heading's button belongs to is said by
+ * `CarryScope`, which each drawing provides. A pick-up is held as picked only
+ * in the drawing it was taken from, and the grip that takes the focus when it
+ * lands is the one in the drawing the `Move here` was pressed in — where the
+ * keyboard was — or, for a `Move here` outside any (the block being named),
+ * the one it was picked up from. Without it the first grip drawn claimed the
+ * focus wherever the move was made: often the stage, or All Tasks hidden
+ * behind the day.
+ *
+ * A pick-up lasts as long as the drawing it was taken from (`useCarryScope`).
+ * Its grip is what cancels it and the row the focus goes back to, so once that
+ * drawing is gone — the corner card closed, or turned to its draft — a
+ * pick-up still held would have neither, and the next `Move here` pressed
+ * elsewhere left the focus on the page. It is put down instead, as the
+ * card's own carry is everywhere else, which goes with the list.
  */
 
 import {
@@ -111,20 +130,61 @@ export type Slot = { parent: string; kind: SlotKind; before: string | null }
 /** The parent of the list of areas, which have none. Never an id. */
 export const TOP = ''
 
+/**
+ * Which drawing of a list its grips and `Move here` belong to, when one carry
+ * serves more than one (see the header). Null — the default — is a surface
+ * drawn once, like the tasks page's board.
+ */
+export const CarryScope = createContext<string | null>(null)
+
+/** The task a pick-up just put down, and the drawing whose grip takes the focus. */
+export type Landing = { id: string; scope: string | null }
+
+/**
+ * A drawing's `CarryScope`: an id for this mounting of the list, and the rule
+ * that what was picked up from it is put down when it goes (see the header).
+ * A new mounting is a new drawing with a new id — React's ids do not survive
+ * one — and nothing taken up from the old one is still held by then, nor does
+ * any landing still wait for it.
+ */
+export function useCarryScope(): string {
+  const scope = useId()
+  const carry = useContext(Carry)
+  const latest = useRef(carry)
+  useEffect(() => {
+    latest.current = carry
+  })
+  useEffect(
+    () => () => {
+      const { held, putDown, landed } = latest.current
+      if (held?.by === 'pick' && held.scope === scope) putDown()
+      if (landed.current?.scope === scope) landed.current = null
+    },
+    [scope],
+  )
+  return scope
+}
+
 /** The task in hand on one surface, and the verbs that carry it. */
 export type CarryContext = {
-  held: { task: Carried; by: CarryMode } | null
+  held: { task: Carried; by: CarryMode; scope: string | null } | null
   /** The place a drag is over, so only that one lights up. */
   over: string | null
   hover: Dispatch<SetStateAction<string | null>>
-  pickUp: (task: Carried, by: CarryMode) => void
+  /** Take it up; a pick-up says which drawing it was taken from (`CarryScope`). */
+  pickUp: (task: Carried, by: CarryMode, scope?: string | null) => void
   putDown: () => void
   /** Whether the task in hand would go to `target`: anywhere but where it is. */
   takes: (target: string) => boolean
-  /** Put the task in hand at `target`, and let go of it. */
-  moveTo: (target: string) => void
+  /**
+   * Put the task in hand at `target`, and let go of it. `scope` is the
+   * drawing whose `Move here` was pressed, where the focus follows it;
+   * `landOn` is what takes the focus there instead of the task's own grip,
+   * when the place shows none (`MoveHere`).
+   */
+  moveTo: (target: string, scope?: string | null, landOn?: string) => void
   /** The task a pick-up just put down, which takes focus when it lands. */
-  landed: RefObject<string | null>
+  landed: RefObject<Landing | null>
   /** The slot a drag is over, so only its line is drawn. */
   aimed: Slot | null
   aim: Dispatch<SetStateAction<Slot | null>>
@@ -196,10 +256,14 @@ export function useCarryState<T extends Carried>({
   /** Shared with the page's other carries, so only one holds a task at once. */
   hand?: CarryHand | undefined
 }): CarryContext {
-  const [carrying, setCarrying] = useState<{ carried: Carried; by: CarryMode } | null>(null)
+  const [carrying, setCarrying] = useState<{
+    carried: Carried
+    by: CarryMode
+    scope: string | null
+  } | null>(null)
   const [over, setOver] = useState<string | null>(null)
   const [aimed, setAimed] = useState<Slot | null>(null)
-  const landed = useRef<string | null>(null)
+  const landed = useRef<Landing | null>(null)
   const me = useId()
 
   const mine = hand === undefined || hand.holder === me
@@ -219,23 +283,25 @@ export function useCarryState<T extends Carried>({
       setOver(null)
       setAimed(null)
     }
-    const held = heldTask && carrying ? { task: heldTask, by: carrying.by } : null
+    const held =
+      heldTask && carrying ? { task: heldTask, by: carrying.by, scope: carrying.scope } : null
     return {
       held,
       over,
       hover: setOver,
-      pickUp: (task, by) => {
+      pickUp: (task, by, scope = null) => {
         hand?.take(me)
-        setCarrying({ carried: task, by })
+        setCarrying({ carried: task, by, scope })
         setOver(null)
       },
       putDown,
       takes: (target) => held !== null && takes(held.task, target),
-      moveTo: (target) => {
+      moveTo: (target, scope = null, landOn) => {
         if (!held || !takes(held.task, target)) return
         const arrived = landedAs(move(held.task, target), held.task.id)
-        // From the keyboard, focus goes with the task to where it landed.
-        if (held.by === 'pick') landed.current = arrived
+        // From the keyboard, focus goes with the task to where it landed, in
+        // the drawing it was put down in, or else the one it came from.
+        if (held.by === 'pick') landed.current = landing(landOn ?? arrived, scope ?? held.scope)
         putDown()
       },
       landed,
@@ -245,7 +311,7 @@ export function useCarryState<T extends Carried>({
       placeAt: (slot) => {
         if (!held || !place || !fits?.(held.task, slot)) return
         const arrived = landedAs(place(held.task, slot), held.task.id)
-        if (held.by === 'pick') landed.current = arrived
+        if (held.by === 'pick') landed.current = landing(arrived, held.scope)
         putDown()
       },
     }
@@ -292,6 +358,10 @@ export function useCarryState<T extends Carried>({
 /** What a put-down says landed: what was carried unless it says otherwise, or nothing. */
 const landedAs = (said: string | null | undefined | void, carried: string): string | null =>
   said === undefined ? carried : said
+
+/** What a grip waits for: nothing, when nothing drawn now is where it went. */
+export const landing = (id: string | null, scope: string | null): Landing | null =>
+  id === null ? null : { id, scope }
 
 /**
  * A place that takes a carried task, drawn as one while there is one to take:
@@ -514,14 +584,30 @@ export function SlotMark({
 /**
  * Where a picked-up task can be put down: a button at the head of every place
  * that would take it. Only for a pick-up — a drag has the place itself.
+ *
+ * A place folded down to its heading still takes a task, but draws no row for
+ * it to land as, so it names what takes the focus instead (`landOn`): its own
+ * fold control, which claims it with `useLanding`. Left to wait for the task's
+ * grip, the focus fell to the page, and the landing jumped to the grip
+ * whenever the place was next unfolded.
  */
-export function MoveHere({ target, name }: { target: string; name: string }) {
+export function MoveHere({
+  target,
+  name,
+  landOn,
+}: {
+  target: string
+  name: string
+  /** The landing key of what takes the focus, where the task lands out of sight. */
+  landOn?: string
+}) {
   const { held, takes, moveTo } = useContext(Carry)
+  const scope = useContext(CarryScope)
   if (!held || held.by !== 'pick' || !takes(target)) return null
   return (
     <button
       type="button"
-      onClick={() => moveTo(target)}
+      onClick={() => moveTo(target, scope, landOn)}
       aria-label={`Move ${held.task.title} to ${name}`}
       className="mb-2 w-full rounded-lg border border-dashed border-deep/70 px-3 py-2 text-left text-xs text-deep transition hover:bg-surface-raised"
     >
@@ -540,7 +626,8 @@ export function MoveHere({ target, name }: { target: string; name: string }) {
  */
 export function useCarriedRow(task: Carried, draggable = true) {
   const carry = useContext(Carry)
-  const picked = carry.held?.task.id === task.id && carry.held.by === 'pick'
+  const scope = useContext(CarryScope)
+  const picked = isPicked(carry.held, task, scope)
   const dragProps = { draggable, ...dragInto([[carry, task]], task.title) }
   return { picked, dragProps }
 }
@@ -573,10 +660,37 @@ export function dragInto(
 }
 
 /**
+ * Takes the focus when a pick-up lands on `key` in this drawing: a grip, by its
+ * task's id, or whatever a folded place named for it (`MoveHere`'s `landOn`).
+ * Checked after every render, not only on mounting: what a pick-up lands under
+ * may be a row already drawn — a heading in an intention that held some of a
+ * place's tasks already — which does not mount again, and the `Move here`
+ * that had the focus has gone, leaving it on the page.
+ */
+export function useLanding(key: string, control: RefObject<HTMLElement | null>) {
+  const { landed } = useContext(Carry)
+  const scope = useContext(CarryScope)
+  useEffect(() => {
+    const at = landed.current
+    if (at?.id !== key || at.scope !== scope) return
+    landed.current = null
+    control.current?.focus()
+  })
+}
+
+/**
+ * Whether this drawing's row is the one picked up: the task in hand, taken up
+ * from this drawing (`CarryScope`) rather than another of the same list.
+ */
+const isPicked = (held: CarryContext['held'], task: Carried, scope: string | null) =>
+  held?.task.id === task.id && held.by === 'pick' && held.scope === scope
+
+/**
  * The grip on a carried row: six dots, and the button that picks the task up
  * or puts it back. The one a pick-up just put down — the row it lands as,
  * which may be drawn afresh or already there — takes focus here, so the
- * keyboard ends where the task did.
+ * keyboard ends where the task did: only the grip in the drawing the landing
+ * names (`CarryScope`), where one list is drawn twice.
  */
 export function CarryGrip({
   task,
@@ -591,25 +705,18 @@ export function CarryGrip({
   onStep?: (by: -1 | 1) => void
   className?: string
 }) {
-  const { held, pickUp, putDown, landed } = useContext(Carry)
-  const picked = held?.task.id === task.id && held.by === 'pick'
+  const { held, pickUp, putDown } = useContext(Carry)
+  const scope = useContext(CarryScope)
+  const picked = isPicked(held, task, scope)
   const grip = useRef<HTMLButtonElement>(null)
-  // After every render, not only on mounting: what a pick-up lands under may
-  // be a row already drawn — a heading in an intention that held some of a
-  // place's tasks already — which does not mount again, and the `Move here`
-  // that had the focus has gone, leaving it on the page.
-  useEffect(() => {
-    if (landed.current !== task.id) return
-    landed.current = null
-    grip.current?.focus()
-  })
+  useLanding(task.id, grip)
   const stepped = useRefocus(grip)
 
   return (
     <button
       ref={grip}
       type="button"
-      onClick={() => (picked ? putDown() : pickUp(task, 'pick'))}
+      onClick={() => (picked ? putDown() : pickUp(task, 'pick', scope))}
       onKeyDown={(e) => {
         const by = e.key === 'ArrowUp' ? -1 : e.key === 'ArrowDown' ? 1 : 0
         if (!onStep || by === 0 || picked) return

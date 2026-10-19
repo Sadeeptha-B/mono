@@ -1,6 +1,6 @@
 /**
  * The small line icons that stand in for words on a dense row: done, drop,
- * archive, restore, reopen, delete, and the mark of a commitment that repeats;
+ * archive, restore, reopen, delete, fold all, and the mark of a commitment that repeats;
  * and the header's tools, which stand in for words for the same reason.
  *
  * Drawn rather than typed, for the reason `GripGlyph` gives on the tasks page:
@@ -114,6 +114,21 @@ export const MinusIcon = ({ className = '' }: { className?: string }) => (
 export const PlusIcon = ({ className = '' }: { className?: string }) => (
     <Icon className={className}>
         <path d="M3.5 8h9M8 3.5v9" />
+    </Icon>
+)
+
+/**
+ * Two chevrons, closing on a line or opening away from it: fold every epic in
+ * an area, or unfold them all again. Chevrons because a single fold is the
+ * caret; two are what it does to the many.
+ */
+export const FoldAllIcon = ({ fold, className = '' }: { fold: boolean; className?: string }) => (
+    <Icon className={className}>
+        {fold ? (
+            <path d="M4.5 2.5 8 6l3.5-3.5M4.5 13.5 8 10l3.5 3.5M3 8h10" />
+        ) : (
+            <path d="M4.5 5.5 8 2l3.5 3.5M4.5 10.5 8 14l3.5-3.5M3 8h10" />
+        )}
     </Icon>
 )
 

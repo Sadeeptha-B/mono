@@ -42,6 +42,7 @@
 import { useState } from 'react'
 
 import { APP_WIDTH, AppBar } from '../AppHeader'
+import { CornerCard } from '../CornerCard'
 import { RegionShapeEditor } from '../RegionShapeEditor'
 import { HeaderStatus } from '../HeaderStatus'
 import {
@@ -181,8 +182,9 @@ export function RoutinePage({
 
       <div className="mono-scroll lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
         {/* Every view's width, so the page starts where the others do; what is
-            on it keeps the narrower measure a form of a few fields wants. */}
-        <main className={`mx-auto ${APP_WIDTH} px-4 py-8 sm:px-6 sm:py-10`}>
+            on it keeps the narrower measure a form of a few fields wants. Room
+            at the foot for the corner's button (`CornerCard`). */}
+        <main className={`mx-auto ${APP_WIDTH} px-4 pt-8 pb-32 sm:px-6 sm:pt-10`}>
           <div className="max-w-3xl">
             <h1 className="text-3xl font-light text-bright sm:text-4xl">Routine</h1>
             <p className="mt-3 max-w-2xl text-base leading-relaxed text-muted">
@@ -291,6 +293,7 @@ export function RoutinePage({
           </div>
         </main>
       </div>
+      <CornerCard />
     </div>
   )
 }

@@ -69,6 +69,19 @@
  * on screen. A rename held here went with the list, and came back as the old
  * name. `useIntentionRename` holds one, and closes it before paint if its
  * intention goes — the rule every editor in Mono keeps.
+ *
+ * Kept is not asked for, though. A field takes the focus only when a press in
+ * this drawing of the list opened it — `+ Intention`, or an intention's ✎ —
+ * never when it comes back drawn again with its draft: after another question,
+ * the corner card reopened or turned back to its `Today` tab. Taking it then
+ * pulled the keyboard out of wherever it was, the card's tabs included, the
+ * way the tasks page's add fields already refuse to (`AddForm`).
+ *
+ * The list is its own drawing for the carry (`useCarryScope`): on the day the
+ * corner card draws it again beside the question's, under one carry, and a
+ * task moved in one must leave the focus in that one. A task picked up from
+ * it is put down when the list goes, as the card closes or turns to its
+ * draft: nothing is left on screen to cancel it or to take the focus back.
  */
 
 import { useCallback, useContext, useMemo, useRef, useState, type ReactNode } from 'react'
@@ -76,6 +89,7 @@ import { useCallback, useContext, useMemo, useRef, useState, type ReactNode } fr
 import {
   Carry,
   CarryGrip,
+  CarryScope,
   CarryStatus,
   DropZone,
   MoveHere,
@@ -85,6 +99,8 @@ import {
   type CarryHand,
   type CarryMode,
   type CarryPayload,
+  landing,
+  useCarryScope,
 } from './carry'
 import { PlaceTick } from './allTasks/rows'
 import { GroupedTasks } from './GroupedTasks'
@@ -378,6 +394,10 @@ export function TodayList({
   const updateIntention = useSession((s) => s.updateIntention)
   const removeIntention = useSession((s) => s.removeIntention)
   const { held, takes } = useContext(Carry)
+  const scope = useCarryScope()
+  // The field a press in this drawing opened, which alone takes the focus as
+  // it is drawn: the new intention, or the intention being renamed, by id.
+  const [asked, setAsked] = useState<string | null>(null)
 
   // Grouped per change to the day or the backlog, not per tick.
   const group = backlog.group
@@ -436,7 +456,10 @@ export function TodayList({
     <button
       ref={opener}
       type="button"
-      onClick={() => onNewIntention(newIntention ?? '')}
+      onClick={() => {
+        setAsked(NEW_INTENTION)
+        onNewIntention(newIntention ?? '')
+      }}
       aria-label="Add intention"
       className="shrink-0 text-[13px] text-muted transition hover:text-bright"
     >
@@ -445,155 +468,165 @@ export function TodayList({
   )
 
   return (
-    <div className="flex flex-col gap-3">
-      <div className="flex items-baseline justify-between gap-3">
-        {typeof heading === 'string' ? (
-          <h3 className="text-[13px] font-medium tracking-wide text-muted uppercase">{heading}</h3>
-        ) : (
-          heading
+    <CarryScope.Provider value={scope}>
+      <div className="flex flex-col gap-3">
+        <div className="flex items-baseline justify-between gap-3">
+          {typeof heading === 'string' ? (
+            <h3 className="text-[13px] font-medium tracking-wide text-muted uppercase">{heading}</h3>
+          ) : (
+            heading
+          )}
+          {addButton}
+        </div>
+
+        {newIntention !== null && (
+          <NewIntention
+            value={newIntention}
+            focus={asked === NEW_INTENTION}
+            onChange={onNewIntention}
+            onEnter={() => addNamed('next')}
+            onKeep={() => addNamed('done')}
+            onCancel={closeNew}
+          />
         )}
-        {addButton}
-      </div>
 
-      {newIntention !== null && (
-        <NewIntention
-          value={newIntention}
-          onChange={onNewIntention}
-          onEnter={() => addNamed('next')}
-          onKeep={() => addNamed('done')}
-          onCancel={closeNew}
-        />
-      )}
+        {intentions.map((intention) => {
+          const tasks = groups.byIntention.get(intention.id) ?? []
+          const done = intention.done === true
+          return (
+            <DropZone key={intention.id} target={intention.id} className="min-w-0">
+              {/* A level of the same tree as the places: its name as a heading,
+                  what it holds beneath, and only a fine border to say it is an
+                  intention rather than somewhere the tasks live. */}
+              <section
+                aria-label={`Intention: ${intention.title}`}
+                className={`rounded-md border border-line px-2 py-1.5 ${done ? 'opacity-70' : ''}`}
+              >
+                {renaming?.id === intention.id ? (
+                  <RenameField
+                    label={`Rename intention ${intention.title}`}
+                    value={renaming.title}
+                    onChange={(title) => onRenaming({ id: intention.id, title })}
+                    onSave={() => {
+                      updateIntention(intention.id, { title: renaming.title.trim() })
+                      onRenaming(null)
+                    }}
+                    onCancel={() => onRenaming(null)}
+                    textClass="text-[15px]"
+                    autoFocus={asked === intention.id}
+                  />
+                ) : (
+                  <div className="flex items-baseline gap-1.5">
+                    {forBlock && (
+                      // Held at the top of the heading's first line, as a tree
+                      // row holds its box, whether or not it has a note to say.
+                      <span className="flex shrink-0 self-start">
+                        <PlaceTick
+                          name={intention.title}
+                          label={`All of ${intention.title} for this block`}
+                          taskIds={openOf.get(intention.id) ?? []}
+                          selected={ticked}
+                          onToggle={forBlock.onTickMany}
+                          keepsOne={forBlock.keepsOne}
+                          boxClass="mt-[5px]"
+                        />
+                      </span>
+                    )}
+                    <IntentionDoneToggle
+                      intention={intention}
+                      onToggle={() => updateIntention(intention.id, { done: !done })}
+                    />
+                    <h3
+                      className={`min-w-0 flex-1 text-[15px] wrap-break-word ${
+                        done ? 'text-muted line-through' : 'text-bright'
+                      }`}
+                    >
+                      {intention.title}
+                      {/* Empty, the hint sits beside the name rather than on a
+                          line of its own, so an empty intention is one line. */}
+                      {tasks.length === 0 && (
+                        <span className="ml-2 text-xs text-muted no-underline">drag tasks here</span>
+                      )}
+                    </h3>
+                    <IconButton
+                      onClick={() => {
+                        setAsked(intention.id)
+                        onRenaming({ id: intention.id, title: intention.title })
+                      }}
+                      label={`Rename intention ${intention.title}`}
+                      hint="Rename"
+                      className="-my-1"
+                    >
+                      <EditGlyph />
+                    </IconButton>
+                    {/* At once: its tasks stay today's, under none. */}
+                    <IconButton
+                      danger
+                      onClick={() => removeIntention(intention.id)}
+                      label={`Delete intention ${intention.title}`}
+                      hint="Delete"
+                      className="-my-1 -mr-1.5"
+                    >
+                      <DeleteIcon />
+                    </IconButton>
+                  </div>
+                )}
+                {/* Under the title rather than the ring, without a guide line of
+                    its own: the border already says what the places inside are
+                    under, and a line there was one more beside theirs. */}
+                {(tasks.length > 0 || held?.by === 'pick') && (
+                  <div className="mt-1 pl-5">
+                    <MoveHere target={intention.id} name={intention.title} />
+                    {tasks.length > 0 && (
+                      <GroupedTasks
+                        label={`Tasks for ${intention.title}`}
+                        groups={tasks}
+                        renderTask={renderTask}
+                        renderPlace={placeIn(intention.id)}
+                        gutter="wide"
+                        placeText="text-sm"
+                      />
+                    )}
+                  </div>
+                )}
+              </section>
+            </DropZone>
+          )
+        })}
 
-      {intentions.map((intention) => {
-        const tasks = groups.byIntention.get(intention.id) ?? []
-        const done = intention.done === true
-        return (
-          <DropZone key={intention.id} target={intention.id} className="min-w-0">
-            {/* A level of the same tree as the places: its name as a heading,
-                what it holds beneath, and only a fine border to say it is an
-                intention rather than somewhere the tasks live. */}
-            <section
-              aria-label={`Intention: ${intention.title}`}
-              className={`rounded-md border border-line px-2 py-1.5 ${done ? 'opacity-70' : ''}`}
-            >
-              {renaming?.id === intention.id ? (
-                <RenameField
-                  label={`Rename intention ${intention.title}`}
-                  value={renaming.title}
-                  onChange={(title) => onRenaming({ id: intention.id, title })}
-                  onSave={() => {
-                    updateIntention(intention.id, { title: renaming.title.trim() })
-                    onRenaming(null)
-                  }}
-                  onCancel={() => onRenaming(null)}
-                  textClass="text-[15px]"
+        {nothingChosen && <p className="text-sm text-muted">{empty}</p>}
+
+        {/* Under no intention: today itself, so it carries no heading. Shown
+            while it holds something, or while something could be dropped on it:
+            a task of today's leaving its intention, or one from the backlog being
+            chosen. */}
+        {(groups.none.length > 0 ||
+          (held !== null && (intentions.length > 0 || takes(NOT_GROUPED)))) && (
+          <DropZone target={NOT_GROUPED} className="min-w-0">
+            <section aria-label={intentions.length > 0 ? 'Not grouped' : 'Chosen today'}>
+              <MoveHere target={NOT_GROUPED} name="no intention" />
+              {groups.none.length > 0 ? (
+                <GroupedTasks
+                  label={intentions.length > 0 ? 'Tasks not grouped' : 'Tasks chosen today'}
+                  groups={groups.none}
+                  renderTask={renderTask}
+                  renderPlace={placeIn(NOT_GROUPED)}
+                  gutter="wide"
+                  placeText="text-sm"
                 />
               ) : (
-                <div className="flex items-baseline gap-1.5">
-                  {forBlock && (
-                    // Held at the top of the heading's first line, as a tree
-                    // row holds its box, whether or not it has a note to say.
-                    <span className="flex shrink-0 self-start">
-                      <PlaceTick
-                        name={intention.title}
-                        label={`All of ${intention.title} for this block`}
-                        taskIds={openOf.get(intention.id) ?? []}
-                        selected={ticked}
-                        onToggle={forBlock.onTickMany}
-                        keepsOne={forBlock.keepsOne}
-                        boxClass="mt-[5px]"
-                      />
-                    </span>
-                  )}
-                  <IntentionDoneToggle
-                    intention={intention}
-                    onToggle={() => updateIntention(intention.id, { done: !done })}
-                  />
-                  <h3
-                    className={`min-w-0 flex-1 text-[15px] wrap-break-word ${
-                      done ? 'text-muted line-through' : 'text-bright'
-                    }`}
-                  >
-                    {intention.title}
-                    {/* Empty, the hint sits beside the name rather than on a
-                        line of its own, so an empty intention is one line. */}
-                    {tasks.length === 0 && (
-                      <span className="ml-2 text-xs text-muted no-underline">drag tasks here</span>
-                    )}
-                  </h3>
-                  <IconButton
-                    onClick={() => onRenaming({ id: intention.id, title: intention.title })}
-                    label={`Rename intention ${intention.title}`}
-                    hint="Rename"
-                    className="-my-1"
-                  >
-                    <EditGlyph />
-                  </IconButton>
-                  {/* At once: its tasks stay today's, under none. */}
-                  <IconButton
-                    danger
-                    onClick={() => removeIntention(intention.id)}
-                    label={`Delete intention ${intention.title}`}
-                    hint="Delete"
-                    className="-my-1 -mr-1.5"
-                  >
-                    <DeleteIcon />
-                  </IconButton>
-                </div>
-              )}
-              {/* Under the title rather than the ring, without a guide line of
-                  its own: the border already says what the places inside are
-                  under, and a line there was one more beside theirs. */}
-              {(tasks.length > 0 || held?.by === 'pick') && (
-                <div className="mt-1 pl-5">
-                  <MoveHere target={intention.id} name={intention.title} />
-                  {tasks.length > 0 && (
-                    <GroupedTasks
-                      label={`Tasks for ${intention.title}`}
-                      groups={tasks}
-                      renderTask={renderTask}
-                      renderPlace={placeIn(intention.id)}
-                      gutter="wide"
-                      placeText="text-sm"
-                    />
-                  )}
-                </div>
+                <p className="py-1 text-xs text-muted">Drop here to keep it under no intention.</p>
               )}
             </section>
           </DropZone>
-        )
-      })}
-
-      {nothingChosen && <p className="text-sm text-muted">{empty}</p>}
-
-      {/* Under no intention: today itself, so it carries no heading. Shown
-          while it holds something, or while something could be dropped on it:
-          a task of today's leaving its intention, or one from the backlog being
-          chosen. */}
-      {(groups.none.length > 0 ||
-        (held !== null && (intentions.length > 0 || takes(NOT_GROUPED)))) && (
-        <DropZone target={NOT_GROUPED} className="min-w-0">
-          <section aria-label={intentions.length > 0 ? 'Not grouped' : 'Chosen today'}>
-            <MoveHere target={NOT_GROUPED} name="no intention" />
-            {groups.none.length > 0 ? (
-              <GroupedTasks
-                label={intentions.length > 0 ? 'Tasks not grouped' : 'Tasks chosen today'}
-                groups={groups.none}
-                renderTask={renderTask}
-                renderPlace={placeIn(NOT_GROUPED)}
-                gutter="wide"
-                placeText="text-sm"
-              />
-            ) : (
-              <p className="py-1 text-xs text-muted">Drop here to keep it under no intention.</p>
-            )}
-          </section>
-        </DropZone>
-      )}
-    </div>
+        )}
+      </div>
+    </CarryScope.Provider>
   )
 }
+
+/** What `asked` holds for the new intention's field. Never an intention's id. */
+const NEW_INTENTION = ':new'
 
 /**
  * One of today's tasks: the grip that carries it between intentions, its
@@ -778,6 +811,7 @@ function MakeIntention({
   const intentions = useSession((s) => s.session.intentions)
   const gatherUnder = useSession((s) => s.gatherUnder)
   const { landed } = useContext(Carry)
+  const scope = useContext(CarryScope)
   const into = intentionNamed(intentions, place.name)
   if (into?.id === group) return null
   const level = place.kind === 'epic' ? 'epic' : 'outcome'
@@ -787,7 +821,7 @@ function MakeIntention({
         // Cut from this group by the list, so these are its tasks in this place.
         const taskIds = openTasksBeneath([heading]).get(heading.id) ?? []
         const id = gatherUnder(place.name, taskIds)
-        landed.current = headingLandedOn(grouped, id, taskIds)
+        landed.current = landing(headingLandedOn(grouped, id, taskIds), scope)
       }}
       label={
         into ? `Move ${place.name} into intention ${into.title}` : `Make ${place.name} an intention`
@@ -809,12 +843,15 @@ const holdsOpen = (node: TaskTreeNode): boolean =>
  */
 function NewIntention({
   value,
+  focus,
   onChange,
   onEnter,
   onKeep,
   onCancel,
 }: {
   value: string
+  /** Opened by a press in this drawing, rather than drawn again with its draft. */
+  focus: boolean
   onChange: (value: string) => void
   onEnter: () => void
   onKeep: () => void
@@ -833,8 +870,8 @@ function NewIntention({
         label="New intention"
         keepLabel="Keep the new intention"
         cancelLabel="Cancel new intention"
-        // Opened by a press asking for exactly this field.
-        autoFocus
+        // Only when a press asked for exactly this field.
+        autoFocus={focus}
         inputClassName="min-w-0 flex-1 bg-transparent text-[15px] text-bright placeholder:text-muted/80 focus:outline-none"
       />
     </div>
