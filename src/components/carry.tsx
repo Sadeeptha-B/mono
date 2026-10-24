@@ -665,14 +665,15 @@ export function dragInto(
  * Checked after every render, not only on mounting: what a pick-up lands under
  * may be a row already drawn — a heading in an intention that held some of a
  * place's tasks already — which does not mount again, and the `Move here`
- * that had the focus has gone, leaving it on the page.
+ * that had the focus has gone, leaving it on the page. A control that is
+ * sometimes a landing and sometimes not passes no key, and takes nothing.
  */
-export function useLanding(key: string, control: RefObject<HTMLElement | null>) {
+export function useLanding(key: string | undefined, control: RefObject<HTMLElement | null>) {
   const { landed } = useContext(Carry)
   const scope = useContext(CarryScope)
   useEffect(() => {
     const at = landed.current
-    if (at?.id !== key || at.scope !== scope) return
+    if (key === undefined || at?.id !== key || at.scope !== scope) return
     landed.current = null
     control.current?.focus()
   })

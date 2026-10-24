@@ -882,7 +882,7 @@ test('a task ticked on the board stays in its column today, crossed out, and unt
   await expect(done).toHaveCount(0)
 })
 
-test('an epic or outcome folds by its caret, stays folded, and still takes a task', async ({
+test('an outcome folds by its caret and still takes a task; an epic folds every column in its row', async ({
   page,
 }) => {
   await openMono(page)
@@ -892,6 +892,7 @@ test('an epic or outcome folds by its caret, stays folded, and still takes a tas
   const fold = (title: string) =>
     main(page).getByRole('button', { name: `What ${title} holds`, exact: true })
   const pagesTasks = outcome(page, 'Login pages').getByRole('list', { name: 'Login pages tasks' })
+  const ownTasks = epic(page, 'Mono auth').getByRole('list', { name: 'Mono auth tasks' })
 
   // A folded outcome is its card, saying how much it holds.
   await fold('Login pages').click()
@@ -909,18 +910,29 @@ test('an epic or outcome folds by its caret, stays folded, and still takes a tas
   // Its row is folded away, so the focus rests on the fold that holds it.
   await expect(fold('Login pages')).toBeFocused()
 
-  // A folded epic is its card and one line.
+  // The epic's own tasks are still showing, so the epic is not folded. Its
+  // caret folds every column in the row, and keeps its outcomes' cards.
+  await expect(fold('Mono auth')).toHaveAttribute('aria-expanded', 'true')
   await fold('Mono auth').click()
-  await expect(outcome(page, 'Login pages')).toHaveCount(0)
-  await expect(epic(page, 'Mono auth')).toContainText('1 outcome · 3 open tasks')
-
-  // Kept across a reload, each on its own.
-  await page.reload()
-  await expect(epic(page, 'Mono auth')).toContainText('1 outcome · 3 open tasks')
-  await fold('Mono auth').click()
+  await expect(fold('Mono auth')).toHaveAttribute('aria-expanded', 'false')
+  await expect(ownTasks).toHaveCount(0)
+  await expect(epic(page, 'Mono auth').getByText('1 open task', { exact: true })).toBeVisible()
   await expect(outcome(page, 'Login pages')).toContainText('2 open tasks')
-  await fold('Login pages').click()
+  await expect(fold('Login pages')).toHaveAttribute('aria-expanded', 'false')
+
+  // Kept across a reload; unfolded, every column in the row opens.
+  await page.reload()
+  await expect(fold('Mono auth')).toHaveAttribute('aria-expanded', 'false')
+  await expect(ownTasks).toHaveCount(0)
+  await fold('Mono auth').click()
   await expect(pagesTasks).toContainText('Rate limiting')
+  await expect(ownTasks).toContainText('CSRF token')
+
+  // Each column still folds on its own afterwards.
+  await fold('Login pages').click()
+  await expect(pagesTasks).toHaveCount(0)
+  await expect(ownTasks).toContainText('CSRF token')
+  await expect(fold('Mono auth')).toHaveAttribute('aria-expanded', 'true')
 })
 
 test('archiving puts an epic away without finishing anything in it', async ({ page }) => {
@@ -1254,15 +1266,26 @@ test('an area folds to its name, and every epic in it folds at once', async ({ p
   await addTo(page, 'Work', 'Buy a cable')
   const caret = (title: string) =>
     main(page).getByRole('button', { name: `What ${title} holds`, exact: true })
+  const pagesTasks = outcome(page, 'Login pages').getByRole('list', { name: 'Login pages tasks' })
+  const ownTasks = epic(page, 'Mono auth').getByRole('list', { name: 'Mono auth tasks' })
 
-  // Every epic in the area at once, and back again.
+  // Every epic in the area at once, as each epic's caret would: every column
+  // folds, and the epics and outcomes stay as cards. Then back again.
   await main(page).getByRole('button', { name: 'Fold every epic in Work', exact: true }).click()
   await expect(caret('Mono auth')).toHaveAttribute('aria-expanded', 'false')
   await expect(caret('Rate limits')).toHaveAttribute('aria-expanded', 'false')
-  await expect(epic(page, 'Mono auth')).toContainText('1 outcome · 2 open tasks')
+  await expect(caret('Login pages')).toHaveAttribute('aria-expanded', 'false')
+  await expect(outcome(page, 'Login pages')).toContainText('1 open task')
+  await expect(pagesTasks).toHaveCount(0)
+  await expect(ownTasks).toHaveCount(0)
+  await expect(epic(page, 'Rate limits')).toBeVisible()
+  // The inbox is not an epic's, and stays as it was.
+  await expect(inbox(page, 'Work')).toContainText('Buy a cable')
   await main(page).getByRole('button', { name: 'Unfold every epic in Work', exact: true }).click()
   await expect(caret('Mono auth')).toHaveAttribute('aria-expanded', 'true')
   await expect(caret('Rate limits')).toHaveAttribute('aria-expanded', 'true')
+  await expect(pagesTasks).toContainText('Login form')
+  await expect(ownTasks).toContainText('CSRF token')
 
   // The area folds to its name, saying what it holds.
   await caret('Work').click()
@@ -1289,6 +1312,51 @@ test('an area folds to its name, and every epic in it folds at once', async ({ p
   await page.reload()
   await expect(caret('Work')).toHaveAttribute('aria-expanded', 'false')
   await expect(caret('Personal')).toHaveAttribute('aria-expanded', 'true')
+})
+
+test('what an add field holds when the press that folds an epic leaves it is folded with the rest', async ({
+  page,
+}) => {
+  // Regression: the field's leave waits a turn for the click, so the fold
+  // was written first, and the outcome added after it started open — the
+  // epic just folded read as open again.
+  await openMono(page)
+  await openTasks(page)
+  await buildAuthEpic(page)
+  const caret = (title: string) =>
+    main(page).getByRole('button', { name: `What ${title} holds`, exact: true })
+  const typeOutcome = async (title: string) => {
+    await main(page).getByRole('button', { name: 'Add an outcome to Mono auth', exact: true }).click()
+    await main(page).getByLabel('New outcome in Mono auth', { exact: true }).fill(title)
+  }
+
+  // The epic's caret.
+  await typeOutcome('Sessions')
+  await caret('Mono auth').click()
+  await expect(outcome(page, 'Sessions')).toHaveCount(1)
+  await expect(caret('Sessions')).toHaveAttribute('aria-expanded', 'false')
+  await expect(caret('Mono auth')).toHaveAttribute('aria-expanded', 'false')
+  await caret('Mono auth').click()
+  await expect(caret('Sessions')).toHaveAttribute('aria-expanded', 'true')
+
+  // The area's fold over every epic, for an outcome and for a new epic alike.
+  await typeOutcome('Tokens')
+  await main(page).getByRole('button', { name: 'Fold every epic in Work', exact: true }).click()
+  await expect(outcome(page, 'Tokens')).toHaveCount(1)
+  await expect(caret('Tokens')).toHaveAttribute('aria-expanded', 'false')
+  await expect(caret('Mono auth')).toHaveAttribute('aria-expanded', 'false')
+  await main(page).getByRole('button', { name: 'Unfold every epic in Work', exact: true }).click()
+  await main(page).getByRole('button', { name: 'Add an epic to Work', exact: true }).click()
+  await main(page).getByLabel('New epic in Work', { exact: true }).fill('Rate limits')
+  await main(page).getByRole('button', { name: 'Fold every epic in Work', exact: true }).click()
+  await expect(epic(page, 'Rate limits')).toHaveCount(1)
+  await expect(caret('Rate limits')).toHaveAttribute('aria-expanded', 'false')
+  await expect(caret('Mono auth')).toHaveAttribute('aria-expanded', 'false')
+
+  // Left any other way, an outcome written on the board still starts open.
+  await typeOutcome('Cookies')
+  await main(page).getByRole('heading', { name: 'Tasks', level: 1 }).click()
+  await expect(caret('Cookies')).toHaveAttribute('aria-expanded', 'true')
 })
 
 test("an epic's own tasks fold under their heading, and still take a task", async ({ page }) => {
