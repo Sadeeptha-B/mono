@@ -135,8 +135,9 @@ down the left, and level with each, its outcomes as columns of tasks. Epics and
 outcomes are finished by hand; finishing or archiving one hides everything
 inside without changing it, and deleting one, or an area, deletes its subtree.
 The board shows only work — open tasks, and today's finished ones crossed out
-beside them — and an area, an epic, an outcome or an epic's own tasks folds
-down to what heads it, every epic in an area at once if asked; everything done,
+beside them — and an area, an outcome or an epic's own tasks folds down to
+what heads it, while an epic folds every column in it and keeps its outcomes
+in view, every epic in an area at once if asked; everything done,
 dropped or archived is the backlog's other view, **Put away**, from a switch
 beside the page's title.
 Areas, epics, outcomes and tasks are put in order by dragging, there or in All

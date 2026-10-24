@@ -41,8 +41,9 @@
  * The board is the work; everything put away is the backlog's other view
  * (`PutAwayView`), behind a switch beside the page's title (`BacklogSwitch`). A
  * column keeps only what was finished in it today, crossed out under its open
- * tasks. And an epic or outcome folds down to its card by the caret on it,
- * which the page remembers, so a long backlog can be read as its places.
+ * tasks. And an area folds down to its name, an outcome to its card, and an
+ * epic's caret folds every column in its row, which the page remembers, so a
+ * long backlog can be read as its places.
  *
  * Epics and outcomes are finished by hand, archived, or deleted; areas, which
  * never finish, are archived or deleted. Finishing and archiving never touch

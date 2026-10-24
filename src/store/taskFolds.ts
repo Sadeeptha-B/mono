@@ -14,9 +14,12 @@
  * the page to say why.
  *
  * The board folds areas too, and an epic's own column of tasks under a key of
- * its own (`epicTasksFold`), so folding that column never folds the epic.
- * Folding every epic in an area at once is one choice written per epic, in one
- * write (`setManyFolded`), so each epic still remembers its own afterwards.
+ * its own (`epicTasksFold`). An epic keeps no fold of its own: its caret folds
+ * every column in its row, one choice written per column in one write
+ * (`setManyFolded`), and folding every epic in an area does the same for all
+ * of theirs, so each column still remembers its own afterwards. Entries under
+ * a bare epic's id, from when an epic folded its whole row, are read by
+ * nothing and left alone.
  *
  * A refused or damaged localStorage entry loses only this preference; folding
  * must still work in memory and never interrupt choosing or tidying a task.
@@ -66,12 +69,12 @@ const createViewFolds = (key: string) =>
 /** All Tasks' folds (`components/allTasks/folds.ts`). */
 export const useTaskFolds = createViewFolds('mono.task-folds')
 
-/** The tasks page's board folds: areas, epics, outcomes and epics' own tasks folded by hand. */
+/** The tasks page's board folds: areas, outcomes and epics' own tasks folded by hand. */
 export const useBoardFolds = createViewFolds('mono.board-folds')
 
 /**
- * The board's key for an epic's own column of tasks, beside its outcomes: apart
- * from the epic's, which folds the whole row. Mono's ids are UUIDs, which never
- * contain `/`; an edited import that clashed would cost no more than a fold.
+ * The board's key for an epic's own column of tasks, beside its outcomes, apart
+ * from the epic's id. Mono's ids are UUIDs, which never contain `/`; an edited
+ * import that clashed would cost no more than a fold.
  */
 export const epicTasksFold = (epicId: string): string => `${epicId}/tasks`

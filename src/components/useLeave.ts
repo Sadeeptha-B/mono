@@ -91,13 +91,22 @@ export function useLeave(onLeave: () => void) {
         const settle = () => {
           stop()
           skipTurn()
-          skipTurn = nextTask(() => {
+          // Once, whichever comes first: its own turn, or a click that needs
+          // it written before it acts (`settleLeaves`).
+          const run = () => {
+            skipTurn()
             waiting.current = null
             // A field taken away by the click contains nothing, so only the
             // window decides it then.
             if (!doc.hasFocus() || box.contains(doc.activeElement)) return
             latest.current()
-          })
+          }
+          const cancel = nextTask(run)
+          due.add(run)
+          skipTurn = () => {
+            cancel()
+            due.delete(run)
+          }
         }
         // A press the browser cancels has ended, with no release to wait for,
         // unless what cancelled it was a drag beginning: then the drop ends
@@ -127,6 +136,26 @@ export function useLeave(onLeave: () => void) {
     }),
     [],
   )
+}
+
+/**
+ * Leaves whose press has ended and whose turn has not come yet: decided, and
+ * waiting only for the click to land.
+ */
+const due = new Set<() => void>()
+
+/**
+ * Carries out now every leave waiting for its turn, from inside the click it
+ * was waiting for. For a click whose own write has to include what the leave
+ * writes: folding every column of an epic must fold the outcome its add field
+ * is about to add, and a leave carried out a turn later added it open beside
+ * the folded ones (`useFoldAll`). The wait exists so the page does not move
+ * under a press before its click lands; inside the click, it has landed. Each
+ * leave still runs once, and still only if the focus has not come back to
+ * its field.
+ */
+export function settleLeaves() {
+  for (const run of [...due]) run()
 }
 
 /**
